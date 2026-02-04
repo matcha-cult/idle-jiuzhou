@@ -31,12 +31,12 @@ export default defineConfig(({ mode }) => {
           // 基于模块路径的智能分包策略
           manualChunks(id) {
             if (id.includes('node_modules')) {
-              // Ant Design 全家桶（图标、组件、rc-*）- 放在前面避免被 react 规则误匹配
-              if (id.includes('@ant-design') || id.includes('/antd/') || id.includes('/rc-')) {
+              // Ant Design 全家桶（图标、组件、rc-*）
+              if (id.includes('antd') || id.includes('@ant-design') || id.includes('rc-')) {
                 return 'antd-vendor'
               }
               // React 核心
-              if (id.includes('/react-dom/') || id.includes('/react/')) {
+              if (id.includes('react-dom') || id.includes('node_modules/react/')) {
                 return 'react-vendor'
               }
               // 路由
