@@ -626,7 +626,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const hasEquipAttrs = useMemo(() => activeItem?.category === 'equipment' && equipLines.length > 0, [activeItem, equipLines]);
   const hasEffects = useMemo(() => (activeItem?.effects?.length ?? 0) > 0, [activeItem?.effects]);
 
-  const usedSlots = info?.bag_used ?? items.length;
+  const usedSlots = info?.bag_used ?? items.filter((i) => i.location === 'bag').length;
 
   const materialCounts = useMemo(() => {
     const out: Record<string, number> = {};

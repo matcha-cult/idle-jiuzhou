@@ -419,29 +419,17 @@ export const getInventoryInfoWithClient = async (
   client: PoolClient | null
 ): Promise<InventoryInfo> => {
   const sql = `
-    SELECT 
+    SELECT
       i.bag_capacity,
       i.warehouse_capacity,
-      COALESCE(bag_count.cnt, 0) as bag_used,
-      COALESCE(wh_count.cnt, 0) as warehouse_used
+      (SELECT COUNT(*)::int FROM item_instance WHERE owner_character_id = $1 AND location = 'bag') as bag_used,
+      (SELECT COUNT(*)::int FROM item_instance WHERE owner_character_id = $1 AND location = 'warehouse') as warehouse_used
     FROM inventory i
-    LEFT JOIN (
-      SELECT owner_character_id, COUNT(*)::int as cnt 
-      FROM item_instance 
-      WHERE location = 'bag' 
-      GROUP BY owner_character_id
-    ) bag_count ON bag_count.owner_character_id = i.character_id
-    LEFT JOIN (
-      SELECT owner_character_id, COUNT(*)::int as cnt 
-      FROM item_instance 
-      WHERE location = 'warehouse' 
-      GROUP BY owner_character_id
-    ) wh_count ON wh_count.owner_character_id = i.character_id
     WHERE i.character_id = $1
   `;
-  
+
   const result = await runQuery(client, sql, [characterId]);
-  
+
   if (result.rows.length === 0) {
     await runQuery(
       client,
@@ -450,7 +438,7 @@ export const getInventoryInfoWithClient = async (
     );
     return { bag_capacity: 100, warehouse_capacity: 50, bag_used: 0, warehouse_used: 0 };
   }
-  
+
   return result.rows[0];
 };
 
