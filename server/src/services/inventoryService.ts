@@ -1662,31 +1662,37 @@ export const sortInventory = async (
   try {
     await client.query('BEGIN');
 
-    // 获取所有物品并按规则排序
-    const result = await client.query(`
-      SELECT ii.id, ii.item_def_id, ii.qty, COALESCE(ii.quality_rank, id.quality_rank) as quality_rank, id.category, id.sub_category
-      FROM item_instance ii
-      JOIN item_def id ON ii.item_def_id = id.id
-      WHERE ii.owner_character_id = $1 AND ii.location = $2
-      ORDER BY id.category, COALESCE(ii.quality_rank, id.quality_rank) DESC, id.sub_category, ii.item_def_id, ii.qty DESC
-      FOR UPDATE
-    `, [characterId, location]);
-
-    console.log('[sortInventory] characterId=%d location=%s itemCount=%d', characterId, location, result.rows.length);
-
-    // 先将所有格子置空，避免重新分配时触发唯一约束冲突
-    await client.query(
-      'UPDATE item_instance SET location_slot = NULL WHERE owner_character_id = $1 AND location = $2',
+    // 使用单条SQL排序并分配格子，避免临时清空导致并发误判空位
+    const result = await client.query(
+      `
+        WITH ordered AS (
+          SELECT
+            ii.id,
+            ROW_NUMBER() OVER (
+              ORDER BY
+                id.category NULLS LAST,
+                COALESCE(ii.quality_rank, id.quality_rank, 0) DESC,
+                id.sub_category NULLS LAST,
+                ii.item_def_id,
+                ii.qty DESC,
+                ii.id
+            ) - 1 AS new_slot
+          FROM item_instance ii
+          LEFT JOIN item_def id ON ii.item_def_id = id.id
+          WHERE ii.owner_character_id = $1 AND ii.location = $2
+          FOR UPDATE
+        )
+        UPDATE item_instance ii
+        SET location_slot = ordered.new_slot,
+            updated_at = NOW()
+        FROM ordered
+        WHERE ii.id = ordered.id
+        RETURNING ii.id
+      `,
       [characterId, location]
     );
 
-    // 重新分配格子
-    for (let i = 0; i < result.rows.length; i++) {
-      await client.query(
-        'UPDATE item_instance SET location_slot = $1, updated_at = NOW() WHERE id = $2',
-        [i, result.rows[i].id]
-      );
-    }
+    console.log('[sortInventory] characterId=%d location=%s itemCount=%d', characterId, location, result.rowCount);
 
     await client.query('COMMIT');
     return { success: true, message: '整理完成' };
