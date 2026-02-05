@@ -422,8 +422,18 @@ export const getInventoryInfoWithClient = async (
     SELECT
       i.bag_capacity,
       i.warehouse_capacity,
-      (SELECT COUNT(*)::int FROM item_instance WHERE owner_character_id = $1 AND location = 'bag') as bag_used,
-      (SELECT COUNT(*)::int FROM item_instance WHERE owner_character_id = $1 AND location = 'warehouse') as warehouse_used
+      (SELECT COUNT(DISTINCT location_slot)::int
+         FROM item_instance
+        WHERE owner_character_id = $1
+          AND location = 'bag'
+          AND location_slot IS NOT NULL
+          AND location_slot >= 0) as bag_used,
+      (SELECT COUNT(DISTINCT location_slot)::int
+         FROM item_instance
+        WHERE owner_character_id = $1
+          AND location = 'warehouse'
+          AND location_slot IS NOT NULL
+          AND location_slot >= 0) as warehouse_used
     FROM inventory i
     WHERE i.character_id = $1
   `;
@@ -1662,6 +1672,9 @@ export const sortInventory = async (
   try {
     await client.query('BEGIN');
 
+    const info = await getInventoryInfoWithClient(characterId, client);
+    const capacity = getSlottedCapacity(info, location);
+
     // 分两步更新：先写入不冲突的临时槽位，再写回最终槽位，避免唯一索引冲突
     const tempResult = await client.query(
       `
@@ -1682,13 +1695,16 @@ export const sortInventory = async (
           WHERE ii.owner_character_id = $1 AND ii.location = $2
         )
         UPDATE item_instance ii
-        SET location_slot = -1 - ordered.new_slot,
+        SET location_slot = CASE
+              WHEN ordered.new_slot < $3 THEN -1 - ordered.new_slot
+              ELSE NULL
+            END,
             updated_at = NOW()
         FROM ordered
         WHERE ii.id = ordered.id
-        RETURNING ii.id, -1 - ordered.new_slot AS temp_slot
+        RETURNING ii.id
       `,
-      [characterId, location]
+      [characterId, location, capacity]
     );
 
     const result = await client.query(
@@ -1710,13 +1726,16 @@ export const sortInventory = async (
           WHERE ii.owner_character_id = $1 AND ii.location = $2
         )
         UPDATE item_instance ii
-        SET location_slot = ordered.new_slot,
+        SET location_slot = CASE
+              WHEN ordered.new_slot < $3 THEN ordered.new_slot
+              ELSE NULL
+            END,
             updated_at = NOW()
         FROM ordered
         WHERE ii.id = ordered.id
         RETURNING ii.id
       `,
-      [characterId, location]
+      [characterId, location, capacity]
     );
 
     console.log(
