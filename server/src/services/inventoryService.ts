@@ -439,7 +439,9 @@ export const getInventoryInfoWithClient = async (
     return { bag_capacity: 100, warehouse_capacity: 50, bag_used: 0, warehouse_used: 0 };
   }
 
-  return result.rows[0];
+  const info = result.rows[0];
+  console.log('[getInventoryInfo] characterId=%d bag_used=%d warehouse_used=%d', characterId, info.bag_used, info.warehouse_used);
+  return info;
 };
 
 // ============================================
@@ -1656,10 +1658,10 @@ export const sortInventory = async (
   location: SlottedInventoryLocation = 'bag'
 ): Promise<{ success: boolean; message: string }> => {
   const client = await pool.connect();
-  
+
   try {
     await client.query('BEGIN');
-    
+
     // 获取所有物品并按规则排序
     const result = await client.query(`
       SELECT ii.id, ii.item_def_id, ii.qty, COALESCE(ii.quality_rank, id.quality_rank) as quality_rank, id.category, id.sub_category
@@ -1669,7 +1671,9 @@ export const sortInventory = async (
       ORDER BY id.category, COALESCE(ii.quality_rank, id.quality_rank) DESC, id.sub_category, ii.item_def_id, ii.qty DESC
       FOR UPDATE
     `, [characterId, location]);
-    
+
+    console.log('[sortInventory] characterId=%d location=%s itemCount=%d', characterId, location, result.rows.length);
+
     // 先将所有格子置空，避免重新分配时触发唯一约束冲突
     await client.query(
       'UPDATE item_instance SET location_slot = NULL WHERE owner_character_id = $1 AND location = $2',
@@ -1683,10 +1687,10 @@ export const sortInventory = async (
         [i, result.rows[i].id]
       );
     }
-    
+
     await client.query('COMMIT');
     return { success: true, message: '整理完成' };
-    
+
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('整理背包失败:', error);
