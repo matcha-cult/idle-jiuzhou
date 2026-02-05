@@ -1662,7 +1662,35 @@ export const sortInventory = async (
   try {
     await client.query('BEGIN');
 
-    // 使用单条SQL排序并分配格子，避免临时清空导致并发误判空位
+    // 分两步更新：先写入不冲突的临时槽位，再写回最终槽位，避免唯一索引冲突
+    const tempResult = await client.query(
+      `
+        WITH ordered AS (
+          SELECT
+            ii.id,
+            ROW_NUMBER() OVER (
+              ORDER BY
+                id.category NULLS LAST,
+                COALESCE(ii.quality_rank, id.quality_rank, 0) DESC,
+                id.sub_category NULLS LAST,
+                ii.item_def_id,
+                ii.qty DESC,
+                ii.id
+            ) - 1 AS new_slot
+          FROM item_instance ii
+          LEFT JOIN item_def id ON ii.item_def_id = id.id
+          WHERE ii.owner_character_id = $1 AND ii.location = $2
+        )
+        UPDATE item_instance ii
+        SET location_slot = -1 - ordered.new_slot,
+            updated_at = NOW()
+        FROM ordered
+        WHERE ii.id = ordered.id
+        RETURNING ii.id, -1 - ordered.new_slot AS temp_slot
+      `,
+      [characterId, location]
+    );
+
     const result = await client.query(
       `
         WITH ordered AS (
@@ -1691,7 +1719,13 @@ export const sortInventory = async (
       [characterId, location]
     );
 
-    console.log('[sortInventory] characterId=%d location=%s itemCount=%d', characterId, location, result.rowCount);
+    console.log(
+      '[sortInventory] characterId=%d location=%s itemCount=%d temp=%d',
+      characterId,
+      location,
+      result.rowCount,
+      tempResult.rowCount
+    );
 
     await client.query('COMMIT');
     return { success: true, message: '整理完成' };
