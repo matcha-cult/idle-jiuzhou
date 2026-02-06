@@ -1494,6 +1494,7 @@ export const getMarketTradeRecords = (params?: {
 
 export interface MailAttachItem {
   item_def_id: string;
+  item_name?: string;
   qty: number;
 }
 

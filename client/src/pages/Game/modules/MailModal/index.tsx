@@ -414,7 +414,7 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
                         )}
                         {activeMail.attachItems?.map((item, idx) => (
                           <div key={idx} className="mail-attachment">
-                            <span className="mail-attachment-name">{item.item_def_id}</span>
+                            <span className="mail-attachment-name">{item.item_name || item.item_def_id}</span>
                             <span className="mail-attachment-amount">x{item.qty}</span>
                           </div>
                         ))}

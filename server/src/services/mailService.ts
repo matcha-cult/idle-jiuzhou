@@ -23,6 +23,7 @@ export type MailType = 'normal' | 'reward' | 'trade' | 'gm';
 
 export interface MailAttachItem {
   item_def_id: string;
+  item_name?: string;
   qty: number;
   options?: {
     bindType?: string;
@@ -64,6 +65,10 @@ export interface MailDto {
   expireAt: string | null;
   createdAt: string;
 }
+
+type MailAttachItemView = MailAttachItem & {
+  item_name?: string;
+};
 
 const estimateRequiredSlots = async (
   client: { query: (text: string, params?: any[]) => Promise<{ rows: any[] }> },
@@ -242,6 +247,30 @@ export const getMailList = async (
 
     const stats = statsResult.rows[0];
 
+    const itemDefIds = Array.from(
+      new Set(
+        result.rows.flatMap((row: any) => {
+          const items = Array.isArray(row.attach_items) ? (row.attach_items as MailAttachItem[]) : [];
+          return items
+            .map((item) => String(item.item_def_id || '').trim())
+            .filter((id) => id.length > 0);
+        })
+      )
+    );
+
+    const itemNameMap = new Map<string, string>();
+    if (itemDefIds.length > 0) {
+      const defsResult = await query(
+        'SELECT id, name FROM item_def WHERE id = ANY($1)',
+        [itemDefIds]
+      );
+      for (const row of defsResult.rows) {
+        const id = String(row.id || '').trim();
+        const name = String(row.name || '').trim();
+        if (id) itemNameMap.set(id, name || id);
+      }
+    }
+
     const mails: MailDto[] = result.rows.map(row => ({
       id: row.id,
       senderType: row.sender_type,
@@ -251,7 +280,15 @@ export const getMailList = async (
       content: row.content,
       attachSilver: row.attach_silver,
       attachSpiritStones: row.attach_spirit_stones,
-      attachItems: row.attach_items || [],
+      attachItems: (Array.isArray(row.attach_items) ? row.attach_items : []).map((item: MailAttachItem) => {
+        const itemDefId = String(item.item_def_id || '').trim();
+        const itemName = itemDefId ? (itemNameMap.get(itemDefId) || item.item_name || itemDefId) : (item.item_name || '未知物品');
+        return {
+          ...item,
+          item_def_id: itemDefId,
+          item_name: itemName
+        } as MailAttachItemView;
+      }),
       readAt: row.read_at?.toISOString() || null,
       claimedAt: row.claimed_at?.toISOString() || null,
       expireAt: row.expire_at?.toISOString() || null,
