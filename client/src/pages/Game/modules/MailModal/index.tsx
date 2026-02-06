@@ -39,31 +39,37 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
   const [unclaimedCount, setUnclaimedCount] = useState(0);
 
   // 加载邮件列表
-  const loadMails = useCallback(async () => {
+  const loadMails = useCallback(async (options?: { resetActive?: boolean }) => {
+    const resetActive = !!options?.resetActive;
     setLoading(true);
     try {
       const res = await getMailList(1, 100);
       if (res.success && res.data) {
-        setMails(res.data.mails);
+        const nextMails = res.data.mails;
+
+        setMails(nextMails);
         setUnreadCount(res.data.unreadCount);
         setUnclaimedCount(res.data.unclaimedCount);
-        // 自动选中第一封
-        if (res.data.mails.length > 0 && !activeId) {
-          setActiveId(res.data.mails[0].id);
-        }
+
+        // 自动选中邮件（支持打开弹窗时重置为首封）
+        setActiveId((prev) => {
+          if (nextMails.length === 0) return null;
+          if (resetActive) return nextMails[0].id;
+          if (prev && nextMails.some((m) => m.id === prev)) return prev;
+          return nextMails[0].id;
+        });
       }
     } catch {
       message.error('加载邮件失败');
     } finally {
       setLoading(false);
     }
-  }, [message, activeId]);
+  }, [message]);
 
   // 打开时加载
   useEffect(() => {
     if (open) {
-      setActiveId(null);
-      loadMails();
+      void loadMails({ resetActive: true });
     }
   }, [open, loadMails]);
 
@@ -283,7 +289,7 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
               </div>
               <Space size={8}>
                 <Tooltip title="刷新">
-                  <Button size="small" type="text" icon={<ReloadOutlined />} onClick={loadMails} />
+                  <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => void loadMails()} />
                 </Tooltip>
                 <Tooltip title="一键领取">
                   <Button

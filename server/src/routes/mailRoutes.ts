@@ -19,6 +19,13 @@ const router = Router();
 
 type AuthedRequest = Request & { userId: number };
 
+// 兼容前端把 BIGINT 主键当成字符串传回来的情况
+const parseMailId = (raw: unknown): number | null => {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+};
+
 // 认证中间件
 const authMiddleware = (req: Request, res: Response, next: () => void) => {
   const authHeader = req.headers.authorization;
@@ -120,12 +127,12 @@ router.post('/read', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: '角色不存在' });
     }
 
-    const { mailId } = req.body;
-    if (!mailId || !Number.isInteger(mailId)) {
+    const parsedMailId = parseMailId((req.body as { mailId?: unknown })?.mailId);
+    if (!parsedMailId) {
       return res.status(400).json({ success: false, message: '参数错误' });
     }
 
-    const result = await readMail(userId, characterId, mailId);
+    const result = await readMail(userId, characterId, parsedMailId);
     return res.json(result);
   } catch (error) {
     console.error('阅读邮件失败:', error);
@@ -145,12 +152,12 @@ router.post('/claim', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: '角色不存在' });
     }
 
-    const { mailId } = req.body;
-    if (!mailId || !Number.isInteger(mailId)) {
+    const parsedMailId = parseMailId((req.body as { mailId?: unknown })?.mailId);
+    if (!parsedMailId) {
       return res.status(400).json({ success: false, message: '参数错误' });
     }
 
-    const result = await claimAttachments(userId, characterId, mailId);
+    const result = await claimAttachments(userId, characterId, parsedMailId);
     return res.json(result);
   } catch (error) {
     console.error('领取附件失败:', error);
@@ -190,12 +197,12 @@ router.post('/delete', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: '角色不存在' });
     }
 
-    const { mailId } = req.body;
-    if (!mailId || !Number.isInteger(mailId)) {
+    const parsedMailId = parseMailId((req.body as { mailId?: unknown })?.mailId);
+    if (!parsedMailId) {
       return res.status(400).json({ success: false, message: '参数错误' });
     }
 
-    const result = await deleteMail(userId, characterId, mailId);
+    const result = await deleteMail(userId, characterId, parsedMailId);
     return res.json(result);
   } catch (error) {
     console.error('删除邮件失败:', error);
