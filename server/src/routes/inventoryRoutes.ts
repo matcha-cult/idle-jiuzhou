@@ -152,6 +152,7 @@ router.get('/items', async (req: Request, res: Response) => {
         });
         const mergedDef = {
           ...def,
+          base_attrs_raw: def.base_attrs,
           base_attrs: displayBaseAttrs,
         };
 

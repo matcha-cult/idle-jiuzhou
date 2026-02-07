@@ -80,6 +80,9 @@ type BagItem = {
         refineLevel: number;
         identified: boolean;
         baseAttrs: Record<string, number>;
+        baseAttrsRaw: Record<string, number>;
+        defQualityRank: number;
+        resolvedQualityRank: number;
         affixes: EquipmentAffix[];
         socketMax: number;
         gemSlotTypes: unknown;
@@ -373,6 +376,46 @@ const getRefineMultiplier = (refineLevel: number): number => {
   return 1 + lv * 0.02;
 };
 
+const getQualityMultiplier = (rank: number): number => {
+  const r = Math.max(1, Math.min(4, Math.floor(Number(rank) || 1)));
+  if (r >= 4) return 1.75;
+  if (r === 3) return 1.45;
+  if (r === 2) return 1.2;
+  return 1;
+};
+
+const buildGrowthPreviewAttrs = (
+  params: {
+    baseAttrsRaw: Record<string, number>;
+    defQualityRankRaw: unknown;
+    resolvedQualityRankRaw: unknown;
+    strengthenLevelRaw: unknown;
+    refineLevelRaw: unknown;
+  },
+  mode: 'enhance' | 'refine'
+): Record<string, number> => {
+  const baseAttrs = params.baseAttrsRaw;
+  const defQualityRank = Math.max(1, Math.floor(Number(params.defQualityRankRaw) || 1));
+  const resolvedQualityRank = Math.max(1, Math.floor(Number(params.resolvedQualityRankRaw) || 1));
+  const strengthenLevel = Math.max(0, Math.min(15, Math.floor(Number(params.strengthenLevelRaw) || 0)));
+  const refineLevel = Math.max(0, Math.min(10, Math.floor(Number(params.refineLevelRaw) || 0)));
+
+  const targetStrengthenLevel = mode === 'enhance' ? Math.min(15, strengthenLevel + 1) : strengthenLevel;
+  const targetRefineLevel = mode === 'refine' ? Math.min(10, refineLevel + 1) : refineLevel;
+
+  const qualityFactor = getQualityMultiplier(resolvedQualityRank) / getQualityMultiplier(defQualityRank);
+  const growthFactor = getStrengthenMultiplier(targetStrengthenLevel) * getRefineMultiplier(targetRefineLevel);
+  const factor = qualityFactor * growthFactor;
+
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(baseAttrs)) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) continue;
+    out[k] = Math.round(n * factor);
+  }
+  return out;
+};
+
 const parseSocketedGems = (raw: unknown): SocketedGemEntry[] => {
   let arr: unknown = raw;
   if (typeof arr === 'string') {
@@ -630,6 +673,9 @@ const buildBagItem = (it: InventoryItemDto): BagItem | null => {
             refineLevel: Number(it.refine_level) || 0,
             identified: !!it.identified,
             baseAttrs: coerceAttrRecord(def.base_attrs),
+            baseAttrsRaw: coerceAttrRecord(def.base_attrs_raw ?? def.base_attrs),
+            defQualityRank: Number(def.quality_rank) || qualityRank[quality],
+            resolvedQualityRank: Number(it.quality_rank) || qualityRank[quality],
             affixes: coerceAffixes(it.affixes),
             socketMax: resolveSocketMax(def.socket_max, qualityRank[quality]),
             gemSlotTypes: def.gem_slot_types,
@@ -968,15 +1014,16 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     const materialItemDefId = getEnhanceMaterialItemDefId(targetLv);
     const materialName = materialItemDefId === 'enhance-001' ? '淬灵石' : '蕴灵石';
     const owned = materialCounts[materialItemDefId] ?? 0;
-    const curFactor = getStrengthenMultiplier(curLv);
-    const nextFactor = getStrengthenMultiplier(targetLv);
-    const ratio = curFactor > 0 ? nextFactor / curFactor : 1;
-    const previewBaseAttrs: Record<string, number> = {};
-    for (const [k, v] of Object.entries(activeItem.equip.baseAttrs)) {
-      const n = Number(v);
-      if (!Number.isFinite(n)) continue;
-      previewBaseAttrs[k] = Math.round(n * ratio);
-    }
+    const previewBaseAttrs = buildGrowthPreviewAttrs(
+      {
+        baseAttrsRaw: activeItem.equip.baseAttrsRaw,
+        defQualityRankRaw: activeItem.equip.defQualityRank,
+        resolvedQualityRankRaw: activeItem.equip.resolvedQualityRank,
+        strengthenLevelRaw: curLv,
+        refineLevelRaw: activeItem.equip.refineLevel,
+      },
+      'enhance',
+    );
     return {
       curLv,
       targetLv,
@@ -993,19 +1040,23 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     const targetLv = Math.min(10, curLv + 1);
     const costPlan = buildRefineCostPlan(targetLv);
     const owned = materialCounts[costPlan.materialItemDefId] ?? 0;
-    const curFactor = getRefineMultiplier(curLv);
-    const nextFactor = getRefineMultiplier(targetLv);
-    const ratio = curFactor > 0 ? nextFactor / curFactor : 1;
-    const previewBaseAttrs: Record<string, number> = {};
-    for (const [k, v] of Object.entries(activeItem.equip.baseAttrs)) {
-      const n = Number(v);
-      if (!Number.isFinite(n)) continue;
-      previewBaseAttrs[k] = Math.round(n * ratio);
-    }
+    const previewBaseAttrs = buildGrowthPreviewAttrs(
+      {
+        baseAttrsRaw: activeItem.equip.baseAttrsRaw,
+        defQualityRankRaw: activeItem.equip.defQualityRank,
+        resolvedQualityRankRaw: activeItem.equip.resolvedQualityRank,
+        strengthenLevelRaw: activeItem.equip.strengthenLevel,
+        refineLevelRaw: curLv,
+      },
+      'refine',
+    );
+
+    const materialName = costPlan.materialItemDefId === 'enhance-002' ? '蕴灵石' : costPlan.materialItemDefId;
     return {
       curLv,
       targetLv,
       materialItemDefId: costPlan.materialItemDefId,
+      materialName,
       materialQty: costPlan.materialQty,
       owned,
       successRatePermyriad: getRefineSuccessRatePermyriad(targetLv),
@@ -1617,7 +1668,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div style={{ padding: 10, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8 }}>
-                  <div style={{ marginBottom: 6, color: 'rgba(255,255,255,0.85)' }}>当前属性</div>
+                  <div style={{ marginBottom: 6, color: 'var(--text-secondary)' }}>当前属性</div>
                   {Object.entries(activeItem?.equip?.baseAttrs ?? {})
                     .sort(([a], [b]) => (attrOrder[a] ?? 9999) - (attrOrder[b] ?? 9999) || a.localeCompare(b))
                     .map(([k, v]) => (
@@ -1627,7 +1678,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                     ))}
                 </div>
                 <div style={{ padding: 10, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8 }}>
-                  <div style={{ marginBottom: 6, color: 'rgba(255,255,255,0.85)' }}>强化后属性</div>
+                  <div style={{ marginBottom: 6, color: 'var(--text-secondary)' }}>强化后属性</div>
                   {Object.entries(enhanceState.previewBaseAttrs)
                     .sort(([a], [b]) => (attrOrder[a] ?? 9999) - (attrOrder[b] ?? 9999) || a.localeCompare(b))
                     .map(([k, v]) => (
@@ -1668,12 +1719,12 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
               <div>目标精炼：+{refineState.targetLv}</div>
               <div>成功率：{(refineState.successRatePermyriad / 100).toFixed(2).replace(/\.00$/, '')}%</div>
               <div>
-                消耗材料：{refineState.materialItemDefId} ×{refineState.materialQty}（拥有 {refineState.owned}）
+                消耗材料：{refineState.materialName} ×{refineState.materialQty}（拥有 {refineState.owned}）
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div style={{ padding: 10, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8 }}>
-                  <div style={{ marginBottom: 6, color: 'rgba(255,255,255,0.85)' }}>当前属性</div>
+                  <div style={{ marginBottom: 6, color: 'var(--text-secondary)' }}>当前属性</div>
                   {Object.entries(activeItem?.equip?.baseAttrs ?? {})
                     .sort(([a], [b]) => (attrOrder[a] ?? 9999) - (attrOrder[b] ?? 9999) || a.localeCompare(b))
                     .map(([k, v]) => (
@@ -1683,7 +1734,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                     ))}
                 </div>
                 <div style={{ padding: 10, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8 }}>
-                  <div style={{ marginBottom: 6, color: 'rgba(255,255,255,0.85)' }}>精炼后属性</div>
+                  <div style={{ marginBottom: 6, color: 'var(--text-secondary)' }}>精炼后属性</div>
                   {Object.entries(refineState.previewBaseAttrs)
                     .sort(([a], [b]) => (attrOrder[a] ?? 9999) - (attrOrder[b] ?? 9999) || a.localeCompare(b))
                     .map(([k, v]) => (
@@ -1743,7 +1794,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                 />
               </div>
 
-              <div style={{ color: 'rgba(255,255,255,0.7)' }}>
+              <div style={{ color: 'var(--text-secondary)' }}>
                 {socketState.selectedGem
                   ? `已选宝石：${socketState.selectedGem.name}（类型：${socketState.selectedGemType}）`
                   : '请选择可镶嵌宝石'}

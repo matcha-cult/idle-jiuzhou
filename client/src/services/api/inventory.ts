@@ -20,6 +20,7 @@ export interface ItemDefLite {
   name: string;
   icon: string | null;
   quality: string;
+  quality_rank?: number | null;
   category: string;
   sub_category: string | null;
   stack_max: number;
@@ -28,6 +29,7 @@ export interface ItemDefLite {
   tags: unknown;
   effect_defs: unknown;
   base_attrs: unknown;
+  base_attrs_raw?: unknown;
   equip_slot: string | null;
   use_type: string | null;
   socket_max?: number;
@@ -38,6 +40,7 @@ export interface InventoryItemDto {
   id: number;
   item_def_id: string;
   qty: number;
+  quality_rank?: number | null;
   location: InventoryLocation;
   location_slot: number | null;
   equipped_slot: string | null;
