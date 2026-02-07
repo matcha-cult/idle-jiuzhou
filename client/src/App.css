@@ -133,6 +133,29 @@ body.theme-dark .ant-tabs .ant-tabs-ink-bar {
   background: var(--primary-color);
 }
 
+/* 全局统一修复 Select 文本与选中态颜色可读性 */
+body .ant-select .ant-select-selector .ant-select-selection-item {
+  color: var(--text-color);
+}
+
+body .ant-select .ant-select-selector .ant-select-selection-placeholder {
+  color: var(--text-secondary);
+}
+
+body .ant-select-dropdown .ant-select-item {
+  color: var(--text-color);
+}
+
+body .ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: var(--hover-bg);
+}
+
+body .ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: var(--active-bg);
+  color: var(--text-color);
+  font-weight: 700;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
