@@ -650,7 +650,7 @@ const buildBagItem = (it: InventoryItemDto): BagItem | null => {
   const isEquip = category === 'equipment';
 
   return {
-    id: it.id,
+    id: Number(it.id),
     itemDefId: it.item_def_id,
     name: def.name,
     category,
@@ -1098,7 +1098,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
     setEnhanceSubmitting(true);
     try {
-      const res = await enhanceInventoryItem(activeItem.id);
+      const res = await enhanceInventoryItem({ itemId: activeItem.id });
       if (res.success) {
         message.success(res.message || '强化成功');
       } else {
@@ -1122,7 +1122,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
     setRefineSubmitting(true);
     try {
-      const res = await refineInventoryItem(activeItem.id);
+      const res = await refineInventoryItem({ itemId: activeItem.id });
       if (res.success) {
         message.success(res.message || '精炼成功');
       } else {

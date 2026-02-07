@@ -159,13 +159,9 @@ export interface InventoryEnhanceRequest {
 }
 
 export const enhanceInventoryItem = (
-  itemIdOrBody: number | InventoryEnhanceRequest,
-  options: { enhanceToolItemId?: number; protectToolItemId?: number } = {}
+  body: InventoryEnhanceRequest
 ): Promise<InventoryEnhanceResponse> => {
-  if (typeof itemIdOrBody === 'number') {
-    return api.post('/inventory/enhance', { itemId: itemIdOrBody, ...options });
-  }
-  return api.post('/inventory/enhance', itemIdOrBody);
+  return api.post('/inventory/enhance', body);
 };
 
 export interface InventoryRefineResponse {
@@ -189,12 +185,9 @@ export interface InventoryRefineRequest {
 }
 
 export const refineInventoryItem = (
-  itemIdOrBody: number | InventoryRefineRequest
+  body: InventoryRefineRequest
 ): Promise<InventoryRefineResponse> => {
-  if (typeof itemIdOrBody === 'number') {
-    return api.post('/inventory/refine', { itemId: itemIdOrBody });
-  }
-  return api.post('/inventory/refine', itemIdOrBody);
+  return api.post('/inventory/refine', body);
 };
 
 export interface SocketedGemEffectDto {
