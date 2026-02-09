@@ -34,6 +34,7 @@ export interface ItemDefLite {
   use_type: string | null;
   socket_max?: number;
   gem_slot_types?: unknown;
+  level?: number | null;
 }
 
 export interface InventoryItemDto {

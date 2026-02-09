@@ -87,6 +87,7 @@ type BagItem = {
         socketMax: number;
         gemSlotTypes: unknown;
         socketedGems: SocketedGemEntry[];
+        itemLevel: number;
       }
     | null;
 };
@@ -573,11 +574,32 @@ const getRefineSuccessRatePermyriad = (targetLevel: number): number => {
   return table[lv] ?? 0;
 };
 
-const buildRefineCostPlan = (targetLevel: number): { materialItemDefId: string; materialQty: number } => {
-  const lv = Math.max(1, Math.min(10, Math.floor(Number(targetLevel) || 1)));
+interface GrowthCostPlan {
+  materialItemDefId: string;
+  materialQty: number;
+  silverCost: number;
+  spiritStoneCost: number;
+}
+
+const buildEnhanceCostPlan = (itemLevel: number, targetLevel: number): GrowthCostPlan => {
+  const level = Math.max(0, Math.floor(Number(itemLevel) || 0));
+  const target = Math.max(1, Math.min(15, Math.floor(Number(targetLevel) || 1)));
+  return {
+    materialItemDefId: target <= 10 ? 'enhance-001' : 'enhance-002',
+    materialQty: 1,
+    silverCost: Math.max(50, Math.floor((level + 5) * 20 * target)),
+    spiritStoneCost: Math.max(0, Math.floor(target / 5)),
+  };
+};
+
+const buildRefineCostPlan = (itemLevel: number, targetLevel: number): GrowthCostPlan => {
+  const level = Math.max(0, Math.floor(Number(itemLevel) || 0));
+  const target = Math.max(1, Math.min(10, Math.floor(Number(targetLevel) || 1)));
   return {
     materialItemDefId: 'enhance-002',
-    materialQty: lv >= 8 ? 2 : 1,
+    materialQty: target >= 8 ? 2 : 1,
+    silverCost: Math.max(100, Math.floor((level + 8) * 35 * target)),
+    spiritStoneCost: Math.max(0, Math.floor((target + 1) / 3)),
   };
 };
 
@@ -706,6 +728,7 @@ const buildBagItem = (it: InventoryItemDto): BagItem | null => {
             socketMax: resolveSocketMax(def.socket_max, qualityRank[quality]),
             gemSlotTypes: def.gem_slot_types,
             socketedGems: parseSocketedGems(it.socketed_gems),
+            itemLevel: Math.max(0, Math.floor(Number(def.level) || 0)),
           }
         : null,
   };
@@ -793,6 +816,15 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<InventoryInfoData | null>(null);
   const [items, setItems] = useState<BagItem[]>([]);
+  const [playerSilver, setPlayerSilver] = useState(0);
+  const [playerSpiritStones, setPlayerSpiritStones] = useState(0);
+
+  useEffect(() => {
+    return gameSocket.onCharacterUpdate((char) => {
+      setPlayerSilver(Number(char?.silver) || 0);
+      setPlayerSpiritStones(Number(char?.spiritStones) || 0);
+    });
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -1043,9 +1075,9 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     if (!activeItem?.equip || activeItem.category !== 'equipment') return null;
     const curLv = Math.max(0, Math.min(15, Math.floor(Number(activeItem.equip.strengthenLevel) || 0)));
     const targetLv = Math.min(15, curLv + 1);
-    const materialItemDefId = getEnhanceMaterialItemDefId(targetLv);
-    const materialName = materialItemDefId === 'enhance-001' ? '淬灵石' : '蕴灵石';
-    const owned = materialCounts[materialItemDefId] ?? 0;
+    const costPlan = buildEnhanceCostPlan(activeItem.equip.itemLevel, targetLv);
+    const materialName = costPlan.materialItemDefId === 'enhance-001' ? '淬灵石' : '蕴灵石';
+    const owned = materialCounts[costPlan.materialItemDefId] ?? 0;
     const previewBaseAttrs = buildGrowthPreviewAttrs(
       {
         baseAttrsRaw: activeItem.equip.baseAttrsRaw,
@@ -1059,9 +1091,11 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     return {
       curLv,
       targetLv,
-      materialItemDefId,
+      materialItemDefId: costPlan.materialItemDefId,
       materialName,
       owned,
+      silverCost: costPlan.silverCost,
+      spiritStoneCost: costPlan.spiritStoneCost,
       successRatePermyriad: getEnhanceSuccessRatePermyriad(targetLv),
       downgradeOnFail: targetLv >= 8,
       previewBaseAttrs,
@@ -1072,7 +1106,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     if (!activeItem?.equip || activeItem.category !== 'equipment') return null;
     const curLv = Math.max(0, Math.min(10, Math.floor(Number(activeItem.equip.refineLevel) || 0)));
     const targetLv = Math.min(10, curLv + 1);
-    const costPlan = buildRefineCostPlan(targetLv);
+    const costPlan = buildRefineCostPlan(activeItem.equip.itemLevel, targetLv);
     const owned = materialCounts[costPlan.materialItemDefId] ?? 0;
     const previewBaseAttrs = buildGrowthPreviewAttrs(
       {
@@ -1093,6 +1127,8 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
       materialName,
       materialQty: costPlan.materialQty,
       owned,
+      silverCost: costPlan.silverCost,
+      spiritStoneCost: costPlan.spiritStoneCost,
       successRatePermyriad: getRefineSuccessRatePermyriad(targetLv),
       previewBaseAttrs,
     };
@@ -1700,6 +1736,16 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
               <div>
                 消耗材料：{enhanceState.materialName} ×1（拥有 {enhanceState.owned}）
               </div>
+              {enhanceState.silverCost > 0 ? (
+                <div>
+                  消耗银两：{enhanceState.silverCost.toLocaleString()}（拥有 {playerSilver.toLocaleString()}）
+                </div>
+              ) : null}
+              {enhanceState.spiritStoneCost > 0 ? (
+                <div>
+                  消耗灵石：{enhanceState.spiritStoneCost.toLocaleString()}（拥有 {playerSpiritStones.toLocaleString()}）
+                </div>
+              ) : null}
               <div className="bag-growth-rule-card">
                 <div className="bag-growth-rule-title">强化规则</div>
                 <div className="bag-growth-rule-item">等级上限：+15</div>
@@ -1739,6 +1785,8 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                     enhanceSubmitting ||
                     enhanceState.curLv >= 15 ||
                     enhanceState.owned < 1 ||
+                    playerSilver < enhanceState.silverCost ||
+                    playerSpiritStones < enhanceState.spiritStoneCost ||
                     !!activeItem?.locked
                   }
                   type="primary"
@@ -1752,6 +1800,8 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
               {activeItem?.locked ? <div className="bag-enhance-hint">物品已锁定</div> : null}
               {enhanceState.curLv >= 15 ? <div className="bag-enhance-hint">强化已达上限</div> : null}
               {enhanceState.owned < 1 ? <div className="bag-enhance-warning">材料不足</div> : null}
+              {enhanceState.silverCost > 0 && playerSilver < enhanceState.silverCost ? <div className="bag-enhance-warning">银两不足</div> : null}
+              {enhanceState.spiritStoneCost > 0 && playerSpiritStones < enhanceState.spiritStoneCost ? <div className="bag-enhance-warning">灵石不足</div> : null}
             </>
           ) : (
             <div className="bag-enhance-hint">请选择可强化的装备</div>
@@ -1765,6 +1815,16 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
               <div>
                 消耗材料：{refineState.materialName} ×{refineState.materialQty}（拥有 {refineState.owned}）
               </div>
+              {refineState.silverCost > 0 ? (
+                <div>
+                  消耗银两：{refineState.silverCost.toLocaleString()}（拥有 {playerSilver.toLocaleString()}）
+                </div>
+              ) : null}
+              {refineState.spiritStoneCost > 0 ? (
+                <div>
+                  消耗灵石：{refineState.spiritStoneCost.toLocaleString()}（拥有 {playerSpiritStones.toLocaleString()}）
+                </div>
+              ) : null}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div style={{ padding: 10, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8 }}>
@@ -1795,6 +1855,8 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                     refineSubmitting ||
                     refineState.curLv >= 10 ||
                     refineState.owned < refineState.materialQty ||
+                    playerSilver < refineState.silverCost ||
+                    playerSpiritStones < refineState.spiritStoneCost ||
                     !!activeItem?.locked
                   }
                   type="primary"
@@ -1808,6 +1870,8 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
               {activeItem?.locked ? <div className="bag-enhance-hint">物品已锁定</div> : null}
               {refineState.curLv >= 10 ? <div className="bag-enhance-hint">精炼已达上限</div> : null}
               {refineState.owned < refineState.materialQty ? <div className="bag-enhance-warning">材料不足</div> : null}
+              {refineState.silverCost > 0 && playerSilver < refineState.silverCost ? <div className="bag-enhance-warning">银两不足</div> : null}
+              {refineState.spiritStoneCost > 0 && playerSpiritStones < refineState.spiritStoneCost ? <div className="bag-enhance-warning">灵石不足</div> : null}
             </>
           ) : (
             <div className="bag-enhance-hint">请选择可精炼的装备</div>

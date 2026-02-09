@@ -130,7 +130,7 @@ router.get('/items', async (req: Request, res: Response) => {
       const defResult = await query(
         `SELECT 
            id, name, icon, quality, quality_rank, category, sub_category, stack_max,
-           description, long_desc, tags, effect_defs, base_attrs, equip_slot, use_type, socket_max, gem_slot_types
+           description, long_desc, tags, effect_defs, base_attrs, equip_slot, use_type, socket_max, gem_slot_types, level
          FROM item_def WHERE id = ANY($1)`,
         [itemDefIds]
       );
