@@ -45,10 +45,9 @@ import {
   qualityClass,
   qualityColor,
   qualityLabelText,
-  qualityLabels,
   qualityRank,
 } from './bagShared';
-import type { BagAction, BagCategory, BagItem, BagQuality, BagSort } from './bagShared';
+import type { BagAction, BagCategory, BagItem, BagSort } from './bagShared';
 import DisassembleModal from './DisassembleModal';
 import './MobileBagModal.scss';
 
