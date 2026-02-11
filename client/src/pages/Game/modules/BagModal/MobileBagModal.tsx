@@ -35,6 +35,7 @@ import {
   buildRefineCostPlan,
   calcUseEffectDelta,
   categoryLabels,
+  collectBatchDisassembleEquipmentCandidates,
   formatPermyriadPercent,
   formatSignedNumber,
   formatSignedPermyriadPercent,
@@ -782,10 +783,7 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
   }, [activeItem, clampUseQty, refresh, useQty]);
 
   const handleBatchDisassemble = useCallback(async () => {
-    const candidates = items.filter(
-      (i) => i.location === 'bag' && !i.locked && i.category === 'equipment' &&
-        (i.quality === '黄' || i.quality === '玄'),
-    );
+    const candidates = collectBatchDisassembleEquipmentCandidates(items);
     if (candidates.length === 0) { message.info('没有可分解的装备'); return; }
     setLoading(true);
     try {

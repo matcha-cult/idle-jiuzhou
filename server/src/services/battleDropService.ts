@@ -395,8 +395,12 @@ export const distributeBattleRewards = async (
       }
     };
 
-    const queuePendingMailItem = (receiver: BattleParticipant, attachItem: MailAttachItem) => {
-      const existing = pendingMailByReceiver.get(receiver.characterId) || {
+    const queuePendingMailItem = (
+      receiver: BattleParticipant,
+      receiverCharacterId: number,
+      attachItem: MailAttachItem
+    ) => {
+      const existing = pendingMailByReceiver.get(receiverCharacterId) || {
         userId: receiver.userId,
         items: [],
       };
@@ -414,7 +418,7 @@ export const distributeBattleRewards = async (
       } else {
         existing.items.push(attachItem);
       }
-      pendingMailByReceiver.set(receiver.characterId, existing);
+      pendingMailByReceiver.set(receiverCharacterId, existing);
     };
 
     const getItemMeta = async (itemDefId: string): Promise<{ name: string; category: string }> => {
@@ -432,6 +436,11 @@ export const distributeBattleRewards = async (
     for (const entry of mergedDropsByReceiver.values()) {
       const drop = entry.drop;
       const receiver = entry.receiver;
+      const receiverCharacterId = Number(receiver.characterId);
+      if (!Number.isInteger(receiverCharacterId) || receiverCharacterId <= 0) {
+        console.warn(`奖励分发跳过：非法角色ID ${String(receiver.characterId)}`);
+        continue;
+      }
       const { name: itemName, category: itemCategory } = await getItemMeta(drop.itemDefId);
 
       const createOptions: CreateItemOptions = {
@@ -448,7 +457,7 @@ export const distributeBattleRewards = async (
         };
       }
 
-      const receiverAutoDisassemble = autoDisassembleSettings.get(receiver.characterId) || {
+      const receiverAutoDisassemble = autoDisassembleSettings.get(receiverCharacterId) || {
         enabled: false,
         maxQualityRank: 1,
       };
@@ -458,7 +467,7 @@ export const distributeBattleRewards = async (
         for (let i = 0; i < drop.quantity; i++) {
           const createResult = await createItem(
             receiver.userId,
-            receiver.characterId,
+            receiverCharacterId,
             drop.itemDefId,
             1,
             createOptions
@@ -466,7 +475,7 @@ export const distributeBattleRewards = async (
 
           if (!createResult.success) {
             if (createResult.message === '背包已满') {
-              queuePendingMailItem(receiver, {
+              queuePendingMailItem(receiver, receiverCharacterId, {
                 item_def_id: drop.itemDefId,
                 qty: 1,
                 options: {
@@ -474,7 +483,7 @@ export const distributeBattleRewards = async (
                   equipOptions: createOptions.equipOptions,
                 },
               });
-              appendRewardRecord(receiver.characterId, drop.itemDefId, itemName, 1, []);
+              appendRewardRecord(receiverCharacterId, drop.itemDefId, itemName, 1, []);
             } else {
               console.warn(`物品创建失败: ${drop.itemDefId}, ${createResult.message}`);
             }
@@ -495,7 +504,7 @@ export const distributeBattleRewards = async (
           if (shouldDisassembleCurrent && disassembleRewardItemDefId) {
             const rewardCreateResult = await createItem(
               receiver.userId,
-              receiver.characterId,
+              receiverCharacterId,
               disassembleRewardItemDefId,
               1,
               {
@@ -510,26 +519,26 @@ export const distributeBattleRewards = async (
               if (sourceItemIds.length > 0) {
                 await client.query(
                   'DELETE FROM item_instance WHERE owner_character_id = $1 AND id = ANY($2)',
-                  [receiver.characterId, sourceItemIds]
+                  [receiverCharacterId, sourceItemIds]
                 );
               }
 
               const rewardMeta = await getItemMeta(disassembleRewardItemDefId);
               if (rewardCreateResult.success) {
-                appendCollectCount(receiver.characterId, disassembleRewardItemDefId, 1);
+                appendCollectCount(receiverCharacterId, disassembleRewardItemDefId, 1);
                 appendRewardRecord(
-                  receiver.characterId,
+                  receiverCharacterId,
                   disassembleRewardItemDefId,
                   rewardMeta.name,
                   1,
                   rewardCreateResult.itemIds || []
                 );
               } else {
-                queuePendingMailItem(receiver, {
+                queuePendingMailItem(receiver, receiverCharacterId, {
                   item_def_id: disassembleRewardItemDefId,
                   qty: 1,
                 });
-                appendRewardRecord(receiver.characterId, disassembleRewardItemDefId, rewardMeta.name, 1, []);
+                appendRewardRecord(receiverCharacterId, disassembleRewardItemDefId, rewardMeta.name, 1, []);
               }
               continue;
             }
@@ -537,25 +546,25 @@ export const distributeBattleRewards = async (
             console.warn(`自动分解入包失败，保留原装备: ${disassembleRewardItemDefId}, ${rewardCreateResult.message}`);
           }
 
-          appendCollectCount(receiver.characterId, drop.itemDefId, 1);
-          appendRewardRecord(receiver.characterId, drop.itemDefId, itemName, 1, createResult.itemIds || []);
+          appendCollectCount(receiverCharacterId, drop.itemDefId, 1);
+          appendRewardRecord(receiverCharacterId, drop.itemDefId, itemName, 1, createResult.itemIds || []);
         }
         continue;
       }
 
       const createResult = await createItem(
         receiver.userId,
-        receiver.characterId,
+        receiverCharacterId,
         drop.itemDefId,
         drop.quantity,
         createOptions
       );
 
       if (createResult.success) {
-        appendCollectCount(receiver.characterId, drop.itemDefId, drop.quantity);
-        appendRewardRecord(receiver.characterId, drop.itemDefId, itemName, drop.quantity, createResult.itemIds || []);
+        appendCollectCount(receiverCharacterId, drop.itemDefId, drop.quantity);
+        appendRewardRecord(receiverCharacterId, drop.itemDefId, itemName, drop.quantity, createResult.itemIds || []);
       } else if (createResult.message === '背包已满') {
-        queuePendingMailItem(receiver, {
+        queuePendingMailItem(receiver, receiverCharacterId, {
           item_def_id: drop.itemDefId,
           qty: drop.quantity,
           options: {
@@ -563,7 +572,7 @@ export const distributeBattleRewards = async (
             equipOptions: createOptions.equipOptions,
           },
         });
-        appendRewardRecord(receiver.characterId, drop.itemDefId, itemName, drop.quantity, []);
+        appendRewardRecord(receiverCharacterId, drop.itemDefId, itemName, drop.quantity, []);
       } else {
         console.warn(`物品创建失败: ${drop.itemDefId}, ${createResult.message}`);
       }
@@ -678,4 +687,3 @@ export const getItemDefInfo = async (itemDefId: string): Promise<{
   );
   return result.rows[0] || null;
 };
-

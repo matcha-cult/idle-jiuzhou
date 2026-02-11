@@ -818,6 +818,20 @@ export const isDisassemblableBagItem = (item: {
   return isTechniqueBookSubCategory(item.subCategory);
 };
 
+export const collectBatchDisassembleEquipmentCandidates = (
+  items: BagItem[],
+): BagItem[] => {
+  const out: BagItem[] = [];
+  for (const item of items) {
+    if (item.location !== "bag") continue;
+    if (item.locked) continue;
+    if (item.category !== "equipment") continue;
+    if (!isDisassemblableBagItem(item)) continue;
+    out.push(item);
+  }
+  return out;
+};
+
 const mapCategory = (
   value: unknown,
   subCategoryValue?: unknown,

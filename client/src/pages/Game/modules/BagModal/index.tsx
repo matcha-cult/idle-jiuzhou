@@ -28,6 +28,7 @@ import {
   buildRefineCostPlan,
   calcUseEffectDelta,
   categoryLabels,
+  collectBatchDisassembleEquipmentCandidates,
   collectGemCandidates,
   formatPermyriadPercent,
   formatSignedNumber,
@@ -613,7 +614,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
     let list = bagOnlyItems.filter((i) => !i.locked);
     if (batchMode === 'disassemble') {
-      list = list.filter((i) => i.category === 'equipment');
+      list = collectBatchDisassembleEquipmentCandidates(list);
       if (batchEquipSlot !== 'all') {
         list = list.filter((i) => (i.equip?.equipSlot ?? '') === batchEquipSlot);
       }
