@@ -49,6 +49,23 @@
   gap: 10px;
 }
 
+.team-left-segmented-wrap {
+  display: none;
+}
+
+.team-left-segmented {
+  width: max-content;
+
+  .ant-segmented-item-label {
+    min-height: 34px;
+    line-height: 34px;
+    padding-inline: 12px;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+}
+
 .team-left-item {
   width: 100%;
   height: 40px;
@@ -59,8 +76,10 @@
 .team-right {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .team-pane {
@@ -197,6 +216,106 @@
   justify-content: flex-end;
 }
 
+.team-mobile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.team-mobile-card {
+  border: 1px solid var(--border-color-soft);
+  border-radius: 12px;
+  background: var(--panel-bg-soft);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.team-mobile-card .team-member-cell {
+  flex: 1;
+}
+
+.team-mobile-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.team-mobile-card-title {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--text-color);
+  line-height: 1.35;
+}
+
+.team-mobile-card-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.team-mobile-card-tags .ant-tag {
+  margin: 0;
+}
+
+.team-mobile-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-width: 0;
+}
+
+.team-mobile-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.team-mobile-meta-k {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+}
+
+.team-mobile-meta-v {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-color);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.team-mobile-message {
+  border: 1px solid var(--border-color-soft);
+  border-radius: 10px;
+  background: var(--panel-bg);
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  word-break: break-word;
+}
+
+.team-mobile-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.team-mobile-actions .ant-btn {
+  height: 30px;
+  border-radius: 8px;
+  padding: 0 12px;
+}
+
 .team-empty {
   padding: 18px 0;
   text-align: center;
@@ -244,11 +363,143 @@
 }
 
 @media screen and (max-width: 768px) {
+  .team-modal .ant-modal {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    margin: 8px auto;
+  }
+
+  .team-modal .ant-modal-content,
+  .team-modal .ant-modal-body {
+    height: 100%;
+    min-height: 0;
+  }
+
   .team-modal-shell {
-    height: 76vh;
+    height: min(88dvh, 760px);
+    max-height: calc(100dvh - 16px);
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .team-left {
-    flex: 0 0 128px;
+    flex: 0 0 auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color-soft);
+  }
+
+  .team-left-title {
+    padding: 10px 12px 8px;
+    border-bottom: none;
+    gap: 8px;
+  }
+
+  .team-left-name {
+    font-size: 13px;
+  }
+
+  .team-left-list {
+    display: none;
+  }
+
+  .team-left-segmented-wrap {
+    display: block;
+    padding: 0 12px 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+
+  .team-left-segmented {
+    min-width: 100%;
+  }
+
+  .team-pane-top {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .team-top-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .team-pane-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .team-pane-actions .ant-btn {
+    height: 32px;
+    border-radius: 10px;
+  }
+
+  .team-filters {
+    gap: 8px;
+  }
+
+  .team-filters .ant-input-affix-wrapper {
+    width: 100%;
+  }
+
+  .team-pane-body {
+    padding: 10px 12px 12px;
+  }
+
+  .team-kv {
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 8px;
+    padding: 9px 10px;
+  }
+
+  .team-v {
+    white-space: normal;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+
+  .team-mobile-card {
+    padding: 9px;
+  }
+
+  .team-mobile-card-title {
+    font-size: 12px;
+  }
+
+  .team-mobile-card-tags {
+    gap: 4px;
+  }
+
+  .team-mobile-meta-line {
+    gap: 6px 8px;
+  }
+
+  .team-mobile-message {
+    padding: 6px 7px;
+  }
+
+  .team-mobile-actions .ant-btn {
+    height: 28px;
+  }
+
+  .team-submodal .ant-modal {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px);
+  }
+
+  .team-settings-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .team-settings-inline {
+    grid-template-columns: 50px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .team-settings-actions {
+    justify-content: flex-end;
   }
 }

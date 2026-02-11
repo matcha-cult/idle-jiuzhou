@@ -1,4 +1,4 @@
-import { App, Badge, Button, Input, Modal, Select, Switch, Table, Tag, type TableProps } from 'antd';
+import { App, Badge, Button, Input, Modal, Segmented, Select, Switch, Table, Tag, type TableProps } from 'antd';
 import { SearchOutlined, UserOutlined } from '@ant-design/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
@@ -27,6 +27,8 @@ import {
 import './index.scss';
 
 type TeamPanelKey = 'my' | 'apply' | 'near' | 'lobby';
+const teamMenuKeys: TeamPanelKey[] = ['my', 'apply', 'near', 'lobby'];
+const LOBBY_SEARCH_DEBOUNCE_MS = 450;
 
 interface TeamModalProps {
   open: boolean;
@@ -54,7 +56,12 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
   const { message } = App.useApp();
   const messageRef = useRef(message);
   const [panel, setPanel] = useState<TeamPanelKey>('my');
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth <= 768;
+  });
   const [lobbyQuery, setLobbyQuery] = useState('');
+  const lobbyQueryRef = useRef('');
 
   const [character, setCharacter] = useState<CharacterData | null>(gameSocket.getCharacter());
   const characterId = character?.id ?? null;
@@ -116,6 +123,16 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
   }, []);
 
   useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
+    lobbyQueryRef.current = lobbyQuery.trim();
+  }, [lobbyQuery]);
+
+  useEffect(() => {
     if (!teamInfo) {
       setMembers([]);
       return;
@@ -139,6 +156,34 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
       { key: 'lobby' as const, label: '队伍大厅' },
     ];
   }, [applicationUnread]);
+
+  const mobileMenuOptions = useMemo(() => {
+    const applyLabel =
+      applicationUnread > 0 ? (
+        <Badge count={applicationUnread} size="small" overflowCount={99}>
+          <span>申请</span>
+        </Badge>
+      ) : (
+        '申请'
+      );
+    return [
+      { value: 'my', label: '我的' },
+      { value: 'apply', label: applyLabel },
+      { value: 'near', label: '附近' },
+      { value: 'lobby', label: '大厅' },
+    ];
+  }, [applicationUnread]);
+
+  const handlePanelChange = useCallback(
+    (nextPanel: TeamPanelKey) => {
+      if (nextPanel === 'apply' && isLeader && inTeam) {
+        const maxTime = applications.reduce((m, a) => Math.max(m, Number(a.time) || 0), 0);
+        if (maxTime > 0 && maxTime > applicationsSeenAt) updateApplicationsSeenAt(maxTime);
+      }
+      setPanel(nextPanel);
+    },
+    [applications, applicationsSeenAt, inTeam, isLeader, updateApplicationsSeenAt],
+  );
 
   const refreshMyTeam = useCallback(async (cid: number) => {
     try {
@@ -229,8 +274,8 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
     await refreshMyTeam(cid);
     await refreshInvitations(cid);
     await refreshNearbyTeams(cid, character?.currentMapId);
-    await refreshLobbyTeams(cid, lobbyQuery.trim());
-  }, [character?.currentMapId, characterId, lobbyQuery, refreshInvitations, refreshLobbyTeams, refreshMyTeam, refreshNearbyTeams]);
+    await refreshLobbyTeams(cid, lobbyQueryRef.current || undefined);
+  }, [character?.currentMapId, characterId, refreshInvitations, refreshLobbyTeams, refreshMyTeam, refreshNearbyTeams]);
 
   useEffect(() => {
     if (!open) return;
@@ -264,9 +309,10 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
 
   useEffect(() => {
     if (!open || !characterId) return;
+    const keyword = lobbyQuery.trim();
     const timer = window.setTimeout(() => {
-      void refreshLobbyTeams(characterId, lobbyQuery.trim());
-    }, 200);
+      void refreshLobbyTeams(characterId, keyword || undefined);
+    }, LOBBY_SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [open, characterId, lobbyQuery, refreshLobbyTeams]);
 
@@ -556,13 +602,54 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
               <span className="team-v">{teamInfo?.autoJoinEnabled ? `开启（${teamInfo?.autoJoinMinRealm}+）` : '关闭'}</span>
             </div>
             <div className="team-section-title">成员列表</div>
-            <Table
-              size="small"
-              rowKey={(row) => row.id}
-              pagination={false}
-              columns={memberColumns}
-              dataSource={members}
-            />
+            {isMobile ? (
+              <div className="team-mobile-list">
+                {members.map((row) => (
+                  <div key={row.id} className="team-mobile-card">
+                    <div className="team-mobile-card-head">
+                      <div className="team-member-cell">
+                        <span className="team-member-icon">
+                          <UserOutlined />
+                        </span>
+                        <span className="team-member-name">{row.name}</span>
+                      </div>
+                      <div className="team-mobile-card-tags">
+                        {row.role === 'leader' ? <Tag color="gold">队长</Tag> : <Tag>队员</Tag>}
+                        <Tag color={row.online ? 'green' : 'default'}>{row.online ? '在线' : '离线'}</Tag>
+                      </div>
+                    </div>
+                    <div className="team-mobile-meta-line">
+                      <span className="team-mobile-meta-item">
+                        <span className="team-mobile-meta-k">境界</span>
+                        <span className="team-mobile-meta-v">{row.realm || '—'}</span>
+                      </span>
+                    </div>
+                    {isLeader ? (
+                      <div className="team-mobile-actions">
+                        <Button
+                          size="small"
+                          danger
+                          disabled={row.role === 'leader'}
+                          loading={loadingKey === `kick-${row.characterId}`}
+                          onClick={() => onKickMember(row.characterId)}
+                        >
+                          踢出
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Table
+                size="small"
+                rowKey={(row) => row.id}
+                pagination={false}
+                columns={memberColumns}
+                dataSource={members}
+              />
+            )}
+            {isMobile && members.length === 0 ? <div className="team-empty">暂无成员</div> : null}
           </>
         ) : (
           <div className="team-empty">暂无队伍，可创建或前往大厅加入</div>
@@ -637,25 +724,16 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
         {isLeader && inTeam ? (
           <>
             <div className="team-section-title">入队申请</div>
-            <Table
-              size="small"
-              rowKey={(row) => row.id}
-              pagination={false}
-              columns={[
-                { title: '玩家', dataIndex: 'name', key: 'name', width: 140 },
-                { title: '境界', dataIndex: 'realm', key: 'realm', width: 160 },
-                {
-                  title: '留言',
-                  dataIndex: 'message',
-                  key: 'message',
-                  render: (v: string | null) => String(v || '—'),
-                },
-                {
-                  title: '操作',
-                  key: 'action',
-                  width: 180,
-                  render: (_: unknown, row: TeamApplication) => (
-                    <div className="team-actions">
+            {isMobile ? (
+              <div className="team-mobile-list">
+                {applications.map((row) => (
+                  <div key={row.id} className="team-mobile-card">
+                    <div className="team-mobile-card-head">
+                      <div className="team-mobile-card-title">{row.name}</div>
+                      <Tag>{row.realm || '—'}</Tag>
+                    </div>
+                    <div className="team-mobile-message">{String(row.message || '无留言')}</div>
+                    <div className="team-mobile-actions">
                       <Button
                         size="small"
                         type="primary"
@@ -668,36 +746,71 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
                         拒绝
                       </Button>
                     </div>
-                  ),
-                },
-              ]}
-              dataSource={applications}
-            />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Table
+                size="small"
+                rowKey={(row) => row.id}
+                pagination={false}
+                columns={[
+                  { title: '玩家', dataIndex: 'name', key: 'name', width: 140 },
+                  { title: '境界', dataIndex: 'realm', key: 'realm', width: 160 },
+                  {
+                    title: '留言',
+                    dataIndex: 'message',
+                    key: 'message',
+                    render: (v: string | null) => String(v || '—'),
+                  },
+                  {
+                    title: '操作',
+                    key: 'action',
+                    width: 180,
+                    render: (_: unknown, row: TeamApplication) => (
+                      <div className="team-actions">
+                        <Button
+                          size="small"
+                          type="primary"
+                          onClick={() => approveApplication(row.id, true)}
+                          loading={loadingKey === `handleApp-${row.id}`}
+                        >
+                          通过
+                        </Button>
+                        <Button size="small" onClick={() => approveApplication(row.id, false)} loading={loadingKey === `handleApp-${row.id}`}>
+                          拒绝
+                        </Button>
+                      </div>
+                    ),
+                  },
+                ]}
+                dataSource={applications}
+              />
+            )}
             {applications.length === 0 ? <div className="team-empty">暂无申请</div> : null}
           </>
         ) : null}
 
         <div className="team-section-title">收到邀请</div>
-        <Table
-          size="small"
-          rowKey={(row) => row.id}
-          pagination={false}
-          columns={[
-            { title: '队伍', dataIndex: 'teamName', key: 'teamName', width: 160 },
-            { title: '邀请者', dataIndex: 'inviterName', key: 'inviterName', width: 140 },
-            { title: '目标', dataIndex: 'goal', key: 'goal' },
-            {
-              title: '留言',
-              dataIndex: 'message',
-              key: 'message',
-              render: (v: string | null) => String(v || '—'),
-            },
-            {
-              title: '操作',
-              key: 'action',
-              width: 180,
-              render: (_: unknown, row: TeamInvitation) => (
-                <div className="team-actions">
+        {isMobile ? (
+          <div className="team-mobile-list">
+            {invitations.map((row) => (
+              <div key={row.id} className="team-mobile-card">
+                <div className="team-mobile-card-head">
+                  <div className="team-mobile-card-title">{row.teamName}</div>
+                </div>
+                <div className="team-mobile-meta-line">
+                  <span className="team-mobile-meta-item">
+                    <span className="team-mobile-meta-k">邀请者</span>
+                    <span className="team-mobile-meta-v">{row.inviterName || '—'}</span>
+                  </span>
+                  <span className="team-mobile-meta-item">
+                    <span className="team-mobile-meta-k">目标</span>
+                    <span className="team-mobile-meta-v">{row.goal || '—'}</span>
+                  </span>
+                </div>
+                <div className="team-mobile-message">{String(row.message || '无留言')}</div>
+                <div className="team-mobile-actions">
                   <Button
                     size="small"
                     type="primary"
@@ -711,11 +824,49 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
                     拒绝
                   </Button>
                 </div>
-              ),
-            },
-          ]}
-          dataSource={invitations}
-        />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Table
+            size="small"
+            rowKey={(row) => row.id}
+            pagination={false}
+            columns={[
+              { title: '队伍', dataIndex: 'teamName', key: 'teamName', width: 160 },
+              { title: '邀请者', dataIndex: 'inviterName', key: 'inviterName', width: 140 },
+              { title: '目标', dataIndex: 'goal', key: 'goal' },
+              {
+                title: '留言',
+                dataIndex: 'message',
+                key: 'message',
+                render: (v: string | null) => String(v || '—'),
+              },
+              {
+                title: '操作',
+                key: 'action',
+                width: 180,
+                render: (_: unknown, row: TeamInvitation) => (
+                  <div className="team-actions">
+                    <Button
+                      size="small"
+                      type="primary"
+                      onClick={() => onHandleInvitation(row.id, true)}
+                      disabled={inTeam}
+                      loading={loadingKey === `handleInvite-${row.id}`}
+                    >
+                      接受
+                    </Button>
+                    <Button size="small" onClick={() => onHandleInvitation(row.id, false)} loading={loadingKey === `handleInvite-${row.id}`}>
+                      拒绝
+                    </Button>
+                  </div>
+                ),
+              },
+            ]}
+            dataSource={invitations}
+          />
+        )}
         {invitations.length === 0 ? <div className="team-empty">暂无邀请</div> : null}
       </div>
     </div>
@@ -728,29 +879,67 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
         <div className="team-subtitle">查看你附近的队伍并申请加入</div>
       </div>
       <div className="team-pane-body">
-        <Table
-          size="small"
-          rowKey={(row) => row.id}
-          pagination={false}
-          columns={[
-            { title: '队伍', dataIndex: 'name', key: 'name', width: 160 },
-            { title: '队长', dataIndex: 'leader', key: 'leader', width: 120 },
-            { title: '人数', key: 'members', width: 120, render: (_: unknown, row: TeamEntry) => `${row.members}/${row.cap}` },
-            { title: '目标', dataIndex: 'goal', key: 'goal' },
-            { title: '距离', dataIndex: 'distance', key: 'distance', width: 110 },
-            {
-              title: '操作',
-              key: 'action',
-              width: 130,
-              render: (_: unknown, row: TeamEntry) => (
-                <Button size="small" type="primary" onClick={() => requestJoin(row)} disabled={inTeam} loading={loadingKey === `apply-${row.id}`}>
-                  申请加入
-                </Button>
-              ),
-            },
-          ]}
-          dataSource={nearbyTeams}
-        />
+        {isMobile ? (
+          <div className="team-mobile-list">
+            {nearbyTeams.map((row) => (
+              <div key={row.id} className="team-mobile-card">
+                <div className="team-mobile-card-head">
+                  <div className="team-mobile-card-title">{row.name || '未命名队伍'}</div>
+                  <Tag>{`${row.members}/${row.cap}`}</Tag>
+                </div>
+                <div className="team-mobile-meta-line">
+                  <span className="team-mobile-meta-item">
+                    <span className="team-mobile-meta-k">队长</span>
+                    <span className="team-mobile-meta-v">{row.leader || '—'}</span>
+                  </span>
+                  <span className="team-mobile-meta-item">
+                    <span className="team-mobile-meta-k">目标</span>
+                    <span className="team-mobile-meta-v">{row.goal || '—'}</span>
+                  </span>
+                  <span className="team-mobile-meta-item">
+                    <span className="team-mobile-meta-k">距离</span>
+                    <span className="team-mobile-meta-v">{row.distance || '—'}</span>
+                  </span>
+                </div>
+                <div className="team-mobile-actions">
+                  <Button size="small" type="primary" onClick={() => requestJoin(row)} disabled={inTeam} loading={loadingKey === `apply-${row.id}`}>
+                    申请加入
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Table
+            size="small"
+            rowKey={(row) => row.id}
+            pagination={false}
+            columns={[
+              { title: '队伍', dataIndex: 'name', key: 'name', width: 160 },
+              { title: '队长', dataIndex: 'leader', key: 'leader', width: 120 },
+              { title: '人数', key: 'members', width: 120, render: (_: unknown, row: TeamEntry) => `${row.members}/${row.cap}` },
+              { title: '目标', dataIndex: 'goal', key: 'goal' },
+              { title: '距离', dataIndex: 'distance', key: 'distance', width: 110 },
+              {
+                title: '操作',
+                key: 'action',
+                width: 130,
+                render: (_: unknown, row: TeamEntry) => (
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={() => requestJoin(row)}
+                    disabled={inTeam}
+                    loading={loadingKey === `apply-${row.id}`}
+                  >
+                    申请加入
+                  </Button>
+                ),
+              },
+            ]}
+            dataSource={nearbyTeams}
+          />
+        )}
         {nearbyTeams.length === 0 ? <div className="team-empty">附近暂无队伍</div> : null}
       </div>
     </div>
@@ -778,35 +967,73 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
         </div>
       </div>
       <div className="team-pane-body">
-        <Table
-          size="small"
-          rowKey={(row) => row.id}
-          pagination={false}
-          columns={[
-            { title: '队伍', dataIndex: 'name', key: 'name', width: 170 },
-            { title: '队长', dataIndex: 'leader', key: 'leader', width: 120 },
-            { title: '人数', key: 'members', width: 120, render: (_: unknown, row: TeamEntry) => `${row.members}/${row.cap}` },
-            { title: '目标', dataIndex: 'goal', key: 'goal' },
-            { title: '最低境界', dataIndex: 'minRealm', key: 'minRealm', width: 120 },
-            {
-              title: '操作',
-              key: 'action',
-              width: 120,
-              render: (_: unknown, row: TeamEntry) => (
-                <Button
-                  size="small"
-                  type="primary"
-                  onClick={() => requestJoin(row)}
-                  disabled={inTeam || row.members >= row.cap}
-                  loading={loadingKey === `apply-${row.id}`}
-                >
-                  申请加入
-                </Button>
-              ),
-            },
-          ]}
-          dataSource={filteredLobbyTeams}
-        />
+        {isMobile ? (
+          <div className="team-mobile-list">
+            {filteredLobbyTeams.map((row) => (
+              <div key={row.id} className="team-mobile-card">
+                <div className="team-mobile-card-head">
+                  <div className="team-mobile-card-title">{row.name || '未命名队伍'}</div>
+                  <Tag>{`${row.members}/${row.cap}`}</Tag>
+                </div>
+                <div className="team-mobile-meta-line">
+                  <span className="team-mobile-meta-item">
+                    <span className="team-mobile-meta-k">队长</span>
+                    <span className="team-mobile-meta-v">{row.leader || '—'}</span>
+                  </span>
+                  <span className="team-mobile-meta-item">
+                    <span className="team-mobile-meta-k">目标</span>
+                    <span className="team-mobile-meta-v">{row.goal || '—'}</span>
+                  </span>
+                  <span className="team-mobile-meta-item">
+                    <span className="team-mobile-meta-k">最低境界</span>
+                    <span className="team-mobile-meta-v">{row.minRealm || '—'}</span>
+                  </span>
+                </div>
+                <div className="team-mobile-actions">
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={() => requestJoin(row)}
+                    disabled={inTeam || row.members >= row.cap}
+                    loading={loadingKey === `apply-${row.id}`}
+                  >
+                    申请加入
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Table
+            size="small"
+            rowKey={(row) => row.id}
+            pagination={false}
+            columns={[
+              { title: '队伍', dataIndex: 'name', key: 'name', width: 170 },
+              { title: '队长', dataIndex: 'leader', key: 'leader', width: 120 },
+              { title: '人数', key: 'members', width: 120, render: (_: unknown, row: TeamEntry) => `${row.members}/${row.cap}` },
+              { title: '目标', dataIndex: 'goal', key: 'goal' },
+              { title: '最低境界', dataIndex: 'minRealm', key: 'minRealm', width: 120 },
+              {
+                title: '操作',
+                key: 'action',
+                width: 120,
+                render: (_: unknown, row: TeamEntry) => (
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={() => requestJoin(row)}
+                    disabled={inTeam || row.members >= row.cap}
+                    loading={loadingKey === `apply-${row.id}`}
+                  >
+                    申请加入
+                  </Button>
+                ),
+              },
+            ]}
+            dataSource={filteredLobbyTeams}
+          />
+        )}
         {filteredLobbyTeams.length === 0 ? <div className="team-empty">暂无匹配队伍</div> : null}
       </div>
     </div>
@@ -842,24 +1069,33 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
             <img className="team-left-icon" src={coin01} alt="组队" />
             <div className="team-left-name">组队</div>
           </div>
-          <div className="team-left-list">
-            {menuItems.map((it) => (
-              <Button
-                key={it.key}
-                type={panel === it.key ? 'primary' : 'default'}
-                className="team-left-item"
-                onClick={() => {
-                  if (it.key === 'apply' && isLeader && inTeam) {
-                    const maxTime = applications.reduce((m, a) => Math.max(m, Number(a.time) || 0), 0);
-                    if (maxTime > 0 && maxTime > applicationsSeenAt) updateApplicationsSeenAt(maxTime);
-                  }
-                  setPanel(it.key);
+          {isMobile ? (
+            <div className="team-left-segmented-wrap">
+              <Segmented
+                className="team-left-segmented"
+                value={panel}
+                options={mobileMenuOptions}
+                onChange={(value) => {
+                  if (typeof value !== 'string') return;
+                  if (!teamMenuKeys.includes(value as TeamPanelKey)) return;
+                  handlePanelChange(value as TeamPanelKey);
                 }}
-              >
-                {it.label}
-              </Button>
-            ))}
-          </div>
+              />
+            </div>
+          ) : (
+            <div className="team-left-list">
+              {menuItems.map((it) => (
+                <Button
+                  key={it.key}
+                  type={panel === it.key ? 'primary' : 'default'}
+                  className="team-left-item"
+                  onClick={() => handlePanelChange(it.key)}
+                >
+                  {it.label}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="team-right">{panelContent()}</div>
       </div>
