@@ -7,7 +7,9 @@ import StatsShell from './StatsShell';
 import './index.scss';
 
 type ChatChannel = 'all' | 'world' | 'team' | 'sect' | 'private' | 'battle' | 'system';
+type PublicChatChannel = Exclude<ChatChannel, 'all' | 'private'>;
 const MAX_MESSAGES_PER_CHANNEL = 200;
+const MAX_MESSAGES_ALL = 1200;
 
 interface Message {
   id: string;
@@ -21,6 +23,16 @@ interface Message {
   pmTargetId?: string;
   senderCharacterId?: number;
   pmTargetCharacterId?: number;
+}
+
+interface MessageBuckets {
+  all: Message[];
+  world: Message[];
+  team: Message[];
+  sect: Message[];
+  battle: Message[];
+  system: Message[];
+  privateByTarget: Record<string, Message[]>;
 }
 
 interface PrivateTarget {
@@ -196,21 +208,93 @@ const makePrivateTargetId = (characterId: number) => `pm-${characterId}`;
 
 const initialMessages: Message[] = [];
 
-const trimMessagesByChannel = (list: Message[]): Message[] => {
-  const counts = new Map<string, number>();
+const createEmptyMessageBuckets = (): MessageBuckets => ({
+  all: [],
+  world: [],
+  team: [],
+  sect: [],
+  battle: [],
+  system: [],
+  privateByTarget: {},
+});
 
-  const kept: Message[] = [];
-  for (let i = list.length - 1; i >= 0; i -= 1) {
-    const msg = list[i];
-    const countKey = msg.channel === 'private' ? `private:${msg.pmTargetId ?? 'unknown'}` : msg.channel;
-    const nextCount = (counts.get(countKey) ?? 0) + 1;
-    if (nextCount > MAX_MESSAGES_PER_CHANNEL) continue;
-    counts.set(countKey, nextCount);
-    kept.push(msg);
-  }
+const pushWithLimit = <T,>(list: T[], item: T, limit: number): T[] => {
+  if (limit <= 0) return [];
+  if (list.length < limit) return [...list, item];
+  return [...list.slice(list.length - limit + 1), item];
+};
 
-  kept.reverse();
-  return kept;
+const replaceMessageById = (
+  list: Message[],
+  messageId: string,
+  nextMessage: Message,
+): { replaced: boolean; list: Message[] } => {
+  const idx = list.findIndex((msg) => msg.id === messageId);
+  if (idx < 0) return { replaced: false, list };
+  const next = list.slice();
+  next[idx] = { ...next[idx], ...nextMessage, id: nextMessage.id };
+  return { replaced: true, list: next };
+};
+
+const isPublicChatChannel = (channel: ChatChannel): channel is PublicChatChannel => {
+  return channel === 'world' || channel === 'team' || channel === 'sect' || channel === 'battle' || channel === 'system';
+};
+
+const appendPublicMessage = (
+  buckets: MessageBuckets,
+  message: Message & { channel: PublicChatChannel },
+): MessageBuckets => {
+  if (buckets.all.some((msg) => msg.id === message.id)) return buckets;
+
+  const channelList = buckets[message.channel];
+  const nextChannelList = pushWithLimit(channelList, message, MAX_MESSAGES_PER_CHANNEL);
+  return {
+    ...buckets,
+    all: pushWithLimit(buckets.all, message, MAX_MESSAGES_ALL),
+    [message.channel]: nextChannelList,
+  } as MessageBuckets;
+};
+
+const appendPrivateMessage = (buckets: MessageBuckets, message: Message): MessageBuckets => {
+  const targetId = message.pmTargetId ?? makePrivateTargetId(0);
+  const normalizedMessage = { ...message, channel: 'private' as const, pmTargetId: targetId };
+  if (buckets.all.some((msg) => msg.id === normalizedMessage.id)) return buckets;
+
+  const currentList = buckets.privateByTarget[targetId] ?? [];
+  return {
+    ...buckets,
+    all: pushWithLimit(buckets.all, normalizedMessage, MAX_MESSAGES_ALL),
+    privateByTarget: {
+      ...buckets.privateByTarget,
+      [targetId]: pushWithLimit(currentList, normalizedMessage, MAX_MESSAGES_PER_CHANNEL),
+    },
+  };
+};
+
+const appendMessage = (buckets: MessageBuckets, message: Message): MessageBuckets => {
+  if (message.channel === 'private') return appendPrivateMessage(buckets, message);
+  const publicChannel = message.channel;
+  if (!isPublicChatChannel(publicChannel)) return buckets;
+  return appendPublicMessage(buckets, { ...message, channel: publicChannel });
+};
+
+const appendMessages = (buckets: MessageBuckets, messages: Message[]): MessageBuckets => {
+  return messages.reduce((acc, message) => appendMessage(acc, message), buckets);
+};
+
+const removePrivateTargetMessages = (buckets: MessageBuckets, targetId: string): MessageBuckets => {
+  const nextPrivateByTarget = { ...buckets.privateByTarget };
+  delete nextPrivateByTarget[targetId];
+  return {
+    ...buckets,
+    all: buckets.all.filter((msg) => !(msg.channel === 'private' && msg.pmTargetId === targetId)),
+    privateByTarget: nextPrivateByTarget,
+  };
+};
+
+const buildInitialMessageBuckets = (list: Message[]): MessageBuckets => {
+  if (list.length === 0) return createEmptyMessageBuckets();
+  return appendMessages(createEmptyMessageBuckets(), list);
 };
 
 const BATTLE_INLINE_TOKEN_RE = /⟦(role|skill|damage|heal|state|round)\|([^⟧]*)⟧/g;
@@ -330,13 +414,16 @@ const buildInitialPrivateTargets = (list: Message[]): PrivateTarget[] => {
   return Array.from(map.values());
 };
 
+const initialMessageBuckets = buildInitialMessageBuckets(initialMessages);
+const initialPrivateTargets = buildInitialPrivateTargets(initialMessageBuckets.all);
+
 const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer, isMobile }, ref) => {
   const [activeChannel, setActiveChannel] = useState<ChatChannel>('all');
   const [inputValue, setInputValue] = useState('');
-  const [messages, setMessages] = useState<Message[]>(() => trimMessagesByChannel(initialMessages));
+  const [messageBuckets, setMessageBuckets] = useState<MessageBuckets>(initialMessageBuckets);
   const [character, setCharacter] = useState<CharacterData | null>(gameSocket.getCharacter());
-  const [privateTargets, setPrivateTargets] = useState<PrivateTarget[]>(() => buildInitialPrivateTargets(initialMessages));
-  const [activePrivateTargetId, setActivePrivateTargetId] = useState<string>(() => buildInitialPrivateTargets(initialMessages)[0]?.id ?? '');
+  const [privateTargets, setPrivateTargets] = useState<PrivateTarget[]>(initialPrivateTargets);
+  const [activePrivateTargetId, setActivePrivateTargetId] = useState<string>(initialPrivateTargets[0]?.id ?? '');
   const [onlinePlayers, setOnlinePlayers] = useState<OnlinePlayerDto[]>([]);
   const [onlineTotal, setOnlineTotal] = useState(0);
   const [dropStatsOpen, setDropStatsOpen] = useState(false);
@@ -349,7 +436,11 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
   const [outputActor, setOutputActor] = useState<string | undefined>(undefined);
   const [battleStatsFromTs, setBattleStatsFromTs] = useState(0);
   const [onlineDrawerOpen, setOnlineDrawerOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mainMessagesRef = useRef<HTMLDivElement>(null);
+  const privateMessagesRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const prevMessageViewKeyRef = useRef('');
+  const prevMessageTailIdRef = useRef('');
   const inputRef = useRef<InputRef>(null);
   const myCharacterIdRef = useRef<number | null>(character?.id ?? null);
 
@@ -390,7 +481,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
           return [...prev, { id: pmTargetId, name, title, characterId: otherCharacterId }];
         });
 
-        setMessages((prev) => {
+        setMessageBuckets((prev) => {
           const nextMessage: Message = {
             id: msg.id,
             clientId: msg.clientId,
@@ -398,7 +489,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
             senderName: msg.senderName ?? '',
             senderCharacterId: msg.senderCharacterId,
             content: msg.content,
-            channel,
+            channel: 'private',
             timestamp: msg.timestamp ?? now,
             isSelf,
             pmTargetId,
@@ -406,22 +497,40 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
           };
 
           if (isSelf && msg.clientId) {
-            const idx = prev.findIndex((m) => m.id === msg.clientId);
-            if (idx >= 0) {
-              const copied = prev.slice();
-              copied[idx] = { ...copied[idx], ...nextMessage, id: msg.id };
-              return trimMessagesByChannel(copied);
+            const privateList = prev.privateByTarget[pmTargetId] ?? [];
+            const privateResult = replaceMessageById(privateList, msg.clientId, nextMessage);
+            const allResult = replaceMessageById(prev.all, msg.clientId, nextMessage);
+            if (privateResult.replaced || allResult.replaced) {
+              const nextPrivateList = privateResult.replaced
+                ? privateResult.list
+                : privateList.some((item) => item.id === nextMessage.id)
+                  ? privateList
+                  : pushWithLimit(privateList, nextMessage, MAX_MESSAGES_PER_CHANNEL);
+              const nextAll = allResult.replaced
+                ? allResult.list
+                : prev.all.some((item) => item.id === nextMessage.id)
+                  ? prev.all
+                  : pushWithLimit(prev.all, nextMessage, MAX_MESSAGES_ALL);
+              return {
+                ...prev,
+                all: nextAll,
+                privateByTarget: {
+                  ...prev.privateByTarget,
+                  [pmTargetId]: nextPrivateList,
+                },
+              };
             }
           }
 
-          if (prev.some((m) => m.id === nextMessage.id)) return prev;
-          return trimMessagesByChannel([...prev, nextMessage]);
+          return appendPrivateMessage(prev, nextMessage);
         });
 
         return;
       }
 
-      setMessages((prev) => {
+      if (!isPublicChatChannel(channel)) return;
+
+      setMessageBuckets((prev) => {
         const nextMessage: Message = {
           id: msg.id,
           clientId: msg.clientId,
@@ -435,33 +544,43 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
         };
 
         if (isSelf && msg.clientId) {
-          const idx = prev.findIndex((m) => m.id === msg.clientId);
-          if (idx >= 0) {
-            const copied = prev.slice();
-            copied[idx] = { ...copied[idx], ...nextMessage, id: msg.id };
-            return trimMessagesByChannel(copied);
+          const channelList = prev[channel];
+          const channelResult = replaceMessageById(channelList, msg.clientId, nextMessage);
+          const allResult = replaceMessageById(prev.all, msg.clientId, nextMessage);
+          if (channelResult.replaced || allResult.replaced) {
+            const nextChannelList = channelResult.replaced
+              ? channelResult.list
+              : channelList.some((item) => item.id === nextMessage.id)
+                ? channelList
+                : pushWithLimit(channelList, nextMessage, MAX_MESSAGES_PER_CHANNEL);
+            const nextAll = allResult.replaced
+              ? allResult.list
+              : prev.all.some((item) => item.id === nextMessage.id)
+                ? prev.all
+                : pushWithLimit(prev.all, nextMessage, MAX_MESSAGES_ALL);
+            return {
+              ...prev,
+              all: nextAll,
+              [channel]: nextChannelList,
+            } as MessageBuckets;
           }
         }
 
-        if (prev.some((m) => m.id === nextMessage.id)) return prev;
-        return trimMessagesByChannel([...prev, nextMessage]);
+        return appendPublicMessage(prev, nextMessage as Message & { channel: PublicChatChannel });
       });
     });
     const unsubscribeChatError = gameSocket.onChatError((error) => {
       const content = String(error?.message ?? '').trim();
       if (!content) return;
-      setMessages((prev) =>
-        trimMessagesByChannel([
-          ...prev,
-          {
-            id: `sys-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            senderTitle: '',
-            senderName: '系统',
-            content,
-            channel: 'system',
-            timestamp: Date.now(),
-          },
-        ]),
+      setMessageBuckets((prev) =>
+        appendMessage(prev, {
+          id: `sys-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          senderTitle: '',
+          senderName: '系统',
+          content,
+          channel: 'system',
+          timestamp: Date.now(),
+        }),
       );
     });
     return () => {
@@ -492,18 +611,15 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
       const tsRaw = ce.detail?.timestamp;
       const timestamp = typeof tsRaw === 'number' && Number.isFinite(tsRaw) ? tsRaw : Date.now();
 
-      setMessages((prev) =>
-        trimMessagesByChannel([
-          ...prev,
-          {
-            id: `sys-${timestamp}-${Math.random().toString(16).slice(2)}`,
-            senderTitle,
-            senderName,
-            content,
-            channel,
-            timestamp,
-          },
-        ]),
+      setMessageBuckets((prev) =>
+        appendMessage(prev, {
+          id: `sys-${timestamp}-${Math.random().toString(16).slice(2)}`,
+          senderTitle,
+          senderName,
+          content,
+          channel,
+          timestamp,
+        }),
       );
     };
 
@@ -541,7 +657,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
       channel: 'battle',
       timestamp: now + idx,
     }));
-    setMessages((prev) => trimMessagesByChannel([...prev, ...next]));
+    setMessageBuckets((prev) => appendMessages(prev, next));
   }, []);
 
   useImperativeHandle(ref, () => ({ openPrivateChat, appendBattleLines }), [appendBattleLines, openPrivateChat]);
@@ -600,7 +716,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
     if (activePrivateTargetId === targetId) {
       setActivePrivateTargetId(nextTargets[0]?.id ?? '');
     }
-    setMessages((prev) => prev.filter((m) => !(m.channel === 'private' && m.pmTargetId === targetId)));
+    setMessageBuckets((prev) => removePrivateTargetMessages(prev, targetId));
   };
 
   const handleSend = () => {
@@ -609,18 +725,15 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
 
     const actualChannel: ChatChannel = activeChannel === 'all' ? 'world' : activeChannel;
     if (actualChannel === 'system' || actualChannel === 'battle') {
-      setMessages((prev) =>
-        trimMessagesByChannel([
-          ...prev,
-          {
-            id: `sys-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            senderTitle: '',
-            senderName: '系统',
-            content: actualChannel === 'system' ? '系统频道不允许发言' : '战况频道不允许发言',
-            channel: 'system',
-            timestamp: Date.now(),
-          },
-        ]),
+      setMessageBuckets((prev) =>
+        appendMessage(prev, {
+          id: `sys-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          senderTitle: '',
+          senderName: '系统',
+          content: actualChannel === 'system' ? '系统频道不允许发言' : '战况频道不允许发言',
+          channel: 'system',
+          timestamp: Date.now(),
+        }),
       );
       setInputValue('');
       return;
@@ -641,10 +754,17 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
     };
 
     if (!gameSocket.isSocketConnected()) {
-      setMessages((prev) =>
-        trimMessagesByChannel([
-          ...prev,
-          baseMessage,
+      const offlineMessage =
+        actualChannel === 'private' && activePrivateTargetId
+          ? ({
+              ...baseMessage,
+              pmTargetId: activePrivateTargetId,
+              pmTargetCharacterId: privateTargets.find((t) => t.id === activePrivateTargetId)?.characterId,
+            } as Message)
+          : baseMessage;
+      setMessageBuckets((prev) =>
+        appendMessages(prev, [
+          offlineMessage,
           {
             id: `sys-${Date.now()}-${Math.random().toString(16).slice(2)}`,
             senderTitle: '',
@@ -665,41 +785,78 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
       const pmTargetCharacterId = target?.characterId;
       if (!pmTargetCharacterId) return;
 
-      setMessages((prev) =>
-        trimMessagesByChannel([...prev, { ...baseMessage, pmTargetId: activePrivateTargetId, pmTargetCharacterId }]),
-      );
+      setMessageBuckets((prev) => appendPrivateMessage(prev, { ...baseMessage, pmTargetId: activePrivateTargetId, pmTargetCharacterId }));
       setInputValue('');
       gameSocket.sendChatMessage({ channel: 'private', content, clientId, pmTargetCharacterId });
       return;
     }
 
-    setMessages((prev) => trimMessagesByChannel([...prev, baseMessage]));
+    setMessageBuckets((prev) => appendPublicMessage(prev, baseMessage as Message & { channel: PublicChatChannel }));
     setInputValue('');
     gameSocket.sendChatMessage({ channel: actualChannel, content, clientId });
   };
 
   const filteredMessages = useMemo(() => {
-    if (activeChannel === 'all') return messages;
+    if (activeChannel === 'all') return messageBuckets.all;
     if (activeChannel === 'private') {
-      return messages.filter((m) => m.channel === 'private' && m.pmTargetId === activePrivateTargetId);
+      return messageBuckets.privateByTarget[activePrivateTargetId] ?? [];
     }
-    return messages.filter((m) => m.channel === activeChannel);
-  }, [activeChannel, activePrivateTargetId, messages]);
+    return messageBuckets[activeChannel];
+  }, [activeChannel, activePrivateTargetId, messageBuckets]);
+
+  const getActiveMessagesContainer = useCallback((): HTMLDivElement | null => {
+    return activeChannel === 'private' ? privateMessagesRef.current : mainMessagesRef.current;
+  }, [activeChannel]);
+
+  const isNearBottom = useCallback((el: HTMLDivElement): boolean => {
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= 24;
+  }, []);
+
+  const handleMainMessagesScroll = useCallback(() => {
+    if (activeChannel === 'private') return;
+    const el = mainMessagesRef.current;
+    if (!el) return;
+    shouldStickToBottomRef.current = isNearBottom(el);
+  }, [activeChannel, isNearBottom]);
+
+  const handlePrivateMessagesScroll = useCallback(() => {
+    if (activeChannel !== 'private') return;
+    const el = privateMessagesRef.current;
+    if (!el) return;
+    shouldStickToBottomRef.current = isNearBottom(el);
+  }, [activeChannel, isNearBottom]);
+
+  const activeMessageViewKey = activeChannel === 'private' ? `private:${activePrivateTargetId}` : activeChannel;
+  const activeMessageTailId = filteredMessages[filteredMessages.length - 1]?.id ?? '';
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeChannel, activePrivateTargetId, filteredMessages.length]);
+    const viewChanged = prevMessageViewKeyRef.current !== activeMessageViewKey;
+    const tailChanged = prevMessageTailIdRef.current !== activeMessageTailId;
+    const shouldScroll = viewChanged || (tailChanged && shouldStickToBottomRef.current);
+
+    prevMessageViewKeyRef.current = activeMessageViewKey;
+    prevMessageTailIdRef.current = activeMessageTailId;
+    if (!shouldScroll) return;
+
+    const rafId = window.requestAnimationFrame(() => {
+      const el = getActiveMessagesContainer();
+      if (!el) return;
+      el.scrollTop = el.scrollHeight;
+      shouldStickToBottomRef.current = true;
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [activeMessageTailId, activeMessageViewKey, getActiveMessagesContainer]);
 
   const battleMessages = useMemo(() => {
-    return messages
-      .filter((m) => m.channel === 'battle')
+    if (!dropStatsOpen && !outputStatsOpen) return [];
+    return messageBuckets.battle
       .filter((m) => (battleStatsFromTs > 0 ? m.timestamp >= battleStatsFromTs : true))
       .map((m) => {
         const raw = String(m.content ?? '');
         return { raw, content: stripBattleInlineTokens(raw).trim(), timestamp: m.timestamp };
       })
       .filter((m) => Boolean(m.content));
-  }, [battleStatsFromTs, messages]);
+  }, [battleStatsFromTs, dropStatsOpen, messageBuckets.battle, outputStatsOpen]);
 
   const dropStats = useMemo(() => {
     const details: DropDetailRow[] = [];
@@ -1370,7 +1527,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
         </div>
       </StatsShell>
 
-      <div className="chat-messages">
+      <div className="chat-messages" ref={mainMessagesRef} onScroll={handleMainMessagesScroll}>
         {activeChannel === 'private' ? (
           <div className="chat-private-shell">
             <div className="chat-private-left">
@@ -1407,7 +1564,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
             </div>
 
             <div className="chat-private-right">
-              <div className="chat-private-messages">
+              <div className="chat-private-messages" ref={privateMessagesRef} onScroll={handlePrivateMessagesScroll}>
                 {filteredMessages.map((msg) => (
                   <div key={msg.id} className={`message-item ${msg.isSelf ? 'self' : ''}`}>
                     <span
@@ -1432,7 +1589,6 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
                     </span>
                   </div>
                 ))}
-                <div ref={messagesEndRef} />
               </div>
             </div>
           </div>
@@ -1463,7 +1619,6 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
                 </span>
               </div>
             ))}
-            <div ref={messagesEndRef} />
           </>
         )}
       </div>
