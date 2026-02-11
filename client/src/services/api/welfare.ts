@@ -114,6 +114,25 @@ export const getBattlePassTasks = (seasonId?: string): Promise<BattlePassTasksRe
   return api.get('/battlepass/tasks', { params: { seasonId } });
 };
 
+export type CompleteBattlePassTaskResponse = {
+  success: boolean;
+  message: string;
+  data?: {
+    taskId: string;
+    taskType: 'daily' | 'weekly' | 'season';
+    gainedExp: number;
+    exp: number;
+    level: number;
+    maxLevel: number;
+    expPerLevel: number;
+  };
+};
+
+export const completeBattlePassTask = (taskId: string): Promise<CompleteBattlePassTaskResponse> => {
+  const encodedTaskId = encodeURIComponent(String(taskId || '').trim());
+  return api.post(`/battlepass/tasks/${encodedTaskId}/complete`);
+};
+
 export type BattlePassStatusDto = {
   seasonId: string;
   seasonName: string;

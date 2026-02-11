@@ -5,6 +5,7 @@ import {
   getBattlePassStatus,
   getBattlePassRewards,
   claimBattlePassReward,
+  completeBattlePassTask,
 } from '../services/battlePassService.js';
 import { getGameServer } from '../game/GameServer.js';
 
@@ -39,6 +40,24 @@ router.get('/tasks', authMiddleware, async (req: Request, res: Response) => {
     return res.json({ success: true, message: 'ok', data });
   } catch (error) {
     console.error('获取战令任务失败:', error);
+    return res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.post('/tasks/:taskId/complete', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as AuthedRequest).userId;
+    const taskId = typeof req.params.taskId === 'string' ? req.params.taskId : '';
+    if (!taskId.trim()) {
+      return res.status(400).json({ success: false, message: '任务ID无效' });
+    }
+    const result = await completeBattlePassTask(userId, taskId);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error('完成战令任务失败:', error);
     return res.status(500).json({ success: false, message: '服务器错误' });
   }
 });
@@ -92,4 +111,3 @@ router.post('/claim', authMiddleware, async (req: Request, res: Response) => {
 });
 
 export default router;
-

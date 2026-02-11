@@ -6,8 +6,10 @@ import {
   getBattlePassStatus,
   getBattlePassRewards,
   claimBattlePassReward,
+  completeBattlePassTask,
   type BattlePassStatusDto,
   type BattlePassRewardDto,
+  type BattlePassTaskDto,
 } from '../../../../services/api';
 import './index.scss';
 
@@ -24,44 +26,12 @@ type BattlePassTask = {
   title: string;
   desc: string;
   exp: number;
+  completed: boolean;
+  progressValue: number;
+  targetValue: number;
 };
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-
-const dateKey = (d: Date) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
-
-const weekKey = (d: Date) => {
-  const date = new Date(d.getTime());
-  date.setHours(0, 0, 0, 0);
-  const day = (date.getDay() + 6) % 7;
-  date.setDate(date.getDate() - day + 3);
-  const firstThursday = new Date(date.getFullYear(), 0, 4);
-  firstThursday.setHours(0, 0, 0, 0);
-  const firstDay = (firstThursday.getDay() + 6) % 7;
-  firstThursday.setDate(firstThursday.getDate() - firstDay + 3);
-  const week = 1 + Math.round((date.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000));
-  return `${date.getFullYear()}-W${String(week).padStart(2, '0')}`;
-};
-
-const readJson = <T,>(key: string, fallback: T): T => {
-  const raw = localStorage.getItem(key);
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-};
-
-const storageKeys = {
-  dailyDone: 'battlepass_daily_done',
-  weeklyDone: 'battlepass_weekly_done',
-};
 
 const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
   const { message } = App.useApp();
@@ -69,6 +39,7 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [taskLoading, setTaskLoading] = useState(false);
   const [claimingLevel, setClaimingLevel] = useState<number | null>(null);
+  const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
 
   const [status, setStatus] = useState<BattlePassStatusDto | null>(null);
   const [rewards, setRewards] = useState<BattlePassRewardDto[]>([]);
@@ -80,10 +51,6 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
     if (typeof window === 'undefined') return false;
     return window.innerWidth <= 768;
   });
-  const [dailyDone, setDailyDone] = useState<Record<string, string>>({});
-  const [weeklyDone, setWeeklyDone] = useState<Record<string, string>>({});
-  const [todayKey, setTodayKey] = useState('');
-  const [curWeekKey, setCurWeekKey] = useState('');
 
   const maxLevel = status?.maxLevel ?? 30;
   const expPerLevel = status?.expPerLevel ?? 1000;
@@ -118,11 +85,14 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
     try {
       const res = await getBattlePassTasks();
       if (!res.success || !res.data) throw new Error(res.message || '加载战令任务失败');
-      const toTask = (t: { id: string; name: string; description: string; rewardExp: number }): BattlePassTask => ({
+      const toTask = (t: BattlePassTaskDto): BattlePassTask => ({
         id: String(t.id || ''),
         title: String(t.name || ''),
         desc: String(t.description || ''),
         exp: Number.isFinite(Number(t.rewardExp)) ? Number(t.rewardExp) : 0,
+        completed: t.completed === true,
+        progressValue: Number.isFinite(Number(t.progressValue)) ? Number(t.progressValue) : 0,
+        targetValue: Number.isFinite(Number(t.targetValue)) ? Number(t.targetValue) : 1,
       });
       setDailyTasks((res.data.daily ?? []).map(toTask));
       setWeeklyTasks((res.data.weekly ?? []).map(toTask));
@@ -144,11 +114,6 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
 
   useEffect(() => {
     if (!open) return;
-    const now = new Date();
-    setTodayKey(dateKey(now));
-    setCurWeekKey(weekKey(now));
-    setDailyDone(readJson<Record<string, string>>(storageKeys.dailyDone, {}));
-    setWeeklyDone(readJson<Record<string, string>>(storageKeys.weeklyDone, {}));
     setTab('rewards');
     void refreshAll();
   }, [open, refreshAll]);
@@ -190,26 +155,26 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
     }
   };
 
-  const addExp = (delta: number) => {
-    if (!status) return;
-    const newExp = clamp(exp + delta, 0, expPerLevel * maxLevel);
-    setStatus({ ...status, exp: newExp, level: Math.min(Math.floor(newExp / expPerLevel) + 1, maxLevel) });
-  };
+  const completeTask = async (task: BattlePassTask) => {
+    if (task.completed) return;
+    if (completingTaskId) return;
 
-  const completeDailyTask = (task: BattlePassTask) => {
-    if (dailyDone[task.id] === todayKey) return;
-    const next = { ...dailyDone, [task.id]: todayKey };
-    localStorage.setItem(storageKeys.dailyDone, JSON.stringify(next));
-    setDailyDone(next);
-    addExp(task.exp);
-  };
-
-  const completeWeeklyTask = (task: BattlePassTask) => {
-    if (weeklyDone[task.id] === curWeekKey) return;
-    const next = { ...weeklyDone, [task.id]: curWeekKey };
-    localStorage.setItem(storageKeys.weeklyDone, JSON.stringify(next));
-    setWeeklyDone(next);
-    addExp(task.exp);
+    setCompletingTaskId(task.id);
+    try {
+      const res = await completeBattlePassTask(task.id);
+      if (!res.success) {
+        message.error(res.message || '任务完成失败');
+        return;
+      }
+      const gainedExp = Number(res.data?.gainedExp ?? task.exp);
+      message.success(`任务完成，获得 ${gainedExp} 经验`);
+      await Promise.all([refreshStatus(), refreshTasks()]);
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      message.error(err.message || '任务完成失败');
+    } finally {
+      setCompletingTaskId(null);
+    }
   };
 
   const leftItems = useMemo(
@@ -318,7 +283,7 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
     </div>
   );
 
-  const renderTaskList = (title: string, tasks: BattlePassTask[], doneMap: Record<string, string>, doneKey: string, onFinish: (t: BattlePassTask) => void) => (
+  const renderTaskList = (title: string, tasks: BattlePassTask[]) => (
     <div className="bp-pane">
       {renderHeader()}
       <div className="bp-pane-body">
@@ -326,16 +291,27 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
           <div className="bp-section-title">{title}</div>
           <div className="bp-task-list">
             {tasks.map((t) => {
-              const done = doneMap[t.id] === doneKey;
+              const done = t.completed;
+              const progressText = `${Math.min(Math.max(0, t.progressValue), t.targetValue)}/${t.targetValue}`;
               return (
                 <div key={t.id} className="bp-task">
                   <div className="bp-task-main">
                     <div className="bp-task-title">{t.title}</div>
-                    <div className="bp-task-desc">{t.desc}</div>
+                    <div className="bp-task-desc">
+                      {t.desc}（进度 {progressText}）
+                    </div>
                   </div>
                   <div className="bp-task-right">
-                    <Tag color="blue">+{t.exp} 经验</Tag>
-                    <Button size="small" type="primary" disabled={done} onClick={() => onFinish(t)}>
+                    <Tag color={done ? 'green' : 'blue'}>{done ? '已完成' : `+${t.exp} 经验`}</Tag>
+                    <Button
+                      size="small"
+                      type="primary"
+                      disabled={done || completingTaskId === t.id}
+                      loading={completingTaskId === t.id}
+                      onClick={() => {
+                        void completeTask(t);
+                      }}
+                    >
                       {done ? '已完成' : '完成'}
                     </Button>
                   </div>
@@ -350,8 +326,8 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
 
   const panelContent = () => {
     if (tab === 'rewards') return renderRewardTrack();
-    if (tab === 'daily') return renderTaskList('每日任务', dailyTasks, dailyDone, todayKey, completeDailyTask);
-    return renderTaskList('每周任务', weeklyTasks, weeklyDone, curWeekKey, completeWeeklyTask);
+    if (tab === 'daily') return renderTaskList('每日任务', dailyTasks);
+    return renderTaskList('每周任务', weeklyTasks);
   };
 
   return (

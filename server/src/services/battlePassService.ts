@@ -25,6 +25,8 @@ export type BattlePassTasksOverviewDto = {
   season: BattlePassTaskDto[];
 };
 
+type BattlePassTaskType = BattlePassTaskDto['taskType'];
+
 export const getCharacterIdByUserId = async (userId: number): Promise<number | null> => {
   try {
     const res = await query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1', [userId]);
@@ -105,9 +107,32 @@ export const getBattlePassTasksOverview = async (userId: number, seasonId?: stri
         d.reward_extra,
         d.enabled,
         d.sort_weight,
-        COALESCE(p.progress_value, 0) AS progress_value,
-        COALESCE(p.completed, false) AS completed,
-        COALESCE(p.claimed, false) AS claimed
+        COALESCE(
+          CASE
+            WHEN d.task_type = 'daily'
+              THEN CASE WHEN p.completed_at IS NOT NULL AND p.completed_at >= date_trunc('day', NOW()) THEN p.progress_value ELSE 0 END
+            WHEN d.task_type = 'weekly'
+              THEN CASE WHEN p.completed_at IS NOT NULL AND p.completed_at >= date_trunc('week', NOW()) THEN p.progress_value ELSE 0 END
+            ELSE p.progress_value
+          END,
+          0
+        ) AS progress_value,
+        COALESCE(
+          CASE
+            WHEN d.task_type = 'daily' THEN (p.completed = true AND p.completed_at IS NOT NULL AND p.completed_at >= date_trunc('day', NOW()))
+            WHEN d.task_type = 'weekly' THEN (p.completed = true AND p.completed_at IS NOT NULL AND p.completed_at >= date_trunc('week', NOW()))
+            ELSE (p.completed = true)
+          END,
+          false
+        ) AS completed,
+        COALESCE(
+          CASE
+            WHEN d.task_type = 'daily' THEN (p.claimed = true AND p.claimed_at IS NOT NULL AND p.claimed_at >= date_trunc('day', NOW()))
+            WHEN d.task_type = 'weekly' THEN (p.claimed = true AND p.claimed_at IS NOT NULL AND p.claimed_at >= date_trunc('week', NOW()))
+            ELSE (p.claimed = true)
+          END,
+          false
+        ) AS claimed
       FROM battle_pass_task_def d
       LEFT JOIN battle_pass_task_progress p
         ON p.task_id = d.id
@@ -149,6 +174,149 @@ export const getBattlePassTasksOverview = async (userId: number, seasonId?: stri
     weekly: rows.filter((x) => x.taskType === 'weekly'),
     season: rows.filter((x) => x.taskType === 'season'),
   };
+};
+
+export type CompleteBattlePassTaskResult = {
+  success: boolean;
+  message: string;
+  data?: {
+    taskId: string;
+    taskType: BattlePassTaskType;
+    gainedExp: number;
+    exp: number;
+    level: number;
+    maxLevel: number;
+    expPerLevel: number;
+  };
+};
+
+export const completeBattlePassTask = async (userId: number, taskId: string): Promise<CompleteBattlePassTaskResult> => {
+  const normalizedTaskId = String(taskId || '').trim();
+  if (!normalizedTaskId) return { success: false, message: '任务ID无效' };
+
+  const characterId = await getCharacterIdByUserId(userId);
+  if (!characterId) return { success: false, message: '角色不存在' };
+
+  const seasonId = (await getActiveBattlePassSeasonId()) ?? (await getFallbackBattlePassSeasonId());
+  if (!seasonId) return { success: false, message: '当前没有进行中的赛季' };
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const seasonRes = await client.query(
+      `SELECT max_level, exp_per_level FROM battle_pass_season_def WHERE id = $1 LIMIT 1`,
+      [seasonId],
+    );
+    if ((seasonRes.rows ?? []).length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '赛季配置不存在' };
+    }
+    const maxLevel = Number(seasonRes.rows[0]?.max_level) || 30;
+    const expPerLevel = Number(seasonRes.rows[0]?.exp_per_level) || 1000;
+    const maxExp = Math.max(0, maxLevel * expPerLevel);
+
+    const taskRes = await client.query(
+      `
+        SELECT id, task_type, target_value, reward_exp
+        FROM battle_pass_task_def
+        WHERE id = $1
+          AND season_id = $2
+          AND enabled = true
+        LIMIT 1
+      `,
+      [normalizedTaskId, seasonId],
+    );
+    if ((taskRes.rows ?? []).length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务不存在或未启用' };
+    }
+
+    const taskType = String(taskRes.rows[0]?.task_type || 'daily') as BattlePassTaskType;
+    if (taskType !== 'daily' && taskType !== 'weekly' && taskType !== 'season') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务类型不支持' };
+    }
+    const targetValue = Math.max(1, Number(taskRes.rows[0]?.target_value) || 1);
+    const rewardExp = Math.max(0, Number(taskRes.rows[0]?.reward_exp) || 0);
+
+    const taskProgressRes = await client.query(
+      `
+        SELECT
+          CASE
+            WHEN $4 = 'daily' THEN (completed = true AND completed_at IS NOT NULL AND completed_at >= date_trunc('day', NOW()))
+            WHEN $4 = 'weekly' THEN (completed = true AND completed_at IS NOT NULL AND completed_at >= date_trunc('week', NOW()))
+            ELSE (completed = true)
+          END AS completed_in_cycle
+        FROM battle_pass_task_progress
+        WHERE character_id = $1
+          AND season_id = $2
+          AND task_id = $3
+        FOR UPDATE
+      `,
+      [characterId, seasonId, normalizedTaskId, taskType],
+    );
+    const completedInCycle = taskProgressRes.rows[0]?.completed_in_cycle === true;
+    if (completedInCycle) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务已完成' };
+    }
+
+    await client.query(
+      `
+        INSERT INTO battle_pass_task_progress (
+          character_id, season_id, task_id, progress_value, completed, completed_at, claimed, claimed_at, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, true, NOW(), true, NOW(), NOW(), NOW())
+        ON CONFLICT (character_id, season_id, task_id)
+        DO UPDATE SET
+          progress_value = EXCLUDED.progress_value,
+          completed = true,
+          completed_at = NOW(),
+          claimed = true,
+          claimed_at = NOW(),
+          updated_at = NOW()
+      `,
+      [characterId, seasonId, normalizedTaskId, targetValue],
+    );
+
+    const bpProgressRes = await client.query(
+      `
+        INSERT INTO battle_pass_progress (character_id, season_id, exp, created_at, updated_at)
+        VALUES ($1, $2, LEAST($3::bigint, $4::bigint), NOW(), NOW())
+        ON CONFLICT (character_id, season_id)
+        DO UPDATE SET
+          exp = LEAST($4::bigint, battle_pass_progress.exp + $3::bigint),
+          updated_at = NOW()
+        RETURNING exp
+      `,
+      [characterId, seasonId, rewardExp, maxExp],
+    );
+
+    const exp = Number(bpProgressRes.rows[0]?.exp ?? 0);
+    const level = Math.min(Math.floor(exp / expPerLevel) + 1, maxLevel);
+
+    await client.query('COMMIT');
+    return {
+      success: true,
+      message: '任务完成',
+      data: {
+        taskId: normalizedTaskId,
+        taskType,
+        gainedExp: rewardExp,
+        exp,
+        level,
+        maxLevel,
+        expPerLevel,
+      },
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('完成战令任务失败:', error);
+    return { success: false, message: '服务器错误' };
+  } finally {
+    client.release();
+  }
 };
 
 export type BattlePassStatusDto = {
@@ -397,4 +565,3 @@ export const claimBattlePassReward = async (
     client.release();
   }
 };
-
