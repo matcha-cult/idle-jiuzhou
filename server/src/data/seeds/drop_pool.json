@@ -125,6 +125,99 @@
         { "item_def_id": "enhance-002", "chance": 0.3, "qty_min": 1, "qty_max": 3, "show_in_ui": true },
         { "item_def_id": "box-001", "chance": 0.5, "qty_min": 1, "qty_max": 3, "show_in_ui": true }
       ]
+    },
+    {
+      "id": "dp-ruins-jackal",
+      "name": "噬骨鬣犬掉落池",
+      "mode": "prob",
+      "entries": [
+        { "item_def_id": "mat-008", "chance": 1.0, "qty_min": 1, "qty_max": 3, "show_in_ui": true },
+        { "item_def_id": "mat-009", "chance": 0.45, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "cons-001", "chance": 0.12, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "cons-009", "chance": 0.06, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "equip-head-002", "chance": 0.03, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "equip-weapon-003", "chance": 0.02, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "equip-clothes-002", "chance": 0.02, "qty_min": 1, "qty_max": 1, "show_in_ui": true }
+      ]
+    },
+    {
+      "id": "dp-shadow-viper",
+      "name": "影纹毒蟒掉落池",
+      "mode": "prob",
+      "entries": [
+        { "item_def_id": "mat-010", "chance": 0.75, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "mat-006", "chance": 0.25, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "cons-009", "chance": 0.10, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "cons-003", "chance": 0.08, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "equip-necklace-002", "chance": 0.03, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "equip-head-001", "chance": 0.02, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "equip-clothes-001", "chance": 0.02, "qty_min": 1, "qty_max": 1, "show_in_ui": true }
+      ]
+    },
+    {
+      "id": "dp-rune-golem",
+      "name": "符甲石傀掉落池",
+      "mode": "prob",
+      "entries": [
+        { "item_def_id": "mat-011", "chance": 0.7, "qty_min": 1, "qty_max": 3, "show_in_ui": true },
+        { "item_def_id": "mat-002", "chance": 0.6, "qty_min": 1, "qty_max": 4, "show_in_ui": true },
+        { "item_def_id": "mat-007", "chance": 0.35, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "enhance-001", "chance": 0.18, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "enhance-002", "chance": 0.08, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "equip-accessory-001", "chance": 0.03, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "set-qingfeng-weapon", "chance": 0.02, "qty_min": 1, "qty_max": 1, "show_in_ui": true }
+      ]
+    },
+    {
+      "id": "dp-gale-falcon",
+      "name": "裂风隼妖掉落池",
+      "mode": "prob",
+      "entries": [
+        { "item_def_id": "mat-009", "chance": 0.5, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "cons-010", "chance": 0.12, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "cons-003", "chance": 0.08, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "mat-006", "chance": 0.22, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "equip-weapon-004", "chance": 0.02, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "equip-necklace-001", "chance": 0.03, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "set-zixiao-gloves", "chance": 0.01, "qty_min": 1, "qty_max": 1, "show_in_ui": true }
+      ]
+    },
+    {
+      "id": "dp-storm-wolf-lord",
+      "name": "啸风狼主掉落池",
+      "mode": "prob",
+      "entries": [
+        { "item_def_id": "mat-012", "chance": 0.8, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "equip-clothes-003", "chance": 0.05, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "equip-artifact-002", "chance": 0.03, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "set-qingfeng-weapon", "chance": 0.08, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "set-qingfeng-head", "chance": 0.07, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "set-zixiao-weapon", "chance": 0.08, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "set-zixiao-head", "chance": 0.07, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "enhance-002", "chance": 0.35, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "cons-010", "chance": 0.2, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "cons-005", "chance": 0.2, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "box-001", "chance": 0.45, "qty_min": 1, "qty_max": 2, "show_in_ui": true }
+      ]
+    },
+    {
+      "id": "dp-withered-ent",
+      "name": "枯藤树魇掉落池",
+      "mode": "prob",
+      "entries": [
+        { "item_def_id": "mat-012", "chance": 1.0, "qty_min": 3, "qty_max": 6, "show_in_ui": true },
+        { "item_def_id": "mat-001", "chance": 1.0, "qty_min": 5, "qty_max": 10, "show_in_ui": true },
+        { "item_def_id": "mat-010", "chance": 0.9, "qty_min": 2, "qty_max": 4, "show_in_ui": true },
+        { "item_def_id": "mat-011", "chance": 0.8, "qty_min": 2, "qty_max": 4, "show_in_ui": true },
+        { "item_def_id": "equip-clothes-003", "chance": 0.06, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "equip-artifact-002", "chance": 0.08, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "cons-010", "chance": 0.35, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "cons-005", "chance": 0.35, "qty_min": 1, "qty_max": 2, "show_in_ui": true },
+        { "item_def_id": "enhance-002", "chance": 0.5, "qty_min": 1, "qty_max": 3, "show_in_ui": true },
+        { "item_def_id": "box-001", "chance": 0.7, "qty_min": 1, "qty_max": 3, "show_in_ui": true },
+        { "item_def_id": "set-qingfeng-artifact", "chance": 0.06, "qty_min": 1, "qty_max": 1, "show_in_ui": true },
+        { "item_def_id": "set-zixiao-artifact", "chance": 0.06, "qty_min": 1, "qty_max": 1, "show_in_ui": true }
+      ]
     }
   ]
 }

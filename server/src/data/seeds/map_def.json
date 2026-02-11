@@ -342,7 +342,8 @@
           "position": { "x": 0, "y": 4 },
           "room_type": "boss",
           "connections": [
-            { "direction": "north", "target_room_id": "room-wolf-den" }
+            { "direction": "north", "target_room_id": "room-wolf-den" },
+            { "direction": "south", "target_room_id": "room-ruins-entrance", "target_map_id": "map-fallen-ruins" }
           ],
           "npcs": [],
           "monsters": [
@@ -353,6 +354,438 @@
           "portals": [],
           "events": [
             { "event_id": "evt-boss-ancient-tree", "trigger": "enter", "once": false }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "map-fallen-ruins",
+      "code": "fallen_ruins",
+      "name": "断碑遗迹",
+      "description": "青云村外更深处的古修遗迹，残碑断壁之间仍有灵力回荡，危险与机缘并存。",
+      "background_image": "/assets/map/fallen_ruins.png",
+      "map_type": "field",
+      "parent_map_id": "map-qingyun-outskirts",
+      "region": "东洲",
+      "world_position": { "x": 112, "y": 224 },
+      "req_realm_min": "炼精化炁·养气期",
+      "safe_zone": false,
+      "pk_mode": "normal",
+      "revive_map_id": "map-qingyun-outskirts",
+      "revive_room_id": "room-south-forest",
+      "sort_weight": 998,
+      "enabled": true,
+      "rooms": [
+        {
+          "id": "room-ruins-entrance",
+          "name": "遗迹入口",
+          "description": "半塌的石门立在山坳间，门扉上仍可见古老符纹。沿着石阶向下便是遗迹深处。",
+          "position": { "x": 0, "y": 0 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "east", "target_room_id": "room-broken-courtyard" },
+            { "direction": "south", "target_room_id": "room-ruins-canyon" },
+            { "direction": "north", "target_room_id": "room-ancient-tree", "target_map_id": "map-qingyun-outskirts" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-ruins-jackal", "count": 2, "respawn_sec": 50 }
+          ],
+          "resources": [
+            { "resource_id": "res-wild-herb", "count": 30, "collect_limit": 30, "respawn_sec": 240 }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-broken-courtyard",
+          "name": "残破庭院",
+          "description": "石柱倾倒，青苔遍布，庭院中央的阵图仍隐约闪烁着微光。",
+          "position": { "x": 1, "y": 0 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "west", "target_room_id": "room-ruins-entrance" },
+            { "direction": "north", "target_room_id": "room-collapsed-tower" },
+            { "direction": "east", "target_room_id": "room-stone-altar" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-shadow-viper", "count": 1, "respawn_sec": 70 },
+            { "monster_def_id": "monster-rune-golem", "count": 1, "respawn_sec": 140 }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-collapsed-tower",
+          "name": "坍塌塔楼",
+          "description": "塔楼上层早已崩毁，只剩断裂石阶盘旋而上，空气中充满尘土与灵压。",
+          "position": { "x": 1, "y": -1 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "south", "target_room_id": "room-broken-courtyard" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-rune-golem", "count": 2, "respawn_sec": 140 }
+          ],
+          "resources": [],
+          "items": [
+            { "item_def_id": "mat-001", "once": false, "chance": 0.2 }
+          ],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-stone-altar",
+          "name": "古祭坛",
+          "description": "祭坛四周散落着破碎玉简，中央石台刻满血色纹路，时常有妖狼在此徘徊。",
+          "position": { "x": 2, "y": 0 },
+          "room_type": "boss",
+          "connections": [
+            { "direction": "west", "target_room_id": "room-broken-courtyard" },
+            { "direction": "north", "target_room_id": "room-ridge-camp", "target_map_id": "map-howling-ridge" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-gale-falcon", "count": 2, "respawn_sec": 90 },
+            { "monster_def_id": "monster-elite-storm-wolf", "count": 1, "respawn_sec": 900 }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": [
+            { "event_id": "evt-fallen-ruins-altar", "trigger": "enter", "once": false }
+          ]
+        },
+        {
+          "id": "room-ruins-canyon",
+          "name": "断崖峡道",
+          "description": "遗迹下方的狭窄峡道，阴风穿行，远处不时传来狼嚎。",
+          "position": { "x": 0, "y": 1 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "north", "target_room_id": "room-ruins-entrance" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-ruins-jackal", "count": 2, "respawn_sec": 55 }
+          ],
+          "resources": [
+            { "resource_id": "res-spirit-grass", "count": 18, "collect_limit": 18, "respawn_sec": 300 }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        }
+      ]
+    },
+    {
+      "id": "map-howling-ridge",
+      "code": "howling_ridge",
+      "name": "啸风岭",
+      "description": "断碑遗迹北面的高岭地带，狂风终日不息，妖狼群在崖壁间出没。",
+      "background_image": "/assets/map/howling_ridge.png",
+      "map_type": "field",
+      "parent_map_id": "map-fallen-ruins",
+      "region": "东洲",
+      "world_position": { "x": 126, "y": 236 },
+      "req_realm_min": "炼精化炁·通脉期",
+      "safe_zone": false,
+      "pk_mode": "normal",
+      "revive_map_id": "map-howling-ridge",
+      "revive_room_id": "room-ridge-camp",
+      "sort_weight": 997,
+      "enabled": true,
+      "rooms": [
+        {
+          "id": "room-ridge-camp",
+          "name": "岭前营地",
+          "description": "猎户留下的简易营地，篝火余烬尚温，是进入啸风岭前最后的休整点。",
+          "position": { "x": 0, "y": 0 },
+          "room_type": "safe",
+          "connections": [
+            { "direction": "north", "target_room_id": "room-gale-trail" },
+            { "direction": "south", "target_room_id": "room-stone-altar", "target_map_id": "map-fallen-ruins" }
+          ],
+          "npcs": [],
+          "monsters": [],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-gale-trail",
+          "name": "风切小径",
+          "description": "狭长山路两侧峭壁如刀，强风夹杂砂石，行进时需格外小心。",
+          "position": { "x": 0, "y": 1 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "south", "target_room_id": "room-ridge-camp" },
+            { "direction": "west", "target_room_id": "room-pine-slope" },
+            { "direction": "east", "target_room_id": "room-hanging-cliff" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-ruins-jackal", "count": 1, "respawn_sec": 55 },
+            { "monster_def_id": "monster-gale-falcon", "count": 1, "respawn_sec": 90 }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-pine-slope",
+          "name": "松岭斜坡",
+          "description": "稀疏松林覆盖的坡地，妖狼善于借林木掩护突袭过路修士。",
+          "position": { "x": -1, "y": 1 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "east", "target_room_id": "room-gale-trail" },
+            { "direction": "north", "target_room_id": "room-wolf-howl-pass" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-gale-falcon", "count": 1, "respawn_sec": 95 }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-hanging-cliff",
+          "name": "悬崖窄道",
+          "description": "贴着峭壁开凿的窄道，下方深不见底，偶有石傀儡从裂缝中爬出。",
+          "position": { "x": 1, "y": 1 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "west", "target_room_id": "room-gale-trail" },
+            { "direction": "north", "target_room_id": "room-wolf-howl-pass" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-rune-golem", "count": 1, "respawn_sec": 140 }
+          ],
+          "resources": [
+            { "resource_id": "res-spirit-stone-ore", "count": 8, "collect_limit": 8, "respawn_sec": 720 }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-wolf-howl-pass",
+          "name": "狼啸隘口",
+          "description": "啸风岭最狭窄的隘口，风声与狼嚎交织，让人难辨敌踪。",
+          "position": { "x": 0, "y": 2 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "west", "target_room_id": "room-pine-slope" },
+            { "direction": "east", "target_room_id": "room-hanging-cliff" },
+            { "direction": "north", "target_room_id": "room-wind-throne" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-ruins-jackal", "count": 1, "respawn_sec": 55 },
+            { "monster_def_id": "monster-gale-falcon", "count": 2, "respawn_sec": 90 }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-wind-throne",
+          "name": "风王台",
+          "description": "高岭尽头的巨石平台，常年被飓风笼罩，是狼王争夺地盘的核心区域。",
+          "position": { "x": 0, "y": 3 },
+          "room_type": "boss",
+          "connections": [
+            { "direction": "south", "target_room_id": "room-wolf-howl-pass" },
+            { "direction": "north", "target_room_id": "room-grove-edge", "target_map_id": "map-withered-grove" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-gale-falcon", "count": 2, "respawn_sec": 90 },
+            { "monster_def_id": "monster-elite-storm-wolf", "count": 1, "respawn_sec": 720 }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": [
+            { "event_id": "evt-howling-ridge-king", "trigger": "enter", "once": false }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "map-withered-grove",
+      "code": "withered_grove",
+      "name": "枯木幽林",
+      "description": "啸风岭以北的禁忌密林，古木枯死却不倒，林中深处潜伏着可怕的大妖。",
+      "background_image": "/assets/map/withered_grove.png",
+      "map_type": "field",
+      "parent_map_id": "map-howling-ridge",
+      "region": "东洲北境",
+      "world_position": { "x": 133, "y": 248 },
+      "req_realm_min": "炼精化炁·凝炁期",
+      "safe_zone": false,
+      "pk_mode": "normal",
+      "revive_map_id": "map-howling-ridge",
+      "revive_room_id": "room-ridge-camp",
+      "sort_weight": 996,
+      "enabled": true,
+      "rooms": [
+        {
+          "id": "room-grove-edge",
+          "name": "幽林边缘",
+          "description": "树影层叠，光线昏暗，地面覆盖厚厚腐叶，踏入后便难辨方向。",
+          "position": { "x": 0, "y": 0 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "north", "target_room_id": "room-decay-path" },
+            { "direction": "east", "target_room_id": "room-spore-marsh" },
+            { "direction": "south", "target_room_id": "room-wind-throne", "target_map_id": "map-howling-ridge" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-shadow-viper", "count": 2, "respawn_sec": 70 }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-decay-path",
+          "name": "腐叶古道",
+          "description": "古道两旁尽是枯木，偶尔会有石傀儡破土而出阻挡去路。",
+          "position": { "x": 0, "y": 1 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "south", "target_room_id": "room-grove-edge" },
+            { "direction": "west", "target_room_id": "room-root-maze" },
+            { "direction": "north", "target_room_id": "room-dead-lake" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-ruins-jackal", "count": 1, "respawn_sec": 55 },
+            { "monster_def_id": "monster-rune-golem", "count": 1, "respawn_sec": 140 }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-spore-marsh",
+          "name": "孢雾沼泽",
+          "description": "低洼沼地终年弥漫灰白孢雾，毒蛇在泥潭中潜伏，危险难测。",
+          "position": { "x": 1, "y": 0 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "west", "target_room_id": "room-grove-edge" },
+            { "direction": "north", "target_room_id": "room-dead-lake" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-shadow-viper", "count": 3, "respawn_sec": 70 }
+          ],
+          "resources": [
+            { "resource_id": "res-spirit-grass", "count": 24, "collect_limit": 24, "respawn_sec": 360 }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-root-maze",
+          "name": "盘根迷阵",
+          "description": "无数粗壮树根盘结成天然迷阵，稍有不慎便会被困其中。",
+          "position": { "x": -1, "y": 1 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "east", "target_room_id": "room-decay-path" },
+            { "direction": "north", "target_room_id": "room-ancient-stump" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-gale-falcon", "count": 1, "respawn_sec": 95 },
+            { "monster_def_id": "monster-rune-golem", "count": 1, "respawn_sec": 140 }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-dead-lake",
+          "name": "寂水死湖",
+          "description": "湖面如镜却不见生机，湖底偶尔泛起诡异涟漪，像有巨物游动。",
+          "position": { "x": 0, "y": 2 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "south", "target_room_id": "room-decay-path" },
+            { "direction": "east", "target_room_id": "room-spore-marsh" },
+            { "direction": "west", "target_room_id": "room-ancient-stump" },
+            { "direction": "north", "target_room_id": "room-withered-heart" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-shadow-viper", "count": 1, "respawn_sec": 70 },
+            { "monster_def_id": "monster-gale-falcon", "count": 2, "respawn_sec": 95 }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-ancient-stump",
+          "name": "古木残桩",
+          "description": "高如楼阁的树桩横卧林间，内部空洞中蕴藏着稀有矿脉。",
+          "position": { "x": -1, "y": 2 },
+          "room_type": "normal",
+          "connections": [
+            { "direction": "south", "target_room_id": "room-root-maze" },
+            { "direction": "east", "target_room_id": "room-dead-lake" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-rune-golem", "count": 2, "respawn_sec": 140 }
+          ],
+          "resources": [
+            { "resource_id": "res-spirit-stone-ore", "count": 6, "collect_limit": 6, "respawn_sec": 900 }
+          ],
+          "items": [],
+          "portals": [],
+          "events": []
+        },
+        {
+          "id": "room-withered-heart",
+          "name": "枯心祭场",
+          "description": "幽林核心的古老祭场，树妖王在此沉眠，苏醒时会吞噬一切闯入者。",
+          "position": { "x": 0, "y": 3 },
+          "room_type": "boss",
+          "connections": [
+            { "direction": "south", "target_room_id": "room-dead-lake" }
+          ],
+          "npcs": [],
+          "monsters": [
+            { "monster_def_id": "monster-elite-storm-wolf", "count": 1, "respawn_sec": 900 },
+            { "monster_def_id": "monster-boss-withered-ent", "count": 1, "respawn_sec": 3600 }
+          ],
+          "resources": [],
+          "items": [],
+          "portals": [],
+          "events": [
+            { "event_id": "evt-withered-grove-boss", "trigger": "enter", "once": false }
           ]
         }
       ]

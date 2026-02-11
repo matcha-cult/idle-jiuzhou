@@ -1621,6 +1621,249 @@
       ],
       "quality_min": "黄",
       "quality_max": "天"
+    },
+    {
+      "_comment": "========== 通脉期/凝炁期散件（新地图产出） =========="
+    },
+    {
+      "id": "equip-weapon-004",
+      "code": "duan_bei_can_ren",
+      "name": "断碑残刃",
+      "category": "equipment",
+      "sub_category": "sword",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "uncommon",
+      "level": 12,
+      "stack_max": 1,
+      "bind_type": "pickup",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 260,
+      "sell_price_spirit_stones": 6,
+      "icon": "/assets/items/bin_tie_heng_dao.png",
+      "description": "出土于断碑遗迹的残兵，刃口缺损却锋寒逼人",
+      "equip_slot": "weapon",
+      "equip_req_realm": "炼精化炁·通脉期",
+      "base_attrs": {
+        "wugong": 15,
+        "mingzhong": 90
+      },
+      "implicit_attrs": {
+        "wugong": 10,
+        "baoji": 60
+      },
+      "affix_pool_id": "ap-weapon-uncommon",
+      "affix_count_min": 3,
+      "affix_count_max": 4,
+      "tags": [
+        "武器",
+        "剑",
+        "遗迹",
+        "通脉期"
+      ],
+      "quality_min": "黄",
+      "quality_max": "地"
+    },
+    {
+      "id": "equip-head-002",
+      "code": "lie_feng_dou_mao",
+      "name": "裂风兜帽",
+      "category": "equipment",
+      "sub_category": "hat",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "uncommon",
+      "level": 11,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 180,
+      "sell_price_spirit_stones": 4,
+      "icon": "/assets/items/icon_Hat_1_02.png",
+      "description": "以风岭狼皮缝制的轻甲兜帽，可缓冲风压",
+      "equip_slot": "head",
+      "equip_req_realm": "炼精化炁·通脉期",
+      "base_attrs": {
+        "wufang": 8,
+        "fafang": 6
+      },
+      "implicit_attrs": {
+        "max_qixue": 60,
+        "shanbi": 80
+      },
+      "affix_pool_id": "ap-armor-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "tags": [
+        "防具",
+        "头部",
+        "风岭",
+        "通脉期"
+      ],
+      "quality_min": "黄",
+      "quality_max": "地"
+    },
+    {
+      "id": "equip-clothes-003",
+      "code": "xuan_teng_zhan_jia",
+      "name": "玄藤战甲",
+      "category": "equipment",
+      "sub_category": "robe",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 14,
+      "stack_max": 1,
+      "bind_type": "pickup",
+      "tradeable": false,
+      "sellable": true,
+      "sell_price_silver": 860,
+      "sell_price_spirit_stones": 28,
+      "icon": "/assets/items/icon_clothes_1_03.png",
+      "description": "以枯藤心髓浸炼的护甲，韧性极高，能抵御重击",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼精化炁·凝炁期",
+      "base_attrs": {
+        "wufang": 20,
+        "fafang": 18
+      },
+      "implicit_attrs": {
+        "max_qixue": 150,
+        "kongzhi_kangxing": 200
+      },
+      "affix_pool_id": "ap-armor-rare",
+      "affix_count_min": 3,
+      "affix_count_max": 5,
+      "tags": [
+        "防具",
+        "衣服",
+        "幽林",
+        "凝炁期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
+    },
+    {
+      "id": "equip-necklace-002",
+      "code": "yi_ji_gu_lian",
+      "name": "遗迹骨链",
+      "category": "equipment",
+      "sub_category": "necklace",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "uncommon",
+      "level": 12,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 240,
+      "sell_price_spirit_stones": 6,
+      "icon": "/assets/items/chen_xiang_zhu_lian.png",
+      "description": "古兽骨串成的护符项链，可稳固气息运转",
+      "equip_slot": "necklace",
+      "equip_req_realm": "炼精化炁·通脉期",
+      "base_attrs": {
+        "max_lingqi": 18,
+        "wugong": 5
+      },
+      "implicit_attrs": {
+        "lingqi_huifu": 2,
+        "baoji": 45
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "tags": [
+        "饰品",
+        "项链",
+        "遗迹",
+        "通脉期"
+      ],
+      "quality_min": "黄",
+      "quality_max": "地"
+    },
+    {
+      "id": "equip-accessory-001",
+      "code": "fu_wen_zhi_jie",
+      "name": "符纹指戒",
+      "category": "equipment",
+      "sub_category": "ring",
+      "quality": "玄",
+      "quality_rank": 2,
+      "rarity": "uncommon",
+      "level": 13,
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "sellable": true,
+      "sell_price_silver": 260,
+      "sell_price_spirit_stones": 7,
+      "icon": "/assets/items/kun_lun_jie.png",
+      "description": "铭刻古老符纹的戒指，可提升术法穿透",
+      "equip_slot": "accessory",
+      "equip_req_realm": "炼精化炁·通脉期",
+      "base_attrs": {
+        "fagong": 8,
+        "max_lingqi": 15
+      },
+      "implicit_attrs": {
+        "mingzhong": 70,
+        "baoshang": 120
+      },
+      "affix_pool_id": "ap-accessory-uncommon",
+      "affix_count_min": 2,
+      "affix_count_max": 4,
+      "tags": [
+        "饰品",
+        "戒指",
+        "符文",
+        "通脉期"
+      ],
+      "quality_min": "黄",
+      "quality_max": "地"
+    },
+    {
+      "id": "equip-artifact-002",
+      "code": "ku_mu_ling_deng",
+      "name": "枯木灵灯",
+      "category": "equipment",
+      "sub_category": "talisman",
+      "quality": "地",
+      "quality_rank": 3,
+      "rarity": "rare",
+      "level": 14,
+      "stack_max": 1,
+      "bind_type": "pickup",
+      "tradeable": false,
+      "sellable": true,
+      "sell_price_silver": 920,
+      "sell_price_spirit_stones": 30,
+      "icon": "/assets/items/Props-taofaquan.png",
+      "description": "以枯木心髓点燃的灵灯，既能护体也可照见妖气",
+      "equip_slot": "artifact",
+      "equip_req_realm": "炼精化炁·凝炁期",
+      "base_attrs": {
+        "fagong": 12,
+        "sudu": 2
+      },
+      "implicit_attrs": {
+        "max_lingqi": 35,
+        "shanbi": 120
+      },
+      "affix_pool_id": "ap-artifact-uncommon",
+      "affix_count_min": 3,
+      "affix_count_max": 5,
+      "tags": [
+        "法宝",
+        "灵灯",
+        "幽林",
+        "凝炁期"
+      ],
+      "quality_min": "玄",
+      "quality_max": "天"
     }
   ]
 }
