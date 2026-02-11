@@ -90,6 +90,18 @@ interface PieSlice {
 }
 
 type BattleInlineTokenKind = 'role' | 'skill' | 'damage' | 'heal' | 'state' | 'round';
+interface BattleInlineTokenSegment {
+  text: string;
+  kind?: BattleInlineTokenKind;
+}
+
+interface BattleParsedLine {
+  plainText: string;
+  segments: BattleInlineTokenSegment[];
+}
+
+const BATTLE_PARSED_LINE_CACHE_LIMIT = 2048;
+const battleParsedLineCache = new Map<string, BattleParsedLine>();
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
@@ -211,11 +223,11 @@ const decodeBattleInlineTokenText = (raw: string): string => {
   }
 };
 
-const parseBattleInlineTokens = (line: string): Array<{ text: string; kind?: BattleInlineTokenKind }> => {
+const parseBattleInlineTokens = (line: string): BattleInlineTokenSegment[] => {
   const text = String(line ?? '');
   if (!text) return [];
 
-  const out: Array<{ text: string; kind?: BattleInlineTokenKind }> = [];
+  const out: BattleInlineTokenSegment[] = [];
   let cursor = 0;
   BATTLE_INLINE_TOKEN_RE.lastIndex = 0;
 
@@ -233,10 +245,31 @@ const parseBattleInlineTokens = (line: string): Array<{ text: string; kind?: Bat
   return out;
 };
 
-const stripBattleInlineTokens = (line: string): string => parseBattleInlineTokens(line).map((x) => x.text).join('');
+const parseBattleLineCached = (line: string): BattleParsedLine => {
+  const raw = String(line ?? '');
+  const cached = battleParsedLineCache.get(raw);
+  if (cached) return cached;
+
+  const segments = parseBattleInlineTokens(raw);
+  const parsed: BattleParsedLine = {
+    plainText: segments.map((x) => x.text).join(''),
+    segments,
+  };
+  battleParsedLineCache.set(raw, parsed);
+
+  if (battleParsedLineCache.size > BATTLE_PARSED_LINE_CACHE_LIMIT) {
+    const oldestKey = battleParsedLineCache.keys().next().value;
+    if (typeof oldestKey === 'string') {
+      battleParsedLineCache.delete(oldestKey);
+    }
+  }
+  return parsed;
+};
+
+const stripBattleInlineTokens = (line: string): string => parseBattleLineCached(line).plainText;
 
 const renderBattleMessageContent = (line: string): Array<string | ReactNode> => {
-  const segments = parseBattleInlineTokens(line);
+  const { segments } = parseBattleLineCached(line);
   if (segments.length === 0) return [''];
   return segments.map((seg, idx) => {
     if (!seg.kind) return seg.text;
@@ -319,10 +352,6 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<InputRef>(null);
   const myCharacterIdRef = useRef<number | null>(character?.id ?? null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
 
   useEffect(() => {
     myCharacterIdRef.current = character?.id ?? null;
@@ -649,12 +678,17 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
     gameSocket.sendChatMessage({ channel: actualChannel, content, clientId });
   };
 
-  const filteredMessages =
-    activeChannel === 'all'
-      ? messages
-      : activeChannel === 'private'
-        ? messages.filter((m) => m.channel === 'private' && m.pmTargetId === activePrivateTargetId)
-        : messages.filter((m) => m.channel === activeChannel);
+  const filteredMessages = useMemo(() => {
+    if (activeChannel === 'all') return messages;
+    if (activeChannel === 'private') {
+      return messages.filter((m) => m.channel === 'private' && m.pmTargetId === activePrivateTargetId);
+    }
+    return messages.filter((m) => m.channel === activeChannel);
+  }, [activeChannel, activePrivateTargetId, messages]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [activeChannel, activePrivateTargetId, filteredMessages.length]);
 
   const battleMessages = useMemo(() => {
     return messages
@@ -778,7 +812,7 @@ const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPlayer,
       const skillName = String(actionMatch[3] ?? '').trim() || '未知技能';
       if (!actorName) continue;
 
-      const tokenSegments = parseBattleInlineTokens(bm.raw);
+      const tokenSegments = parseBattleLineCached(bm.raw).segments;
       let damage = 0;
       let heal = 0;
       let critCount = 0;
