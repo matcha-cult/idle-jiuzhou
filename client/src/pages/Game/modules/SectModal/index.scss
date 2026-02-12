@@ -445,6 +445,78 @@
   margin: 0;
 }
 
+.sect-quest-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.sect-quest-card {
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--panel-bg-soft);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sect-quest-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sect-quest-title {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--text-color);
+  line-height: 1.5;
+}
+
+.sect-quest-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sect-quest-tags .ant-tag {
+  margin: 0;
+}
+
+.sect-quest-target {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-tertiary);
+}
+
+.sect-quest-progress {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--panel-bg);
+  padding: 8px 9px;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--text-color);
+}
+
+.sect-quest-reward {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sect-quest-reward .ant-tag {
+  margin: 0;
+}
+
+.sect-quest-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
 .sect-manage-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -607,6 +679,10 @@
   }
 
   .sect-shop-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sect-quest-grid {
     grid-template-columns: 1fr;
   }
 

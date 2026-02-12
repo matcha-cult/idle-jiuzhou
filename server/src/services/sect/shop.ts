@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { pool } from '../../config/database.js';
 import { createItem } from '../itemService.js';
 import { assertMember, getCharacterUserId, toNumber } from './db.js';
+import { recordSectShopBuyEventTx } from './quests.js';
 import type { BuyResult, ShopItem } from './types.js';
 
 const BAG_EXPAND_SHOP_ITEM_ID = 'sect-shop-007';
@@ -119,6 +120,8 @@ export const buyFromSectShop = async (characterId: number, itemId: string, quant
       await client.query('ROLLBACK');
       return { success: false, message: createRes.message };
     }
+
+    await recordSectShopBuyEventTx(client, characterId, q);
 
     const logMarker = buildShopLogMarker(shopItem.id);
     await addLogTx(client, member.sectId, 'shop_buy', characterId, null, `购买：${shopItem.name}×${q} ${logMarker}`);

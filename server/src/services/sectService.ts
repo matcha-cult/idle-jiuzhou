@@ -13,7 +13,7 @@ import { applyToSect, cancelMyApplication, handleApplication, listApplications }
 import { donate } from './sect/economy.js';
 import { getBuildings, upgradeBuilding } from './sect/buildings.js';
 import { getSectBonuses } from './sect/bonuses.js';
-import { acceptSectQuest, getSectQuests } from './sect/quests.js';
+import { acceptSectQuest, claimSectQuest, getSectQuests, submitSectQuest } from './sect/quests.js';
 import { buyFromSectShop, getSectShop } from './sect/shop.js';
 
 export {
@@ -36,8 +36,8 @@ export {
   getSectBonuses,
   getSectQuests,
   acceptSectQuest,
+  submitSectQuest,
+  claimSectQuest,
   getSectShop,
   buyFromSectShop,
 };
-
-

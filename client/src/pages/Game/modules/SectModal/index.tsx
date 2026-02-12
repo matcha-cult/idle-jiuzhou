@@ -16,6 +16,11 @@ import {
   type SectApplicationDto,
   getSectApplications,
   handleSectApplication,
+  getSectQuests as getSectQuestsApi,
+  acceptSectQuest as acceptSectQuestApi,
+  claimSectQuest as claimSectQuestApi,
+  submitSectQuest as submitSectQuestApi,
+  type SectQuestDto,
 } from '../../../../services/api';
 import './index.scss';
 
@@ -103,6 +108,8 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
   const [hasPermission, setHasPermission] = useState(false);
   const [shopItems, setShopItems] = useState<SectShopItemDto[]>([]);
   const [shopLoading, setShopLoading] = useState(false);
+  const [sectQuests, setSectQuests] = useState<SectQuestDto[]>([]);
+  const [questsLoading, setQuestsLoading] = useState(false);
 
   const closeDonateModal = useCallback(() => {
     setDonateOpen(false);
@@ -253,6 +260,8 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
     setHasPermission(false);
     setShopItems([]);
     setShopLoading(false);
+    setSectQuests([]);
+    setQuestsLoading(false);
   };
 
   const refreshList = useCallback(async () => {
@@ -434,6 +443,81 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
     [fetchShop, message, refreshMySect]
   );
 
+  const fetchSectQuests = useCallback(async () => {
+    setQuestsLoading(true);
+    try {
+      const res = await getSectQuestsApi();
+      if (!res.success) throw new Error(res.message || '获取失败');
+      setSectQuests(res.data ?? []);
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      message.error(err.message || '获取宗门任务失败');
+      setSectQuests([]);
+    } finally {
+      setQuestsLoading(false);
+    }
+  }, [message]);
+
+  const acceptQuestAction = useCallback(
+    async (questId: string) => {
+      if (!questId) return;
+      const loadingKey = `quest-accept-${questId}`;
+      setActionLoadingKey(loadingKey);
+      try {
+        const res = await acceptSectQuestApi(questId);
+        if (!res.success) throw new Error(res.message || '接取失败');
+        message.success(res.message || '接取成功');
+        await fetchSectQuests();
+      } catch (error: unknown) {
+        const err = error as { message?: string };
+        message.error(err.message || '接取失败');
+      } finally {
+        setActionLoadingKey(null);
+      }
+    },
+    [fetchSectQuests, message]
+  );
+
+  const claimQuestAction = useCallback(
+    async (questId: string) => {
+      if (!questId) return;
+      const loadingKey = `quest-claim-${questId}`;
+      setActionLoadingKey(loadingKey);
+      try {
+        const res = await claimSectQuestApi(questId);
+        if (!res.success) throw new Error(res.message || '领取失败');
+        message.success(res.message || '领取成功');
+        await Promise.all([fetchSectQuests(), refreshMySect(false)]);
+      } catch (error: unknown) {
+        const err = error as { message?: string };
+        message.error(err.message || '领取失败');
+      } finally {
+        setActionLoadingKey(null);
+      }
+    },
+    [fetchSectQuests, message, refreshMySect]
+  );
+
+  const submitQuestAction = useCallback(
+    async (questId: string) => {
+      if (!questId) return;
+      const loadingKey = `quest-submit-${questId}`;
+      setActionLoadingKey(loadingKey);
+      try {
+        const res = await submitSectQuestApi(questId);
+        if (!res.success) throw new Error(res.message || '提交失败');
+        message.success(res.message || '提交成功');
+        await Promise.all([fetchSectQuests(), refreshMySect(false)]);
+      } catch (error: unknown) {
+        const err = error as { message?: string };
+        message.error(err.message || '提交失败');
+      } finally {
+        setActionLoadingKey(null);
+      }
+    },
+    [fetchSectQuests, message, refreshMySect]
+  );
+
   // 检查是否有管理权限（宗主、副宗主、长老）
   const checkPermission = useCallback(() => {
     const permitted = myMember?.position === 'leader' || myMember?.position === 'vice_leader' || myMember?.position === 'elder';
@@ -494,6 +578,12 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
       void fetchShop();
     }
   }, [tab, joinState, fetchShop]);
+
+  useEffect(() => {
+    if (tab === 'activity' && joinState === 'joined') {
+      void fetchSectQuests();
+    }
+  }, [tab, joinState, fetchSectQuests]);
 
   // 格式化相对时间
   const formatRelativeTime = useCallback((dateString: string) => {
@@ -593,7 +683,7 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
             <div className="sect-stat-v">{s.funds.toLocaleString()}</div>
           </div>
           <div className="sect-stat">
-            <div className="sect-stat-k">宗门贡献</div>
+            <div className="sect-stat-k">建设点</div>
             <div className="sect-stat-v">{s.buildPoints.toLocaleString()}</div>
           </div>
           <div className="sect-stat">
@@ -825,14 +915,102 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
     </div>
   );
 
-  const renderActivity = () => (
-    <div className="sect-panel">
-      <div className="sect-panel-title">宗门活动</div>
-      <div className="sect-panel-body">
-        <div className="sect-empty">敬请期待</div>
+  const renderActivity = () => {
+    const questTypeLabel: Record<SectQuestDto['type'], string> = {
+      daily: '日常',
+      weekly: '周常',
+      special: '特殊',
+    };
+    const questStatusLabel: Record<SectQuestDto['status'], string> = {
+      not_accepted: '未接取',
+      in_progress: '进行中',
+      completed: '可领取',
+      claimed: '已领取',
+    };
+    const questStatusColor: Record<SectQuestDto['status'], 'default' | 'blue' | 'gold' | 'green'> = {
+      not_accepted: 'default',
+      in_progress: 'blue',
+      completed: 'gold',
+      claimed: 'green',
+    };
+
+    return (
+      <div className="sect-panel">
+        <div className="sect-panel-title">宗门活动</div>
+        <div className="sect-panel-body">
+          {questsLoading ? (
+            <div className="sect-empty">任务加载中...</div>
+          ) : sectQuests.length === 0 ? (
+            <div className="sect-empty">暂无可接取任务</div>
+          ) : (
+            <div className="sect-quest-grid">
+              {sectQuests.map((quest) => {
+                const progress = Math.max(0, Math.min(Number(quest.required) || 0, Number(quest.progress) || 0));
+                const loadingKey =
+                  quest.status === 'completed'
+                    ? `quest-claim-${quest.id}`
+                    : quest.status === 'in_progress' && quest.actionType === 'submit_item'
+                      ? `quest-submit-${quest.id}`
+                      : `quest-accept-${quest.id}`;
+                const buttonLabel =
+                  quest.status === 'not_accepted'
+                    ? '接取'
+                    : quest.status === 'in_progress' && quest.actionType === 'submit_item'
+                      ? '提交'
+                    : quest.status === 'completed'
+                      ? '领取'
+                      : quest.status === 'claimed'
+                        ? '已领取'
+                        : '进行中';
+                const buttonDisabled =
+                  quest.status === 'claimed' || (quest.status === 'in_progress' && quest.actionType !== 'submit_item');
+                const onClick =
+                  quest.status === 'not_accepted'
+                    ? () => acceptQuestAction(quest.id)
+                    : quest.status === 'in_progress' && quest.actionType === 'submit_item'
+                      ? () => submitQuestAction(quest.id)
+                    : quest.status === 'completed'
+                      ? () => claimQuestAction(quest.id)
+                      : undefined;
+
+                return (
+                  <div key={quest.id} className="sect-quest-card">
+                    <div className="sect-quest-head">
+                      <div className="sect-quest-title">{quest.name}</div>
+                      <div className="sect-quest-tags">
+                        <Tag color="default">{questTypeLabel[quest.type]}</Tag>
+                        <Tag color={questStatusColor[quest.status]}>{questStatusLabel[quest.status]}</Tag>
+                      </div>
+                    </div>
+                    <div className="sect-quest-target">{quest.target}</div>
+                    <div className="sect-quest-progress">
+                      进度 {progress}/{quest.required}
+                    </div>
+                    <div className="sect-quest-reward">
+                      <Tag>贡献 +{quest.reward.contribution}</Tag>
+                      <Tag>建设点 +{quest.reward.buildPoints}</Tag>
+                      <Tag>资金 +{quest.reward.funds}</Tag>
+                    </div>
+                    <div className="sect-quest-actions">
+                      <Button
+                        type={quest.status === 'completed' ? 'primary' : 'default'}
+                        size="small"
+                        disabled={buttonDisabled}
+                        loading={actionLoadingKey === loadingKey}
+                        onClick={onClick}
+                      >
+                        {buttonLabel}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderManage = () => {
     const renderApplications = () => {
@@ -935,7 +1113,13 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
               <div className="sect-manage-card">
                 <div className="sect-manage-name">宗门任务</div>
                 <div className="sect-manage-desc">开启宗门任务，提高活跃度。</div>
-                <Button>查看</Button>
+                <Button
+                  onClick={() => {
+                    setTab('activity');
+                  }}
+                >
+                  查看
+                </Button>
               </div>
             </div>
           </div>

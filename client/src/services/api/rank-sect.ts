@@ -169,6 +169,50 @@ export const upgradeSectBuilding = (buildingType: string): Promise<{ success: bo
   return api.post('/sect/buildings/upgrade', { buildingType });
 };
 
+export type SectQuestStatusDto = 'not_accepted' | 'in_progress' | 'completed' | 'claimed';
+
+export type SectQuestDto = {
+  id: string;
+  name: string;
+  type: 'daily' | 'weekly' | 'special';
+  target: string;
+  required: number;
+  reward: {
+    contribution: number;
+    buildPoints: number;
+    funds: number;
+  };
+  actionType: 'event' | 'submit_item';
+  submitRequirement?: {
+    itemDefId: string;
+    itemName: string;
+    itemCategory: 'item' | 'material' | 'consumable';
+  };
+  status: SectQuestStatusDto;
+  progress: number;
+};
+
+export const getSectQuests = (): Promise<{ success: boolean; message: string; data?: SectQuestDto[] }> => {
+  return api.get('/sect/quests');
+};
+
+export const acceptSectQuest = (questId: string): Promise<{ success: boolean; message: string }> => {
+  return api.post('/sect/quests/accept', { questId });
+};
+
+export const claimSectQuest = (
+  questId: string
+): Promise<{ success: boolean; message: string; reward?: { contribution: number; buildPoints: number; funds: number } }> => {
+  return api.post('/sect/quests/claim', { questId });
+};
+
+export const submitSectQuest = (
+  questId: string,
+  quantity?: number
+): Promise<{ success: boolean; message: string; consumed?: number; progress?: number; status?: SectQuestStatusDto }> => {
+  return api.post('/sect/quests/submit', { questId, quantity });
+};
+
 export type SectApplicationDto = {
   id: number;
   characterId: number;

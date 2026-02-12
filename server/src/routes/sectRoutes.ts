@@ -6,6 +6,7 @@ import {
   appointPosition,
   buyFromSectShop,
   cancelMyApplication,
+  claimSectQuest,
   createSect,
   disbandSect,
   donate,
@@ -20,6 +21,7 @@ import {
   leaveSect,
   listApplications,
   searchSects,
+  submitSectQuest,
   transferLeader,
   upgradeBuilding,
 } from '../services/sectService.js';
@@ -369,6 +371,51 @@ router.post('/quests/accept', async (req: Request, res: Response) => {
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
     console.error('接取任务接口错误:', error);
+    return res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.post('/quests/claim', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as AuthedRequest).userId;
+    const characterId = await getCharacterId(userId);
+    if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
+    const body = req.body as { questId?: unknown };
+    const questId = typeof body?.questId === 'string' ? body.questId : '';
+    if (!questId) return res.status(400).json({ success: false, message: '参数错误' });
+    const result = await claimSectQuest(characterId, questId);
+    if (result.success) {
+      try {
+        const gameServer = getGameServer();
+        await gameServer.pushCharacterUpdate(userId);
+      } catch {}
+    }
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    console.error('领取任务奖励接口错误:', error);
+    return res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.post('/quests/submit', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as AuthedRequest).userId;
+    const characterId = await getCharacterId(userId);
+    if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
+    const body = req.body as { questId?: unknown; quantity?: unknown };
+    const questId = typeof body?.questId === 'string' ? body.questId : '';
+    const quantity = parseBodyNumber(body?.quantity);
+    if (!questId) return res.status(400).json({ success: false, message: '参数错误' });
+    const result = await submitSectQuest(characterId, questId, quantity);
+    if (result.success) {
+      try {
+        const gameServer = getGameServer();
+        await gameServer.pushCharacterUpdate(userId);
+      } catch {}
+    }
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    console.error('提交任务物品接口错误:', error);
     return res.status(500).json({ success: false, message: '服务器错误' });
   }
 });

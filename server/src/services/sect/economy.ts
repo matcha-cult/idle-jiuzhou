@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { pool } from '../../config/database.js';
 import { assertMember, toNumber } from './db.js';
+import { recordSectDonateEventTx } from './quests.js';
 import type { DonateResult } from './types.js';
 
 const SPIRIT_STONE_TO_CONTRIBUTION_RATIO = 10;
@@ -55,6 +56,7 @@ export const donate = async (characterId: number, spiritStones?: number): Promis
       `UPDATE sect_member SET contribution = contribution + $2, weekly_contribution = weekly_contribution + $2 WHERE character_id = $1`,
       [characterId, addedContribution]
     );
+    await recordSectDonateEventTx(client, characterId, donatedSpiritStones);
 
     const content = `捐献：灵石${donatedSpiritStones}（宗门资金+${addedFunds}，贡献+${addedContribution}）`;
     await addLogTx(client, member.sectId, 'donate', characterId, null, content);

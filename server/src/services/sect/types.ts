@@ -106,8 +106,28 @@ export interface SectQuest {
   target: string;
   required: number;
   reward: { contribution: number; buildPoints: number; funds: number };
-  status: 'not_accepted' | 'in_progress' | 'completed';
+  actionType: 'event' | 'submit_item';
+  submitRequirement?: {
+    itemDefId: string;
+    itemName: string;
+    itemCategory: 'item' | 'material' | 'consumable';
+  };
+  status: 'not_accepted' | 'in_progress' | 'completed' | 'claimed';
   progress: number;
+}
+
+export interface ClaimSectQuestResult extends Result {
+  reward?: {
+    contribution: number;
+    buildPoints: number;
+    funds: number;
+  };
+}
+
+export interface SubmitSectQuestResult extends Result {
+  consumed?: number;
+  progress?: number;
+  status?: SectQuest['status'];
 }
 
 export interface ShopItem {
