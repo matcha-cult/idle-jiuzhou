@@ -21,6 +21,7 @@ uploads/
 .idea/
 *.sw?
 *.sublime-*
+.history
 
 # OS files
 .DS_Store
