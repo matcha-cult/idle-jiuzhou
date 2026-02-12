@@ -284,8 +284,8 @@ router.post('/donate', async (req: Request, res: Response) => {
     const userId = (req as AuthedRequest).userId;
     const characterId = await getCharacterId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
-    const body = req.body as { silver?: unknown; spiritStones?: unknown };
-    const result = await donate(characterId, parseBodyNumber(body?.silver), parseBodyNumber(body?.spiritStones));
+    const body = req.body as { spiritStones?: unknown };
+    const result = await donate(characterId, parseBodyNumber(body?.spiritStones));
     if (result.success) {
       try {
         const gameServer = getGameServer();

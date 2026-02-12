@@ -3,6 +3,8 @@ import { pool } from '../../config/database.js';
 import { assertMember, toNumber } from './db.js';
 import type { DonateResult } from './types.js';
 
+const SPIRIT_STONE_TO_CONTRIBUTION_RATIO = 10;
+
 const addLogTx = async (
   client: PoolClient,
   sectId: string,
@@ -17,42 +19,33 @@ const addLogTx = async (
   );
 };
 
-export const donate = async (characterId: number, silver?: number, spiritStones?: number): Promise<DonateResult> => {
-  const s = Number.isFinite(Number(silver)) ? Math.max(0, Math.floor(Number(silver))) : 0;
-  const ss = Number.isFinite(Number(spiritStones)) ? Math.max(0, Math.floor(Number(spiritStones))) : 0;
-  if (s <= 0 && ss <= 0) return { success: false, message: '捐献数量不能为空' };
+export const donate = async (characterId: number, spiritStones?: number): Promise<DonateResult> => {
+  const donatedSpiritStones = Number.isFinite(Number(spiritStones)) ? Math.max(0, Math.floor(Number(spiritStones))) : 0;
+  if (donatedSpiritStones <= 0) return { success: false, message: '捐献数量不能为空' };
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const member = await assertMember(characterId, client);
 
-    const charRes = await client.query(
-      `SELECT silver, spirit_stones FROM characters WHERE id = $1 FOR UPDATE`,
-      [characterId]
-    );
+    const charRes = await client.query(`SELECT spirit_stones FROM characters WHERE id = $1 FOR UPDATE`, [characterId]);
     if (charRes.rows.length === 0) {
       await client.query('ROLLBACK');
       return { success: false, message: '角色不存在' };
     }
-    const curSilver = toNumber(charRes.rows[0].silver);
-    const curSS = toNumber(charRes.rows[0].spirit_stones);
-    if (curSilver < s) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '银两不足' };
-    }
-    if (curSS < ss) {
+    const curSpiritStones = toNumber(charRes.rows[0].spirit_stones);
+    if (curSpiritStones < donatedSpiritStones) {
       await client.query('ROLLBACK');
       return { success: false, message: '灵石不足' };
     }
 
-    await client.query(
-      `UPDATE characters SET silver = silver - $2, spirit_stones = spirit_stones - $3, updated_at = NOW() WHERE id = $1`,
-      [characterId, s, ss]
-    );
+    await client.query(`UPDATE characters SET spirit_stones = spirit_stones - $2, updated_at = NOW() WHERE id = $1`, [
+      characterId,
+      donatedSpiritStones,
+    ]);
 
-    const addedFunds = s + ss * 100;
-    const addedContribution = s + ss * 100;
+    const addedContribution = donatedSpiritStones * SPIRIT_STONE_TO_CONTRIBUTION_RATIO;
+    const addedFunds = addedContribution;
 
     await client.query(
       `UPDATE sect_def SET funds = funds + $2, updated_at = NOW() WHERE id = $1`,
@@ -63,7 +56,7 @@ export const donate = async (characterId: number, silver?: number, spiritStones?
       [characterId, addedContribution]
     );
 
-    const content = `捐献：银两${s}、灵石${ss}（宗门资金+${addedFunds}，贡献+${addedContribution}）`;
+    const content = `捐献：灵石${donatedSpiritStones}（宗门资金+${addedFunds}，贡献+${addedContribution}）`;
     await addLogTx(client, member.sectId, 'donate', characterId, null, content);
 
     await client.query('COMMIT');
@@ -76,4 +69,3 @@ export const donate = async (characterId: number, silver?: number, spiritStones?
     client.release();
   }
 };
-

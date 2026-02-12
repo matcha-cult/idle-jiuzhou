@@ -218,8 +218,7 @@ export const buyFromSectShop = (
 };
 
 export const donateToSect = (
-  silver?: number,
-  spiritStones?: number
+  spiritStones: number
 ): Promise<{ success: boolean; message: string; addedFunds?: number; addedContribution?: number }> => {
-  return api.post('/sect/donate', { silver, spiritStones });
+  return api.post('/sect/donate', { spiritStones });
 };
