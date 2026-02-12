@@ -70,6 +70,189 @@ const asArray = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 const asObject = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 
+const REALM_ORDER = [
+  '凡人',
+  '炼精化炁·养气期',
+  '炼精化炁·通脉期',
+  '炼精化炁·凝炁期',
+  '炼炁化神·炼己期',
+  '炼炁化神·采药期',
+  '炼炁化神·结胎期',
+  '炼神返虚·养神期',
+  '炼神返虚·还虚期',
+  '炼神返虚·合道期',
+  '炼虚合道·证道期',
+  '炼虚合道·历劫期',
+  '炼虚合道·成圣期',
+] as const;
+
+const REALM_MAJOR_TO_FIRST: Record<string, string> = {
+  凡人: '凡人',
+  炼精化炁: '炼精化炁·养气期',
+  炼炁化神: '炼炁化神·炼己期',
+  炼神返虚: '炼神返虚·养神期',
+  炼虚合道: '炼虚合道·证道期',
+};
+
+const REALM_SUB_TO_FULL: Record<string, string> = {
+  养气期: '炼精化炁·养气期',
+  通脉期: '炼精化炁·通脉期',
+  凝炁期: '炼精化炁·凝炁期',
+  炼己期: '炼炁化神·炼己期',
+  采药期: '炼炁化神·采药期',
+  结胎期: '炼炁化神·结胎期',
+  养神期: '炼神返虚·养神期',
+  还虚期: '炼神返虚·还虚期',
+  合道期: '炼神返虚·合道期',
+  证道期: '炼虚合道·证道期',
+  历劫期: '炼虚合道·历劫期',
+  成圣期: '炼虚合道·成圣期',
+};
+
+const normalizeRealm = (realmRaw: unknown, subRealmRaw?: unknown): string => {
+  const realm = asString(realmRaw).trim();
+  const subRealm = asString(subRealmRaw).trim();
+  if (!realm && !subRealm) return '凡人';
+  if (realm && REALM_ORDER.includes(realm as (typeof REALM_ORDER)[number])) return realm;
+  if (realm && subRealm) {
+    const full = `${realm}·${subRealm}`;
+    if (REALM_ORDER.includes(full as (typeof REALM_ORDER)[number])) return full;
+  }
+  if (realm && REALM_MAJOR_TO_FIRST[realm]) return REALM_MAJOR_TO_FIRST[realm];
+  if (realm && REALM_SUB_TO_FULL[realm]) return REALM_SUB_TO_FULL[realm];
+  if (!realm && subRealm && REALM_SUB_TO_FULL[subRealm]) return REALM_SUB_TO_FULL[subRealm];
+  return realm || '凡人';
+};
+
+const getRealmRank = (realmRaw: unknown, subRealmRaw?: unknown): number => {
+  const normalized = normalizeRealm(realmRaw, subRealmRaw);
+  return REALM_ORDER.indexOf(normalized as (typeof REALM_ORDER)[number]);
+};
+
+const syncCurrentSectionStaticProgress = async (characterId: number): Promise<void> => {
+  const cid = Number(characterId);
+  if (!Number.isFinite(cid) || cid <= 0) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const progressRes = await client.query(
+      `SELECT current_section_id, section_status, objectives_progress
+       FROM character_main_quest_progress
+       WHERE character_id = $1 FOR UPDATE`,
+      [cid],
+    );
+    if (!progressRes.rows?.[0]) {
+      await client.query('ROLLBACK');
+      return;
+    }
+
+    const progress = progressRes.rows[0] as {
+      current_section_id?: unknown;
+      section_status?: unknown;
+      objectives_progress?: unknown;
+    };
+    if (asString(progress.section_status) !== 'objectives') {
+      await client.query('ROLLBACK');
+      return;
+    }
+
+    const sectionId = asString(progress.current_section_id);
+    if (!sectionId) {
+      await client.query('ROLLBACK');
+      return;
+    }
+
+    const sectionRes = await client.query(`SELECT objectives FROM main_quest_section WHERE id = $1 AND enabled = true LIMIT 1`, [sectionId]);
+    if (!sectionRes.rows?.[0]) {
+      await client.query('ROLLBACK');
+      return;
+    }
+
+    const objectives = asArray<{ id?: unknown; type?: unknown; target?: unknown; params?: unknown }>(sectionRes.rows[0].objectives);
+    const progressData = asObject(progress.objectives_progress);
+
+    const characterRes = await client.query(`SELECT realm, sub_realm FROM characters WHERE id = $1 LIMIT 1`, [cid]);
+    const characterRow = characterRes.rows?.[0] as { realm?: unknown; sub_realm?: unknown } | undefined;
+    const currentRealmRank = getRealmRank(characterRow?.realm, characterRow?.sub_realm);
+
+    const techniqueRes = await client.query(
+      `SELECT technique_id, current_layer FROM character_technique WHERE character_id = $1`,
+      [cid],
+    );
+    const currentTechniqueLayerMap = new Map<string, number>();
+    for (const row of techniqueRes.rows ?? []) {
+      const record = row as { technique_id?: unknown; current_layer?: unknown };
+      const techniqueId = asString(record.technique_id).trim();
+      if (!techniqueId) continue;
+      const currentLayer = Math.max(0, Math.floor(asNumber(record.current_layer, 0)));
+      const prevLayer = currentTechniqueLayerMap.get(techniqueId) ?? 0;
+      if (currentLayer > prevLayer) currentTechniqueLayerMap.set(techniqueId, currentLayer);
+    }
+
+    let updated = false;
+    for (const obj of objectives) {
+      const objId = asString(obj.id);
+      if (!objId) continue;
+      const target = Math.max(1, Math.floor(asNumber(obj.target, 1)));
+      const done = asNumber(progressData[objId], 0);
+      if (done >= target) continue;
+
+      const objType = asString(obj.type);
+      const params = asObject(obj.params);
+
+      if (objType === 'upgrade_realm') {
+        const requiredRealm = asString(params.realm).trim();
+        const requiredRealmRank = getRealmRank(requiredRealm);
+        if (!requiredRealm) continue;
+        if (requiredRealmRank >= 0 && currentRealmRank >= requiredRealmRank) {
+          progressData[objId] = target;
+          updated = true;
+        }
+      }
+
+      if (objType === 'upgrade_technique') {
+        const techniqueId = asString(params.technique_id).trim();
+        const requiredLayer = Math.max(1, Math.floor(asNumber(params.layer, 1)));
+        const currentLayer = currentTechniqueLayerMap.get(techniqueId) ?? 0;
+        if (!techniqueId) continue;
+        if (currentLayer >= requiredLayer) {
+          progressData[objId] = target;
+          updated = true;
+        }
+      }
+    }
+
+    if (!updated) {
+      await client.query('ROLLBACK');
+      return;
+    }
+
+    const allDone = objectives.every((obj) => {
+      const objId = asString(obj.id);
+      if (!objId) return true;
+      const target = Math.max(1, Math.floor(asNumber(obj.target, 1)));
+      return asNumber(progressData[objId], 0) >= target;
+    });
+    const nextStatus: SectionStatus = allDone ? 'turnin' : 'objectives';
+    await client.query(
+      `UPDATE character_main_quest_progress
+       SET objectives_progress = $2::jsonb,
+           section_status = $3,
+           updated_at = NOW()
+       WHERE character_id = $1`,
+      [cid, JSON.stringify(progressData), nextStatus],
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('同步主线静态目标失败:', error);
+  } finally {
+    client.release();
+  }
+};
+
 const getFirstSection = async (): Promise<{ id: string; chapter_id: string } | null> => {
   const res = await query(
     `SELECT s.id, s.chapter_id
@@ -157,6 +340,8 @@ export const getMainQuestProgress = async (characterId: number): Promise<MainQue
       tracked: true,
     };
   }
+
+  await syncCurrentSectionStaticProgress(cid);
 
   let progressRes = await query(`SELECT * FROM character_main_quest_progress WHERE character_id = $1`, [cid]);
   if (!progressRes.rows?.[0]) {
@@ -474,6 +659,9 @@ export const advanceDialogue = async (
       );
 
       await client.query('COMMIT');
+      if (newSectionStatus === 'objectives') {
+        await syncCurrentSectionStaticProgress(cid);
+      }
       return { success: true, message: 'ok', data: { dialogueState: newDialogueState, effectResults } };
     }
 
@@ -749,7 +937,10 @@ export const updateSectionProgress = async (
       }
 
       if (event.type === 'upgrade_realm') {
-        if (objType === 'upgrade_realm' && asString(params.realm) === event.realm) {
+        const requiredRealm = asString(params.realm).trim();
+        const requiredRealmRank = getRealmRank(requiredRealm);
+        const currentRealmRank = getRealmRank(event.realm);
+        if (objType === 'upgrade_realm' && requiredRealm && requiredRealmRank >= 0 && currentRealmRank >= requiredRealmRank) {
           matched = true;
           delta = 1;
         }
@@ -1145,6 +1336,8 @@ export const getSectionList = async (characterId: number, chapterId: string): Pr
   const chapId = typeof chapterId === 'string' ? chapterId.trim() : '';
   if (!chapId) return { sections: [] };
 
+  await syncCurrentSectionStaticProgress(cid);
+
   const progressRes = await query(
     `SELECT current_section_id, section_status, objectives_progress, completed_sections
      FROM character_main_quest_progress
@@ -1225,4 +1418,3 @@ export const setMainQuestTracked = async (
   const saved = res.rows?.[0]?.tracked !== false;
   return { success: true, message: 'ok', data: { tracked: saved } };
 };
-
