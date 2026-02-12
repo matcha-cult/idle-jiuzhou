@@ -9,6 +9,7 @@
 import { query, pool } from '../config/database.js';
 import type { PoolClient } from 'pg';
 import { randomInt } from 'crypto';
+import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import {
   ENHANCE_MAX_LEVEL,
   REFINE_MAX_LEVEL,
@@ -1205,6 +1206,8 @@ export const addItemToInventoryTx = async (
     return { success: false, message: '数量参数错误' };
   }
 
+  await lockCharacterInventoryMutexTx(client, characterId);
+
   const location = options.location || 'bag';
   const bindType = options.bindType || 'none';
 
@@ -1407,6 +1410,7 @@ export const removeItemFromInventory = async (
   
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
     
     // 获取物品信息并锁定
     const result = await client.query(`
@@ -1468,6 +1472,7 @@ export const moveItem = async (
   
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
     
     // 获取物品信息
     const itemResult = await client.query(`
@@ -1565,6 +1570,7 @@ export const equipItem = async (
 
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const beforeSetBonus = await getEquippedSetBonusDeltaTx(client, characterId);
 
@@ -1725,6 +1731,7 @@ export const unequipItem = async (
 
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const beforeSetBonus = await getEquippedSetBonusDeltaTx(client, characterId);
 
@@ -1831,6 +1838,7 @@ export const enhanceEquipment = async (
 
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const itemState = await getEnhanceItemStateTx(client, characterId, itemInstanceId);
     if (!itemState.success || !itemState.item) {
@@ -1978,6 +1986,7 @@ export const refineEquipment = async (
 
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const itemState = await getRefineItemStateTx(client, characterId, itemInstanceId);
     if (!itemState.success || !itemState.item) {
@@ -2100,6 +2109,7 @@ export const socketEquipment = async (
 
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const socketState = await readEquipmentSocketStateTx(client, characterId, itemInstanceId);
     if (!socketState.success || !socketState.item) {
@@ -2236,27 +2246,44 @@ export const expandInventory = async (
   location: 'bag' | 'warehouse',
   expandSize: number = 10
 ): Promise<{ success: boolean; message: string; newCapacity?: number }> => {
+  const client = await pool.connect();
   const column = location === 'bag' ? 'bag_capacity' : 'warehouse_capacity';
   const countColumn = location === 'bag' ? 'bag_expand_count' : 'warehouse_expand_count';
-  
-  const result = await query(`
-    UPDATE inventory 
-    SET ${column} = ${column} + $1, 
-        ${countColumn} = ${countColumn} + 1,
-        updated_at = NOW()
-    WHERE character_id = $2
-    RETURNING ${column} as new_capacity
-  `, [expandSize, characterId]);
-  
-  if (result.rows.length === 0) {
-    return { success: false, message: '背包不存在' };
+
+  try {
+    await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
+
+    const result = await client.query(
+      `
+        UPDATE inventory
+        SET ${column} = ${column} + $1,
+            ${countColumn} = ${countColumn} + 1,
+            updated_at = NOW()
+        WHERE character_id = $2
+        RETURNING ${column} as new_capacity
+      `,
+      [expandSize, characterId]
+    );
+
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '背包不存在' };
+    }
+
+    await client.query('COMMIT');
+    return {
+      success: true,
+      message: '扩容成功',
+      newCapacity: result.rows[0].new_capacity,
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('扩容背包失败:', error);
+    return { success: false, message: '扩容背包失败' };
+  } finally {
+    client.release();
   }
-  
-  return { 
-    success: true, 
-    message: '扩容成功', 
-    newCapacity: result.rows[0].new_capacity 
-  };
 };
 
 // ============================================
@@ -2288,6 +2315,7 @@ export const disassembleEquipment = async (
 
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const itemResult = await client.query(
       `
@@ -2444,6 +2472,7 @@ export const disassembleEquipmentBatch = async (
 
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const itemResult = await client.query(
       `
@@ -2587,6 +2616,7 @@ export const removeItemsBatch = async (
 
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const itemResult = await client.query(
       `
@@ -2662,6 +2692,7 @@ export const sortInventory = async (
 
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const info = await getInventoryInfoWithClient(characterId, client);
     const capacity = getSlottedCapacity(info, location);
@@ -2731,7 +2762,6 @@ export const sortInventory = async (
 
     await client.query('COMMIT');
     return { success: true, message: '整理完成' };
-
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('整理背包失败:', error);

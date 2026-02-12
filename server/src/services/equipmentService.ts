@@ -11,6 +11,7 @@
 import { query, pool } from '../config/database.js';
 import type { PoolClient } from 'pg';
 import { findEmptySlotsWithClient } from './inventoryService.js';
+import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 
 // ============================================
 // 类型定义
@@ -596,6 +597,8 @@ export const createEquipmentInstanceTx = async (
   const hasExplicitSlot = options.locationSlot !== undefined && options.locationSlot !== null;
   let locationSlot = options.locationSlot ?? null;
 
+  await lockCharacterInventoryMutexTx(client, characterId);
+
   let attempt = 0;
   while (attempt < 6) {
     attempt += 1;
@@ -750,4 +753,3 @@ export const getEquipmentInstance = async (instanceId: number): Promise<any | nu
     createdAt: row.created_at
   };
 };
-

@@ -1,6 +1,7 @@
 import { pool, query } from '../config/database.js';
 import type { PoolClient } from 'pg';
 import { findEmptySlotsWithClient } from './inventoryService.js';
+import { lockCharacterInventoryMutexTx, lockCharacterInventoryMutexesTx } from './inventoryMutex.js';
 import { buildEquipmentDisplayBaseAttrs } from './equipmentGrowthRules.js';
 
 export type MarketSort = 'timeDesc' | 'priceAsc' | 'priceDesc' | 'qtyDesc';
@@ -371,6 +372,7 @@ export const createMarketListing = async (params: {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, params.characterId);
 
     const itemResult = await client.query(
       `
@@ -520,6 +522,7 @@ export const cancelMarketListing = async (params: {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, params.characterId);
 
     const listingResult = await client.query(
       `
@@ -617,6 +620,29 @@ export const buyMarketListing = async (params: {
   try {
     await client.query('BEGIN');
 
+    const listingOwnerResult = await client.query(
+      `
+        SELECT seller_character_id
+        FROM market_listing
+        WHERE id = $1
+      `,
+      [listingId],
+    );
+    if (listingOwnerResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '上架记录不存在' };
+    }
+    const sellerCharacterIdFromMeta = Number(listingOwnerResult.rows[0].seller_character_id);
+    if (!Number.isInteger(sellerCharacterIdFromMeta) || sellerCharacterIdFromMeta <= 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '上架数据异常' };
+    }
+    if (sellerCharacterIdFromMeta === params.buyerCharacterId) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '不能购买自己上架的物品' };
+    }
+    await lockCharacterInventoryMutexesTx(client, [params.buyerCharacterId, sellerCharacterIdFromMeta]);
+
     const listingResult = await client.query(
       `
         SELECT
@@ -648,6 +674,10 @@ export const buyMarketListing = async (params: {
 
     const sellerCharacterId = Number(listing.seller_character_id);
     const sellerUserId = Number(listing.seller_user_id);
+    if (sellerCharacterId !== sellerCharacterIdFromMeta) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '上架数据异常，请刷新后重试' };
+    }
     if (sellerCharacterId === params.buyerCharacterId) {
       await client.query('ROLLBACK');
       return { success: false, message: '不能购买自己上架的物品' };

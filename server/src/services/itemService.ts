@@ -8,6 +8,7 @@ import { query, pool } from '../config/database.js';
 import type { PoolClient } from 'pg';
 import { generateEquipment, createEquipmentInstance, createEquipmentInstanceTx, GenerateOptions, GeneratedEquipment } from './equipmentService.js';
 import { addItemToInventory, addItemToInventoryTx, SlottedInventoryLocation } from './inventoryService.js';
+import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { buildEquipmentDisplayBaseAttrs } from './equipmentGrowthRules.js';
 
 // 物品定义接口
@@ -284,6 +285,7 @@ export const useItem = async (
   
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const charResult = await client.query(
       'SELECT id, realm, sub_realm, qixue, max_qixue, lingqi, max_lingqi FROM characters WHERE id = $1 FOR UPDATE',

@@ -3,6 +3,7 @@ import type { GridPosition, MapRoom } from './mapService.js';
 import { getRoomInMap } from './mapService.js';
 import { getGameServer } from '../game/GameServer.js';
 import { addItemToInventoryTx } from './inventoryService.js';
+import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { npcTalk, recordGatherResourceEvent } from './taskService.js';
 
 export type MapObjectDto =
@@ -859,6 +860,7 @@ export const gatherRoomResource = async (params: {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const stateRes = await client.query(
       `
@@ -1104,6 +1106,7 @@ export const pickupRoomItem = async (params: {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     if (cfg.once) {
       const stateRes = await client.query(

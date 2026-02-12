@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { pool, query } from '../config/database.js';
 import { randomInt } from 'crypto';
 import { addItemToInventoryTx } from './inventoryService.js';
+import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 
 export type GemType = 'attack' | 'defense' | 'survival' | 'all';
 type GemTypeToken = 'atk' | 'def' | 'sur' | 'all';
@@ -588,6 +589,7 @@ export const synthesizeGem = async (
 
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const wallet = await getCharacterWalletTx(client, characterId, true);
     if (!wallet) {
@@ -727,6 +729,7 @@ export const synthesizeGemBatch = async (
 
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     const wallet = await getCharacterWalletTx(client, characterId, true);
     if (!wallet) {

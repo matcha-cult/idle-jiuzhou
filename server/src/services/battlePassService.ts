@@ -1,5 +1,6 @@
 import { query, pool } from '../config/database.js';
 import { addItemToInventoryTx } from './inventoryService.js';
+import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 
 export type BattlePassTaskDto = {
   id: string;
@@ -433,6 +434,7 @@ export const claimBattlePassReward = async (
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await lockCharacterInventoryMutexTx(client, characterId);
 
     // 获取赛季配置
     const seasonRes = await client.query(

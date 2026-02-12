@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { pool, query } from '../config/database.js';
 import { addItemToInventoryTx } from './inventoryService.js';
+import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { recordCraftItemEvent } from './taskService.js';
 
 type CraftRecipeType = 'craft' | 'refine' | 'decompose' | 'upgrade' | string;
@@ -495,6 +496,12 @@ export const executeCraftRecipe = async (
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const characterSnapshot = await getCharacterByUserId(user, client, false);
+    if (!characterSnapshot) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '角色不存在' };
+    }
+    await lockCharacterInventoryMutexTx(client, characterSnapshot.id);
 
     const character = await getCharacterByUserId(user, client, true);
     if (!character) {
