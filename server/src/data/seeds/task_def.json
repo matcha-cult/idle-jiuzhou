@@ -198,7 +198,7 @@
         {
           "type": "item",
           "item_def_id": "mat-gongfa-canye",
-          "qty": 3
+          "qty": 2
         },
         {
           "type": "item",
@@ -241,7 +241,7 @@
         {
           "type": "item",
           "item_def_id": "mat-gongfa-canye",
-          "qty": 5
+          "qty": 3
         },
         {
           "type": "item",
@@ -291,7 +291,7 @@
         {
           "type": "item",
           "item_def_id": "mat-gongfa-canye",
-          "qty": 6
+          "qty": 4
         },
         {
           "type": "item",
@@ -346,7 +346,7 @@
         {
           "type": "item",
           "item_def_id": "mat-gongfa-canye",
-          "qty": 8
+          "qty": 5
         },
         {
           "type": "item",
@@ -399,7 +399,7 @@
         {
           "type": "item",
           "item_def_id": "mat-gongfa-canye",
-          "qty": 18
+          "qty": 11
         },
         {
           "type": "item",
@@ -538,7 +538,7 @@
         {
           "type": "item",
           "item_def_id": "mat-gongfa-canye",
-          "qty": 10
+          "qty": 6
         }
       ],
       "prereq_task_ids": [],

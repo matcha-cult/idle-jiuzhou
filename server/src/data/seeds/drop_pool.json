@@ -30,7 +30,7 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.12,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -107,7 +107,7 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.18,
+          "chance": 0.12,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -184,9 +184,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.22,
+          "chance": 0.19,
           "qty_min": 1,
-          "qty_max": 2,
+          "qty_max": 1,
           "show_in_ui": true
         },
         {
@@ -275,9 +275,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.28,
+          "chance": 0.24,
           "qty_min": 1,
-          "qty_max": 2,
+          "qty_max": 1,
           "show_in_ui": true
         },
         {
@@ -352,9 +352,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.25,
+          "chance": 0.21,
           "qty_min": 1,
-          "qty_max": 2,
+          "qty_max": 1,
           "show_in_ui": true
         },
         {
@@ -443,9 +443,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.32,
+          "chance": 0.27,
           "qty_min": 1,
-          "qty_max": 2,
+          "qty_max": 1,
           "show_in_ui": true
         },
         {
@@ -562,9 +562,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.85,
-          "qty_min": 2,
-          "qty_max": 4,
+          "chance": 0.72,
+          "qty_min": 1,
+          "qty_max": 3,
           "show_in_ui": true
         },
         {
@@ -836,8 +836,8 @@
         {
           "item_def_id": "mat-gongfa-canye",
           "chance": 1,
-          "qty_min": 6,
-          "qty_max": 10,
+          "qty_min": 4,
+          "qty_max": 7,
           "show_in_ui": true
         },
         {
@@ -996,9 +996,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.35,
+          "chance": 0.3,
           "qty_min": 1,
-          "qty_max": 3,
+          "qty_max": 2,
           "show_in_ui": true
         },
         {
@@ -1108,9 +1108,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.4,
+          "chance": 0.34,
           "qty_min": 1,
-          "qty_max": 3,
+          "qty_max": 2,
           "show_in_ui": true
         },
         {
@@ -1213,9 +1213,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.45,
-          "qty_min": 2,
-          "qty_max": 4,
+          "chance": 0.38,
+          "qty_min": 1,
+          "qty_max": 3,
           "show_in_ui": true
         },
         {
@@ -1318,9 +1318,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.5,
-          "qty_min": 2,
-          "qty_max": 4,
+          "chance": 0.42,
+          "qty_min": 1,
+          "qty_max": 3,
           "show_in_ui": true
         },
         {
@@ -1465,9 +1465,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.9,
-          "qty_min": 4,
-          "qty_max": 7,
+          "chance": 0.77,
+          "qty_min": 3,
+          "qty_max": 5,
           "show_in_ui": true
         },
         {
@@ -1669,8 +1669,8 @@
         {
           "item_def_id": "mat-gongfa-canye",
           "chance": 1,
-          "qty_min": 8,
-          "qty_max": 12,
+          "qty_min": 5,
+          "qty_max": 8,
           "show_in_ui": true
         },
         {
@@ -1787,9 +1787,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.85,
-          "qty_min": 3,
-          "qty_max": 6,
+          "chance": 0.72,
+          "qty_min": 2,
+          "qty_max": 5,
           "show_in_ui": true
         },
         {
@@ -1857,9 +1857,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.9,
-          "qty_min": 3,
-          "qty_max": 6,
+          "chance": 0.77,
+          "qty_min": 2,
+          "qty_max": 5,
           "show_in_ui": true
         },
         {
@@ -1934,9 +1934,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.9,
-          "qty_min": 2,
-          "qty_max": 5,
+          "chance": 0.77,
+          "qty_min": 1,
+          "qty_max": 4,
           "show_in_ui": true
         },
         {
@@ -2018,9 +2018,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.85,
-          "qty_min": 3,
-          "qty_max": 5,
+          "chance": 0.72,
+          "qty_min": 2,
+          "qty_max": 4,
           "show_in_ui": true
         },
         {
@@ -2089,8 +2089,8 @@
         {
           "item_def_id": "mat-gongfa-canye",
           "chance": 1,
-          "qty_min": 4,
-          "qty_max": 7,
+          "qty_min": 2,
+          "qty_max": 5,
           "show_in_ui": true
         },
         {
@@ -2179,9 +2179,9 @@
         },
         {
           "item_def_id": "mat-gongfa-canye",
-          "chance": 0.8,
-          "qty_min": 4,
-          "qty_max": 6,
+          "chance": 0.68,
+          "qty_min": 3,
+          "qty_max": 5,
           "show_in_ui": true
         },
         {
@@ -2516,8 +2516,8 @@
         {
           "item_def_id": "mat-gongfa-canye",
           "chance": 1,
-          "qty_min": 10,
-          "qty_max": 14,
+          "qty_min": 7,
+          "qty_max": 10,
           "show_in_ui": true
         },
         {

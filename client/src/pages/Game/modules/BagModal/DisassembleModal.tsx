@@ -24,10 +24,10 @@ interface DisassembleModalProps {
 }
 
 const techniqueBookRewardQtyByQuality: Record<BagQuality, number> = {
-  黄: 3,
-  玄: 6,
-  地: 12,
-  天: 24,
+  黄: 2,
+  玄: 4,
+  地: 7,
+  天: 14,
 };
 
 const DisassembleModal: React.FC<DisassembleModalProps> = ({ open, item, onClose, onSuccess }) => {
@@ -41,7 +41,7 @@ const DisassembleModal: React.FC<DisassembleModalProps> = ({ open, item, onClose
       return '蕴灵石×1';
     }
     if (item.subCategory === 'technique_book') {
-      const qty = techniqueBookRewardQtyByQuality[item.quality] || 3;
+      const qty = techniqueBookRewardQtyByQuality[item.quality] || 2;
       return `功法残页×${qty}`;
     }
     return '';

@@ -82,12 +82,6 @@
                 "exp": 220,
                 "items": [
                   {
-                    "item_def_id": "mat-gongfa-canye",
-                    "qty_min": 6,
-                    "qty_max": 10,
-                    "chance": 1
-                  },
-                  {
                     "item_def_id": "mat-lingmo",
                     "qty_min": 2,
                     "qty_max": 4,
@@ -352,12 +346,6 @@
                 },
                 "exp": 320,
                 "items": [
-                  {
-                    "item_def_id": "mat-gongfa-canye",
-                    "qty_min": 8,
-                    "qty_max": 12,
-                    "chance": 1
-                  },
                   {
                     "item_def_id": "mat-xinmo-jinghua",
                     "qty_min": 1,
