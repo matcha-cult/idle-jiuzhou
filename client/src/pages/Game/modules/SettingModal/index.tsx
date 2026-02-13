@@ -5,7 +5,7 @@ import { emitThemeModeChange, getStoredThemeMode, persistThemeMode, type ThemeMo
 import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
-type SettingKey = 'base' | 'battle' | 'cdk';
+type SettingKey = 'base' | 'battle' | 'disassemble' | 'cdk';
 
 interface SettingModalProps {
   open: boolean;
@@ -34,6 +34,62 @@ const clampQualityRank = (value: unknown): number => {
   const n = Number(value);
   if (!Number.isInteger(n)) return 1;
   return Math.max(1, Math.min(4, n));
+};
+
+/**
+ * 子类选项（中文显示，值保持服务端约定的英文编码）。
+ * 说明：
+ * - label 仅用于界面展示，避免玩家看到英文内部码。
+ * - value 会原样提交到服务端 rules.subCategories / rules.excludedSubCategories。
+ */
+const AUTO_DISASSEMBLE_SUB_CATEGORY_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: '配饰', value: 'accessory' },
+  { label: '护甲', value: 'armor' },
+  { label: '战令道具', value: 'battle_pass' },
+  { label: '骨材', value: 'bone' },
+  { label: '宝箱', value: 'box' },
+  { label: '突破道具', value: 'breakthrough' },
+  { label: '采集物', value: 'collect' },
+  { label: '蛋类', value: 'egg' },
+  { label: '强化道具', value: 'enhance' },
+  { label: '精华', value: 'essence' },
+  { label: '锻造材料', value: 'forge' },
+  { label: '功能道具', value: 'function' },
+  { label: '宝石', value: 'gem' },
+  { label: '灵草', value: 'herb' },
+  { label: '钥匙', value: 'key' },
+  { label: '皮革', value: 'leather' },
+  { label: '月卡道具', value: 'month_card' },
+  { label: '杂项道具', value: 'object' },
+  { label: '矿石', value: 'ore' },
+  { label: '丹药', value: 'pill' },
+  { label: '遗物', value: 'relic' },
+  { label: '卷轴', value: 'scroll' },
+  { label: '功法', value: 'technique' },
+  { label: '功法书', value: 'technique_book' },
+  { label: '代币', value: 'token' },
+  { label: '木材', value: 'wood' },
+];
+
+const AUTO_DISASSEMBLE_SUB_CATEGORY_VALUE_SET = new Set(
+  AUTO_DISASSEMBLE_SUB_CATEGORY_OPTIONS.map((option) => option.value)
+);
+
+const normalizeStringList = (raw: unknown): string[] => {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const row of raw) {
+    const value = String(row ?? '').trim().toLowerCase();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+};
+
+const normalizeSubCategoryList = (raw: unknown): string[] => {
+  return normalizeStringList(raw).filter((value) => AUTO_DISASSEMBLE_SUB_CATEGORY_VALUE_SET.has(value));
 };
 
 const parseCommaList = (raw: string, toLower: boolean = false): string[] => {
@@ -65,8 +121,8 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
   const [autoDisassembleEnabled, setAutoDisassembleEnabled] = useState(false);
   const [autoDisassembleMaxQualityRank, setAutoDisassembleMaxQualityRank] = useState(1);
   const [autoDisassembleCategories, setAutoDisassembleCategories] = useState<string[]>(['equipment']);
-  const [autoDisassembleSubCategoriesText, setAutoDisassembleSubCategoriesText] = useState('');
-  const [autoDisassembleExcludedSubCategoriesText, setAutoDisassembleExcludedSubCategoriesText] = useState('');
+  const [autoDisassembleSubCategories, setAutoDisassembleSubCategories] = useState<string[]>([]);
+  const [autoDisassembleExcludedSubCategories, setAutoDisassembleExcludedSubCategories] = useState<string[]>([]);
   const [autoDisassembleIncludeNameKeywordsText, setAutoDisassembleIncludeNameKeywordsText] = useState('');
   const [autoDisassembleExcludeNameKeywordsText, setAutoDisassembleExcludeNameKeywordsText] = useState('');
   const [autoDisassembleSaving, setAutoDisassembleSaving] = useState(false);
@@ -90,6 +146,7 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
     () => [
       { key: 'base', label: '基础设置' },
       { key: 'battle', label: '战斗设置' },
+      { key: 'disassemble', label: '自动分解' },
       { key: 'cdk', label: 'CDK兑换' },
     ],
     []
@@ -136,8 +193,8 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
           .map((v) => String(v ?? '').trim().toLowerCase())
           .filter((v, idx, arr) => v.length > 0 && arr.indexOf(v) === idx);
         setAutoDisassembleCategories(normalizedCategories.length > 0 ? normalizedCategories : ['equipment']);
-        setAutoDisassembleSubCategoriesText(stringifyList(rules?.subCategories));
-        setAutoDisassembleExcludedSubCategoriesText(stringifyList(rules?.excludedSubCategories));
+        setAutoDisassembleSubCategories(normalizeSubCategoryList(rules?.subCategories));
+        setAutoDisassembleExcludedSubCategories(normalizeSubCategoryList(rules?.excludedSubCategories));
         setAutoDisassembleIncludeNameKeywordsText(stringifyList(rules?.includeNameKeywords));
         setAutoDisassembleExcludeNameKeywordsText(stringifyList(rules?.excludeNameKeywords));
       } catch {
@@ -154,18 +211,17 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
 
   const buildAutoDisassembleRulesPayload = (overrides?: {
     categories?: string[];
-    subCategoriesText?: string;
-    excludedSubCategoriesText?: string;
+    subCategories?: string[];
+    excludedSubCategories?: string[];
     includeNameKeywordsText?: string;
     excludeNameKeywordsText?: string;
   }): AutoDisassembleRulesDto => {
     const categories = (overrides?.categories ?? autoDisassembleCategories)
       .map((v) => String(v ?? '').trim().toLowerCase())
       .filter((v, idx, arr) => v.length > 0 && arr.indexOf(v) === idx);
-    const subCategories = parseCommaList(overrides?.subCategoriesText ?? autoDisassembleSubCategoriesText, true);
-    const excludedSubCategories = parseCommaList(
-      overrides?.excludedSubCategoriesText ?? autoDisassembleExcludedSubCategoriesText,
-      true
+    const subCategories = normalizeSubCategoryList(overrides?.subCategories ?? autoDisassembleSubCategories);
+    const excludedSubCategories = normalizeSubCategoryList(
+      overrides?.excludedSubCategories ?? autoDisassembleExcludedSubCategories
     );
     const includeNameKeywords = parseCommaList(
       overrides?.includeNameKeywordsText ?? autoDisassembleIncludeNameKeywordsText,
@@ -279,6 +335,14 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
                 <Typography.Text>快速战斗</Typography.Text>
                 <Switch checked={fastBattle} onChange={setFastBattle} />
               </div>
+            </Space>
+          ) : null}
+
+          {activeKey === 'disassemble' ? (
+            <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+              <Typography.Title level={5} style={{ margin: 0 }}>
+                自动分解
+              </Typography.Title>
               <div className="setting-row">
                 <Typography.Text>自动分解物品</Typography.Text>
                 <Switch
@@ -315,21 +379,29 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
                 />
               </div>
               <div className="setting-row setting-row-column">
-                <Typography.Text>包含子类（逗号分隔）</Typography.Text>
-                <Input
-                  value={autoDisassembleSubCategoriesText}
+                <Typography.Text>包含子类</Typography.Text>
+                <Select
+                  mode="multiple"
+                  value={autoDisassembleSubCategories}
                   disabled={autoDisassembleLoading || autoDisassembleSaving}
-                  onChange={(e) => setAutoDisassembleSubCategoriesText(e.target.value)}
-                  placeholder="如：technique_book, gem_attack"
+                  options={AUTO_DISASSEMBLE_SUB_CATEGORY_OPTIONS}
+                  onChange={(next) => setAutoDisassembleSubCategories((next as string[]).map((v) => String(v || '').toLowerCase()))}
+                  style={{ width: '100%' }}
+                  placeholder="请选择需要包含的子类"
                 />
               </div>
               <div className="setting-row setting-row-column">
-                <Typography.Text>排除子类（逗号分隔）</Typography.Text>
-                <Input
-                  value={autoDisassembleExcludedSubCategoriesText}
+                <Typography.Text>排除子类</Typography.Text>
+                <Select
+                  mode="multiple"
+                  value={autoDisassembleExcludedSubCategories}
                   disabled={autoDisassembleLoading || autoDisassembleSaving}
-                  onChange={(e) => setAutoDisassembleExcludedSubCategoriesText(e.target.value)}
-                  placeholder="如：quest_key, event_token"
+                  options={AUTO_DISASSEMBLE_SUB_CATEGORY_OPTIONS}
+                  onChange={(next) =>
+                    setAutoDisassembleExcludedSubCategories((next as string[]).map((v) => String(v || '').toLowerCase()))
+                  }
+                  style={{ width: '100%' }}
+                  placeholder="请选择需要排除的子类"
                 />
               </div>
               <div className="setting-row setting-row-column">
