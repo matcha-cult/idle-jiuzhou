@@ -31,6 +31,7 @@ import type {
 import { updateAchievementProgress } from './achievement/progress.js';
 import { equipTitle, getTitleList } from './achievement/title.js';
 import { getRealmOrderIndex } from './shared/realmOrder.js';
+import { getAchievementDefinitions } from './staticConfigLoader.js';
 
 const getRealmRank = (realmRaw: unknown, subRealmRaw?: unknown): number => {
   return getRealmOrderIndex(realmRaw, subRealmRaw);
@@ -47,9 +48,23 @@ const parseLayerRequirement = (trackKey: string): number | null => {
   return intLayer > 0 ? intLayer : null;
 };
 
+const getEnabledAchievementDefs = () => {
+  return getAchievementDefinitions()
+    .map((row) => parseAchievementDefRow(row as unknown as Record<string, unknown>))
+    .filter((row): row is NonNullable<ReturnType<typeof parseAchievementDefRow>> => row !== null)
+    .filter((row) => row.enabled !== false);
+};
+
 const syncStaticAchievementProgress = async (characterId: number): Promise<void> => {
   const cid = asFiniteNonNegativeInt(characterId, 0);
   if (!cid) return;
+
+  const defs = getEnabledAchievementDefs();
+  const defById = new Map(defs.map((def) => [def.id, def]));
+  const trackedDefIds = defs
+    .filter((def) => def.track_key.startsWith('realm:reach:') || def.track_key.startsWith('skill:level:layer:') || def.track_key === 'sect:join')
+    .map((def) => def.id);
+  if (trackedDefIds.length === 0) return;
 
   const characterRes = await query(`SELECT realm, sub_realm FROM characters WHERE id = $1 LIMIT 1`, [cid]);
   const character = (characterRes.rows?.[0] ?? {}) as Record<string, unknown>;
@@ -66,26 +81,24 @@ const syncStaticAchievementProgress = async (characterId: number): Promise<void>
 
   const pendingRes = await query(
     `
-      SELECT d.track_key, d.track_type
-      FROM achievement_def d
-      JOIN character_achievement ca
-        ON ca.character_id = $1
-       AND ca.achievement_id = d.id
-      WHERE d.enabled = true
-        AND COALESCE(ca.status, 'in_progress') = 'in_progress'
-        AND (
-          d.track_key LIKE 'realm:reach:%'
-          OR d.track_key LIKE 'skill:level:layer:%'
-          OR d.track_key = 'sect:join'
-        )
+      SELECT achievement_id
+      FROM character_achievement
+      WHERE character_id = $1
+        AND achievement_id = ANY($2::varchar[])
+        AND COALESCE(status, 'in_progress') = 'in_progress'
     `,
-    [cid],
+    [cid, trackedDefIds],
   );
 
   const keysToSync = new Set<string>();
   for (const row of pendingRes.rows as Array<Record<string, unknown>>) {
-    const trackKey = asNonEmptyString(row.track_key);
-    const trackType = asNonEmptyString(row.track_type) ?? 'counter';
+    const achievementId = asNonEmptyString(row.achievement_id);
+    if (!achievementId) continue;
+    const def = defById.get(achievementId);
+    if (!def) continue;
+
+    const trackKey = def.track_key;
+    const trackType = def.track_type;
     if (!trackKey) continue;
     if (trackType !== 'flag') continue;
 
@@ -141,12 +154,6 @@ const normalizeStatusFilter = (value: unknown): AchievementListStatusFilter => {
   return 'all';
 };
 
-const buildStatusWhereClause = (status: AchievementListStatusFilter): string => {
-  if (status === 'in_progress') return ` AND COALESCE(ca.status, 'in_progress') = 'in_progress'`;
-  if (status === 'completed' || status === 'claimable') return ` AND COALESCE(ca.status, 'in_progress') = 'completed'`;
-  if (status === 'claimed') return ` AND COALESCE(ca.status, 'in_progress') = 'claimed'`;
-  return '';
-};
 
 const loadRewardItemMeta = async (
   itemIds: string[],
@@ -229,15 +236,16 @@ const getAchievementPointsInfo = async (characterId: number): Promise<Achievemen
 
 const syncCharacterAchievements = async (characterId: number, client?: PoolClient): Promise<void> => {
   const runner = client ?? { query };
+  const defs = getEnabledAchievementDefs();
+  if (defs.length === 0) return;
   await runner.query(
     `
       INSERT INTO character_achievement (character_id, achievement_id, status, progress, progress_data)
-      SELECT $1, id, 'in_progress', 0, '{}'::jsonb
-      FROM achievement_def
-      WHERE enabled = true
+      SELECT $1, x.achievement_id, 'in_progress', 0, '{}'::jsonb
+      FROM unnest($2::varchar[]) AS x(achievement_id)
       ON CONFLICT (character_id, achievement_id) DO NOTHING
     `,
-    [characterId],
+    [characterId, defs.map((def) => def.id)],
   );
 };
 
@@ -352,63 +360,63 @@ export const getAchievementList = async (
 
   const category = asNonEmptyString(options?.category);
   const statusFilter = normalizeStatusFilter(options?.status);
-
-  const params: unknown[] = [cid];
-  let where = `WHERE d.enabled = true`;
-  if (category) {
-    params.push(category);
-    where += ` AND d.category = $${params.length}`;
+  const defs = getEnabledAchievementDefs();
+  const progressRes = await query(
+    `
+      SELECT id, character_id, achievement_id, status, progress, progress_data, completed_at, claimed_at, updated_at
+      FROM character_achievement
+      WHERE character_id = $1
+    `,
+    [cid],
+  );
+  const progressByAchievementId = new Map<string, Record<string, unknown>>();
+  for (const row of progressRes.rows as Array<Record<string, unknown>>) {
+    const aid = asNonEmptyString(row.achievement_id);
+    if (!aid) continue;
+    progressByAchievementId.set(aid, row);
   }
 
-  where += buildStatusWhereClause(statusFilter);
+  const mergedRows: Array<Record<string, unknown>> = defs.map((def) => {
+    const progress = progressByAchievementId.get(def.id);
+    return {
+      ...def,
+      progress_id: progress?.id,
+      character_id: progress?.character_id,
+      achievement_id: progress?.achievement_id ?? def.id,
+      progress_status: progress?.status,
+      progress: progress?.progress,
+      progress_data: progress?.progress_data,
+      completed_at: progress?.completed_at,
+      claimed_at: progress?.claimed_at,
+      progress_updated_at: progress?.updated_at,
+    };
+  });
 
-  const countRes = await query(
-    `
-      SELECT COUNT(1)::int AS total
-      FROM achievement_def d
-      LEFT JOIN character_achievement ca
-        ON ca.character_id = $1
-       AND ca.achievement_id = d.id
-      ${where}
-    `,
-    params,
-  );
+  const filteredRows = mergedRows
+    .filter((row) => !category || String(row.category) === category)
+    .filter((row) => {
+      const progressStatus = normalizeAchievementStatus(row.progress_status);
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'in_progress') return progressStatus === 'in_progress';
+      if (statusFilter === 'completed' || statusFilter === 'claimable') return progressStatus === 'completed';
+      return progressStatus === 'claimed';
+    })
+    .sort((left, right) => {
+      const categoryCompare = String(left.category || '').localeCompare(String(right.category || ''));
+      if (categoryCompare !== 0) return categoryCompare;
+      const leftSortWeight = asFiniteNonNegativeInt(left.sort_weight, 0);
+      const rightSortWeight = asFiniteNonNegativeInt(right.sort_weight, 0);
+      if (leftSortWeight !== rightSortWeight) return rightSortWeight - leftSortWeight;
+      return String(left.id || '').localeCompare(String(right.id || ''));
+    });
 
-  params.push(limit);
-  params.push(offset);
-
-  const listRes = await query(
-    `
-      SELECT
-        d.*,
-        ca.id AS progress_id,
-        ca.character_id,
-        ca.achievement_id,
-        ca.status AS progress_status,
-        ca.progress,
-        ca.progress_data,
-        ca.completed_at,
-        ca.claimed_at,
-        ca.updated_at AS progress_updated_at
-      FROM achievement_def d
-      LEFT JOIN character_achievement ca
-        ON ca.character_id = $1
-       AND ca.achievement_id = d.id
-      ${where}
-      ORDER BY d.category ASC, d.sort_weight DESC, d.id ASC
-      LIMIT $${params.length - 1}
-      OFFSET $${params.length}
-    `,
-    params,
-  );
-
-  const rows = listRes.rows as Array<Record<string, unknown>>;
+  const rows = filteredRows.slice(offset, offset + limit);
   const itemMeta = await loadRewardItemMeta(collectRewardItemIds(rows));
   const achievements = rows
     .map((row) => toAchievementListItem(row, itemMeta))
     .filter((row): row is AchievementListItem => row !== null);
 
-  const total = asFiniteNonNegativeInt((countRes.rows?.[0] as Record<string, unknown> | undefined)?.total, 0);
+  const total = filteredRows.length;
   const points = await getAchievementPointsInfo(cid);
 
   return {
@@ -432,31 +440,33 @@ export const getAchievementDetail = async (
   await syncCharacterAchievements(cid);
   await syncStaticAchievementProgress(cid);
 
-  const res = await query(
+  const def = getEnabledAchievementDefs().find((entry) => entry.id === aid) ?? null;
+  if (!def) return null;
+
+  const progressRes = await query(
     `
-      SELECT
-        d.*,
-        ca.id AS progress_id,
-        ca.character_id,
-        ca.achievement_id,
-        ca.status AS progress_status,
-        ca.progress,
-        ca.progress_data,
-        ca.completed_at,
-        ca.claimed_at,
-        ca.updated_at AS progress_updated_at
-      FROM achievement_def d
-      LEFT JOIN character_achievement ca
-        ON ca.character_id = $1
-       AND ca.achievement_id = d.id
-      WHERE d.enabled = true
-        AND d.id = $2
+      SELECT id, character_id, achievement_id, status, progress, progress_data, completed_at, claimed_at, updated_at
+      FROM character_achievement
+      WHERE character_id = $1
+        AND achievement_id = $2
       LIMIT 1
     `,
     [cid, aid],
   );
 
-  const row = (res.rows?.[0] ?? null) as Record<string, unknown> | null;
+  const progress = (progressRes.rows?.[0] ?? null) as Record<string, unknown> | null;
+  const row = {
+    ...def,
+    progress_id: progress?.id,
+    character_id: progress?.character_id,
+    achievement_id: progress?.achievement_id ?? def.id,
+    progress_status: progress?.status,
+    progress: progress?.progress,
+    progress_data: progress?.progress_data,
+    completed_at: progress?.completed_at,
+    claimed_at: progress?.claimed_at,
+    progress_updated_at: progress?.updated_at,
+  } as Record<string, unknown>;
   if (!row) return null;
 
   const itemMeta = await loadRewardItemMeta(collectRewardItemIds([row]));

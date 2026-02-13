@@ -3,67 +3,6 @@
  */
 import { query } from '../config/database.js';
 
-const mapDefTableSQL = `
-CREATE TABLE IF NOT EXISTS map_def (
-  id VARCHAR(64) PRIMARY KEY,                         -- 地图ID
-  code VARCHAR(64),                                   -- 地图英文码
-  name VARCHAR(64) NOT NULL,                          -- 地图名称
-  description TEXT,                                   -- 地图描述
-  background_image VARCHAR(256),                      -- 背景图资源路径
-  
-  -- 地图分类
-  map_type VARCHAR(32) NOT NULL DEFAULT 'field',      -- 地图类型（field野外/city城镇/dungeon副本/instance秘境）
-  parent_map_id VARCHAR(64),                          -- 父地图ID（用于区域层级）
-  
-  -- 位置信息
-  world_position JSONB,                               -- 世界坐标 {x, y}
-  region VARCHAR(64),                                 -- 所属大区（如：东洲、西漠等）
-  
-  -- 进入条件
-  req_realm_min VARCHAR(64),                          -- 最低境界要求
-  req_level_min INTEGER DEFAULT 0,                    -- 最低等级要求
-  req_quest_id VARCHAR(64),                           -- 需要完成的任务ID
-  req_item_id VARCHAR(64),                            -- 需要消耗的物品ID
-  
-  -- 地图属性
-  safe_zone BOOLEAN NOT NULL DEFAULT false,           -- 是否安全区（禁止PK）
-  pk_mode VARCHAR(16) DEFAULT 'normal',               -- PK模式（normal/free/guild）
-  revive_map_id VARCHAR(64),                          -- 死亡复活地图ID
-  revive_room_id VARCHAR(64),                         -- 死亡复活房间ID
-  
-  -- 房间结构（核心）
-  rooms JSONB NOT NULL DEFAULT '[]',                  -- 房间列表
-  
-  -- 运营控制
-  sort_weight INTEGER NOT NULL DEFAULT 0,             -- 排序权重
-  version INTEGER NOT NULL DEFAULT 1,                 -- 配置版本
-  enabled BOOLEAN NOT NULL DEFAULT true,              -- 是否启用
-  
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- 表注释
-COMMENT ON TABLE map_def IS '地图定义表';
-COMMENT ON COLUMN map_def.id IS '地图ID';
-COMMENT ON COLUMN map_def.name IS '地图名称';
-COMMENT ON COLUMN map_def.description IS '地图描述';
-COMMENT ON COLUMN map_def.background_image IS '背景图资源路径';
-COMMENT ON COLUMN map_def.map_type IS '地图类型（field野外/city城镇/dungeon副本/instance秘境）';
-COMMENT ON COLUMN map_def.parent_map_id IS '父地图ID';
-COMMENT ON COLUMN map_def.region IS '所属大区';
-COMMENT ON COLUMN map_def.req_realm_min IS '最低境界要求';
-COMMENT ON COLUMN map_def.safe_zone IS '是否安全区';
-COMMENT ON COLUMN map_def.rooms IS '房间结构JSON';
-COMMENT ON COLUMN map_def.enabled IS '是否启用';
-
--- 索引
-CREATE INDEX IF NOT EXISTS idx_map_def_type ON map_def(map_type);
-CREATE INDEX IF NOT EXISTS idx_map_def_region ON map_def(region);
-CREATE INDEX IF NOT EXISTS idx_map_def_parent ON map_def(parent_map_id);
-CREATE INDEX IF NOT EXISTS idx_map_def_enabled ON map_def(enabled);
-`;
-
 const characterRoomResourceStateTableSQL = `
 CREATE TABLE IF NOT EXISTS character_room_resource_state (
   id SERIAL PRIMARY KEY,
@@ -136,7 +75,6 @@ rooms JSONB 结构说明：
 
 export const initMapTable = async (): Promise<void> => {
   try {
-    await query(mapDefTableSQL);
     await query(characterRoomResourceStateTableSQL);
     await query(`
       DO $do$
@@ -162,7 +100,7 @@ export const initMapTable = async (): Promise<void> => {
       END
       $do$;
     `);
-    console.log('✓ 地图表检测完成');
+    console.log('✓ 地图定义改为静态JSON加载，动态地图表检测完成');
   } catch (error) {
     console.error('✗ 地图表初始化失败:', error);
     throw error;

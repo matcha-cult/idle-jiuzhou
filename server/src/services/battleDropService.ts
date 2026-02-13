@@ -17,6 +17,7 @@ import {
 } from './autoDisassembleRewardService.js';
 import { normalizeAutoDisassembleSetting } from './autoDisassembleRules.js';
 import type { MonsterData } from '../battle/BattleFactory.js';
+import { getMonsterDefinitions } from './staticConfigLoader.js';
 
 // ============================================
 // 类型定义
@@ -640,13 +641,18 @@ export const quickDistributeRewards = async (
   }
   
   // 获取怪物数据
-  const monsterResult = await query(
-    `SELECT id, name, exp_reward, silver_reward_min, silver_reward_max, drop_pool_id
-     FROM monster_def WHERE id = ANY($1)`,
-    [monsterIds]
-  );
-  
-  const monsters = monsterResult.rows as MonsterData[];
+  const idSet = new Set(monsterIds);
+  const monsters = getMonsterDefinitions()
+    .filter((entry) => entry.enabled !== false)
+    .filter((entry) => idSet.has(entry.id))
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      exp_reward: Number(entry.exp_reward ?? 0),
+      silver_reward_min: Number(entry.silver_reward_min ?? 0),
+      silver_reward_max: Number(entry.silver_reward_max ?? 0),
+      drop_pool_id: entry.drop_pool_id ?? null,
+    })) as MonsterData[];
   
   return distributeBattleRewards(monsters, participants, isVictory);
 };

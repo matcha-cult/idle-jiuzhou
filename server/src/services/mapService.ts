@@ -1,4 +1,4 @@
-import { query } from '../config/database.js';
+import { getMapDefinitions } from './staticConfigLoader.js';
 
 export type GridPosition = 'NW' | 'N' | 'NE' | 'W' | 'C' | 'E' | 'SW' | 'S' | 'SE';
 
@@ -74,19 +74,7 @@ export const getMapDefById = async (mapId: string): Promise<MapDefRow | null> =>
     return mapDefCache.get(mapId) ?? null;
   }
 
-  const result = await query(
-    `
-      SELECT
-        id, code, name, description, background_image, map_type, parent_map_id,
-        world_position, region, req_realm_min, req_level_min, req_quest_id, req_item_id,
-        safe_zone, pk_mode, revive_map_id, revive_room_id, rooms, sort_weight, enabled
-      FROM map_def
-      WHERE id = $1
-      LIMIT 1
-    `,
-    [mapId]
-  );
-  const row = (result.rows[0] ?? null) as MapDefRow | null;
+  const row = (getMapDefinitions().find((entry) => entry.id === mapId) ?? null) as MapDefRow | null;
   mapDefCache.set(mapId, row);
   if (row) {
     mapRoomsCache.set(mapId, parseRooms(row.rooms));
@@ -102,15 +90,26 @@ export const getEnabledMaps = async (): Promise<
     >
   >
 > => {
-  const result = await query(
-    `
-      SELECT id, code, name, description, background_image, map_type, region, sort_weight, req_level_min, req_realm_min
-      FROM map_def
-      WHERE enabled = true
-      ORDER BY sort_weight DESC, id ASC
-    `
-  );
-  return result.rows;
+  return getMapDefinitions()
+    .filter((entry) => entry.enabled !== false)
+    .sort((left, right) => {
+      const leftSortWeight = Number(left.sort_weight ?? 0);
+      const rightSortWeight = Number(right.sort_weight ?? 0);
+      if (leftSortWeight !== rightSortWeight) return rightSortWeight - leftSortWeight;
+      return String(left.id || '').localeCompare(String(right.id || ''));
+    })
+    .map((entry) => ({
+      id: entry.id,
+      code: entry.code ?? null,
+      name: entry.name,
+      description: entry.description ?? null,
+      background_image: entry.background_image ?? null,
+      map_type: entry.map_type ?? 'field',
+      region: entry.region ?? null,
+      sort_weight: Number(entry.sort_weight ?? 0),
+      req_level_min: Number(entry.req_level_min ?? 0),
+      req_realm_min: entry.req_realm_min ?? null,
+    }));
 };
 
 export const getRoomsInMap = async (mapId: string): Promise<MapRoom[]> => {

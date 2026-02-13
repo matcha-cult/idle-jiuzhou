@@ -1,6 +1,7 @@
 import { query, pool } from '../config/database.js';
 import { addItemToInventoryTx } from './inventoryService.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
+import { getBattlePassStaticConfig } from './staticConfigLoader.js';
 
 export type BattlePassTaskDto = {
   id: string;
@@ -28,6 +29,55 @@ export type BattlePassTasksOverviewDto = {
 
 type BattlePassTaskType = BattlePassTaskDto['taskType'];
 
+const getTaskTypeOrder = (taskType: BattlePassTaskType): number => {
+  if (taskType === 'daily') return 1;
+  if (taskType === 'weekly') return 2;
+  return 3;
+};
+
+const toDate = (value: unknown): Date | null => {
+  if (value instanceof Date) return value;
+  if (typeof value === 'string' && value) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return null;
+};
+
+const isInCurrentCycle = (taskType: BattlePassTaskType, timestamp: Date | null, now: Date): boolean => {
+  if (!timestamp) return false;
+  if (taskType === 'daily') {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    return timestamp.getTime() >= start.getTime();
+  }
+  if (taskType === 'weekly') {
+    const start = new Date(now);
+    const day = start.getDay();
+    const offset = day === 0 ? 6 : day - 1;
+    start.setDate(start.getDate() - offset);
+    start.setHours(0, 0, 0, 0);
+    return timestamp.getTime() >= start.getTime();
+  }
+  return true;
+};
+
+const getResolvedSeasonFromStaticConfig = (seasonId?: string, now: Date = new Date()) => {
+  const config = getBattlePassStaticConfig();
+  if (!config || config.season.enabled === false) return null;
+
+  if (typeof seasonId === 'string' && seasonId.trim()) {
+    return config.season.id === seasonId.trim() ? config.season : null;
+  }
+
+  const startAt = new Date(config.season.start_at);
+  const endAt = new Date(config.season.end_at);
+  const inActiveRange = !Number.isNaN(startAt.getTime()) && !Number.isNaN(endAt.getTime())
+    ? startAt.getTime() <= now.getTime() && endAt.getTime() > now.getTime()
+    : false;
+  return inActiveRange ? config.season : config.season;
+};
+
 export const getCharacterIdByUserId = async (userId: number): Promise<number | null> => {
   try {
     const res = await query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1', [userId]);
@@ -40,45 +90,20 @@ export const getCharacterIdByUserId = async (userId: number): Promise<number | n
 };
 
 export const getActiveBattlePassSeasonId = async (now: Date = new Date()): Promise<string | null> => {
-  try {
-    const res = await query(
-      `
-        SELECT id
-        FROM battle_pass_season_def
-        WHERE enabled = true
-          AND start_at <= $1
-          AND end_at > $1
-        ORDER BY sort_weight DESC, start_at DESC
-        LIMIT 1
-      `,
-      [now.toISOString()],
-    );
-    const seasonId = String(res.rows?.[0]?.id || '');
-    return seasonId || null;
-  } catch {
-    return null;
-  }
+  const season = getResolvedSeasonFromStaticConfig(undefined, now);
+  if (!season) return null;
+  const startAt = new Date(season.start_at);
+  const endAt = new Date(season.end_at);
+  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) return null;
+  return startAt.getTime() <= now.getTime() && endAt.getTime() > now.getTime() ? season.id : null;
 };
 
 export const getFallbackBattlePassSeasonId = async (): Promise<string | null> => {
-  try {
-    const res = await query(
-      `
-        SELECT id
-        FROM battle_pass_season_def
-        WHERE enabled = true
-        ORDER BY sort_weight DESC, start_at DESC
-        LIMIT 1
-      `,
-    );
-    const seasonId = String(res.rows?.[0]?.id || '');
-    return seasonId || null;
-  } catch {
-    return null;
-  }
+  return getBattlePassStaticConfig()?.season?.enabled === false ? null : getBattlePassStaticConfig()?.season?.id ?? null;
 };
 
 export const getBattlePassTasksOverview = async (userId: number, seasonId?: string): Promise<BattlePassTasksOverviewDto> => {
+  const config = getBattlePassStaticConfig();
   const resolvedSeasonId =
     (typeof seasonId === 'string' && seasonId.trim() ? seasonId.trim() : null) ??
     (await getActiveBattlePassSeasonId()) ??
@@ -94,80 +119,57 @@ export const getBattlePassTasksOverview = async (userId: number, seasonId?: stri
     return { seasonId: '', daily: [], weekly: [], season: [] };
   }
 
-  const res = await query(
+  const taskRows = (config?.tasks ?? [])
+    .filter((task) => task.enabled !== false)
+    .filter((task) => resolvedSeasonId === (config?.season.id ?? ''));
+
+  const progressRes = await query(
     `
-      SELECT
-        d.id,
-        d.code,
-        d.name,
-        COALESCE(d.description, '') AS description,
-        d.task_type,
-        d.condition,
-        d.target_value,
-        d.reward_exp,
-        d.reward_extra,
-        d.enabled,
-        d.sort_weight,
-        COALESCE(
-          CASE
-            WHEN d.task_type = 'daily'
-              THEN CASE WHEN p.completed_at IS NOT NULL AND p.completed_at >= date_trunc('day', NOW()) THEN p.progress_value ELSE 0 END
-            WHEN d.task_type = 'weekly'
-              THEN CASE WHEN p.completed_at IS NOT NULL AND p.completed_at >= date_trunc('week', NOW()) THEN p.progress_value ELSE 0 END
-            ELSE p.progress_value
-          END,
-          0
-        ) AS progress_value,
-        COALESCE(
-          CASE
-            WHEN d.task_type = 'daily' THEN (p.completed = true AND p.completed_at IS NOT NULL AND p.completed_at >= date_trunc('day', NOW()))
-            WHEN d.task_type = 'weekly' THEN (p.completed = true AND p.completed_at IS NOT NULL AND p.completed_at >= date_trunc('week', NOW()))
-            ELSE (p.completed = true)
-          END,
-          false
-        ) AS completed,
-        COALESCE(
-          CASE
-            WHEN d.task_type = 'daily' THEN (p.claimed = true AND p.claimed_at IS NOT NULL AND p.claimed_at >= date_trunc('day', NOW()))
-            WHEN d.task_type = 'weekly' THEN (p.claimed = true AND p.claimed_at IS NOT NULL AND p.claimed_at >= date_trunc('week', NOW()))
-            ELSE (p.claimed = true)
-          END,
-          false
-        ) AS claimed
-      FROM battle_pass_task_def d
-      LEFT JOIN battle_pass_task_progress p
-        ON p.task_id = d.id
-       AND p.season_id = d.season_id
-       AND p.character_id = $2
-      WHERE d.season_id = $1
-        AND d.enabled = true
-      ORDER BY d.task_type ASC, d.sort_weight DESC, d.id ASC
+      SELECT task_id, progress_value, completed, completed_at, claimed, claimed_at
+      FROM battle_pass_task_progress
+      WHERE season_id = $1 AND character_id = $2
     `,
     [resolvedSeasonId, characterId],
   );
 
-  const rows: BattlePassTaskDto[] = (res.rows ?? []).map((r) => ({
-    id: String(r.id || ''),
-    code: String(r.code || ''),
-    name: String(r.name || ''),
-    description: String(r.description || ''),
-    taskType: (String(r.task_type || 'daily') as BattlePassTaskDto['taskType']) ?? 'daily',
-    condition: r.condition ?? {},
-    targetValue: Number.isFinite(Number(r.target_value)) ? Number(r.target_value) : 1,
-    rewardExp: Number.isFinite(Number(r.reward_exp)) ? Number(r.reward_exp) : 0,
-    rewardExtra: Array.isArray(r.reward_extra) ? r.reward_extra : (() => {
-      try {
-        return typeof r.reward_extra === 'string' ? (JSON.parse(r.reward_extra) as unknown[]) : [];
-      } catch {
-        return [];
-      }
-    })(),
-    enabled: r.enabled !== false,
-    sortWeight: Number.isFinite(Number(r.sort_weight)) ? Number(r.sort_weight) : 0,
-    progressValue: Number.isFinite(Number(r.progress_value)) ? Number(r.progress_value) : 0,
-    completed: r.completed === true,
-    claimed: r.claimed === true,
-  }));
+  const progressByTaskId = new Map<string, Record<string, unknown>>();
+  for (const row of progressRes.rows ?? []) {
+    const taskId = String(row.task_id || '');
+    if (!taskId) continue;
+    progressByTaskId.set(taskId, row as Record<string, unknown>);
+  }
+
+  const now = new Date();
+  const rows: BattlePassTaskDto[] = taskRows.map((task) => {
+    const progress = progressByTaskId.get(task.id);
+    const completedAt = toDate(progress?.completed_at);
+    const claimedAt = toDate(progress?.claimed_at);
+    const completed = progress?.completed === true && isInCurrentCycle(task.task_type, completedAt, now);
+    const claimed = progress?.claimed === true && isInCurrentCycle(task.task_type, claimedAt, now);
+    const rawProgressValue = Number(progress?.progress_value ?? 0);
+    const progressValue = completedAt && isInCurrentCycle(task.task_type, completedAt, now) ? rawProgressValue : 0;
+    return {
+      id: task.id,
+      code: task.code,
+      name: task.name,
+      description: String(task.description || ''),
+      taskType: task.task_type,
+      condition: task.condition ?? {},
+      targetValue: Number.isFinite(Number(task.target_value)) ? Number(task.target_value) : 1,
+      rewardExp: Number.isFinite(Number(task.reward_exp)) ? Number(task.reward_exp) : 0,
+      rewardExtra: Array.isArray(task.reward_extra) ? task.reward_extra : [],
+      enabled: task.enabled !== false,
+      sortWeight: Number.isFinite(Number(task.sort_weight)) ? Number(task.sort_weight) : 0,
+      progressValue: Number.isFinite(progressValue) ? progressValue : 0,
+      completed,
+      claimed,
+    };
+  }).sort((left, right) => {
+    const typeOrder = getTaskTypeOrder(left.taskType) - getTaskTypeOrder(right.taskType);
+    if (typeOrder !== 0) return typeOrder;
+    if (left.sortWeight !== right.sortWeight) return right.sortWeight - left.sortWeight;
+    return left.id.localeCompare(right.id);
+  });
 
   return {
     seasonId: resolvedSeasonId,
@@ -201,63 +203,41 @@ export const completeBattlePassTask = async (userId: number, taskId: string): Pr
   const seasonId = (await getActiveBattlePassSeasonId()) ?? (await getFallbackBattlePassSeasonId());
   if (!seasonId) return { success: false, message: '当前没有进行中的赛季' };
 
+  const config = getBattlePassStaticConfig();
+  const season = config?.season?.id === seasonId ? config.season : null;
+  if (!season) return { success: false, message: '赛季配置不存在' };
+
+  const task = (config?.tasks ?? []).find((entry) => entry.id === normalizedTaskId && entry.enabled !== false);
+  if (!task) return { success: false, message: '任务不存在或未启用' };
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    const seasonRes = await client.query(
-      `SELECT max_level, exp_per_level FROM battle_pass_season_def WHERE id = $1 LIMIT 1`,
-      [seasonId],
-    );
-    if ((seasonRes.rows ?? []).length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '赛季配置不存在' };
-    }
-    const maxLevel = Number(seasonRes.rows[0]?.max_level) || 30;
-    const expPerLevel = Number(seasonRes.rows[0]?.exp_per_level) || 1000;
+    const maxLevel = Number(season.max_level) || 30;
+    const expPerLevel = Number(season.exp_per_level) || 1000;
     const maxExp = Math.max(0, maxLevel * expPerLevel);
 
-    const taskRes = await client.query(
-      `
-        SELECT id, task_type, target_value, reward_exp
-        FROM battle_pass_task_def
-        WHERE id = $1
-          AND season_id = $2
-          AND enabled = true
-        LIMIT 1
-      `,
-      [normalizedTaskId, seasonId],
-    );
-    if ((taskRes.rows ?? []).length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '任务不存在或未启用' };
-    }
-
-    const taskType = String(taskRes.rows[0]?.task_type || 'daily') as BattlePassTaskType;
+    const taskType = String(task.task_type || 'daily') as BattlePassTaskType;
     if (taskType !== 'daily' && taskType !== 'weekly' && taskType !== 'season') {
       await client.query('ROLLBACK');
       return { success: false, message: '任务类型不支持' };
     }
-    const targetValue = Math.max(1, Number(taskRes.rows[0]?.target_value) || 1);
-    const rewardExp = Math.max(0, Number(taskRes.rows[0]?.reward_exp) || 0);
+    const targetValue = Math.max(1, Number(task.target_value) || 1);
+    const rewardExp = Math.max(0, Number(task.reward_exp) || 0);
 
     const taskProgressRes = await client.query(
       `
-        SELECT
-          CASE
-            WHEN $4 = 'daily' THEN (completed = true AND completed_at IS NOT NULL AND completed_at >= date_trunc('day', NOW()))
-            WHEN $4 = 'weekly' THEN (completed = true AND completed_at IS NOT NULL AND completed_at >= date_trunc('week', NOW()))
-            ELSE (completed = true)
-          END AS completed_in_cycle
+        SELECT completed, completed_at
         FROM battle_pass_task_progress
         WHERE character_id = $1
           AND season_id = $2
           AND task_id = $3
         FOR UPDATE
       `,
-      [characterId, seasonId, normalizedTaskId, taskType],
+      [characterId, seasonId, normalizedTaskId],
     );
-    const completedInCycle = taskProgressRes.rows[0]?.completed_in_cycle === true;
+    const completedInCycle = taskProgressRes.rows[0]?.completed === true && isInCurrentCycle(taskType, toDate(taskProgressRes.rows[0]?.completed_at), new Date());
     if (completedInCycle) {
       await client.query('ROLLBACK');
       return { success: false, message: '任务已完成' };
@@ -339,13 +319,8 @@ export const getBattlePassStatus = async (userId: number): Promise<BattlePassSta
   const seasonId = (await getActiveBattlePassSeasonId()) ?? (await getFallbackBattlePassSeasonId());
   if (!seasonId) return null;
 
-  const seasonRes = await query(
-    `SELECT id, name, max_level, exp_per_level FROM battle_pass_season_def WHERE id = $1`,
-    [seasonId],
-  );
-  if (seasonRes.rows.length === 0) return null;
-
-  const season = seasonRes.rows[0];
+  const season = getBattlePassStaticConfig()?.season;
+  if (!season || season.id !== seasonId) return null;
   const maxLevel = Number(season.max_level) || 30;
   const expPerLevel = Number(season.exp_per_level) || 1000;
 
@@ -389,6 +364,7 @@ export type BattlePassRewardDto = {
 };
 
 export const getBattlePassRewards = async (seasonId?: string): Promise<BattlePassRewardDto[]> => {
+  const config = getBattlePassStaticConfig();
   const resolvedSeasonId =
     (typeof seasonId === 'string' && seasonId.trim() ? seasonId.trim() : null) ??
     (await getActiveBattlePassSeasonId()) ??
@@ -396,15 +372,11 @@ export const getBattlePassRewards = async (seasonId?: string): Promise<BattlePas
     '';
   if (!resolvedSeasonId) return [];
 
-  const res = await query(
-    `SELECT level, free_rewards, premium_rewards FROM battle_pass_reward_def WHERE season_id = $1 ORDER BY level ASC`,
-    [resolvedSeasonId],
-  );
-
-  return res.rows.map((row) => ({
+  if (!config || config.season.id !== resolvedSeasonId) return [];
+  return config.rewards.map((row) => ({
     level: Number(row.level),
-    freeRewards: Array.isArray(row.free_rewards) ? row.free_rewards : [],
-    premiumRewards: Array.isArray(row.premium_rewards) ? row.premium_rewards : [],
+    freeRewards: Array.isArray(row.free) ? row.free : [],
+    premiumRewards: Array.isArray(row.premium) ? row.premium : [],
   }));
 };
 
@@ -431,22 +403,18 @@ export const claimBattlePassReward = async (
   const seasonId = (await getActiveBattlePassSeasonId()) ?? (await getFallbackBattlePassSeasonId());
   if (!seasonId) return { success: false, message: '当前没有进行中的赛季' };
 
+  const config = getBattlePassStaticConfig();
+  const season = config?.season?.id === seasonId ? config.season : null;
+  if (!season) return { success: false, message: '赛季配置不存在' };
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await lockCharacterInventoryMutexTx(client, characterId);
 
     // 获取赛季配置
-    const seasonRes = await client.query(
-      `SELECT max_level, exp_per_level FROM battle_pass_season_def WHERE id = $1`,
-      [seasonId],
-    );
-    if (seasonRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '赛季配置不存在' };
-    }
-    const maxLevel = Number(seasonRes.rows[0].max_level) || 30;
-    const expPerLevel = Number(seasonRes.rows[0].exp_per_level) || 1000;
+    const maxLevel = Number(season.max_level) || 30;
+    const expPerLevel = Number(season.exp_per_level) || 1000;
 
     if (level < 1 || level > maxLevel) {
       await client.query('ROLLBACK');
@@ -483,19 +451,16 @@ export const claimBattlePassReward = async (
     }
 
     // 获取奖励配置
-    const rewardRes = await client.query(
-      `SELECT free_rewards, premium_rewards FROM battle_pass_reward_def WHERE season_id = $1 AND level = $2`,
-      [seasonId, level],
-    );
-    if (rewardRes.rows.length === 0) {
+    const rewardRow = (config?.rewards ?? []).find((entry) => Number(entry.level) === level);
+    if (!rewardRow) {
       await client.query('ROLLBACK');
       return { success: false, message: '奖励配置不存在' };
     }
 
     const rewards: Array<{ type: string; currency?: string; amount?: number; itemDefId?: string; item_def_id?: string; qty?: number }> =
       track === 'free'
-        ? (rewardRes.rows[0].free_rewards ?? [])
-        : (rewardRes.rows[0].premium_rewards ?? []);
+        ? (Array.isArray(rewardRow.free) ? rewardRow.free : [])
+        : (Array.isArray(rewardRow.premium) ? rewardRow.premium : []);
 
     // 发放奖励
     let spiritStonesGained = 0;

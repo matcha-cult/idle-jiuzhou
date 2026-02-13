@@ -1,39 +1,10 @@
 import { query } from '../config/database.js';
 
-const monthCardDefTableSQL = `
-CREATE TABLE IF NOT EXISTS month_card_def (
-  id VARCHAR(64) PRIMARY KEY,
-  code VARCHAR(64) UNIQUE,
-  name VARCHAR(64) NOT NULL,
-  description TEXT,
-  duration_days INTEGER NOT NULL DEFAULT 30,
-  daily_spirit_stones INTEGER NOT NULL DEFAULT 100,
-  price_spirit_stones BIGINT NOT NULL DEFAULT 0,
-  enabled BOOLEAN NOT NULL DEFAULT true,
-  sort_weight INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-COMMENT ON TABLE month_card_def IS '月卡定义表';
-COMMENT ON COLUMN month_card_def.id IS '月卡ID';
-COMMENT ON COLUMN month_card_def.code IS '月卡编码';
-COMMENT ON COLUMN month_card_def.name IS '月卡名称';
-COMMENT ON COLUMN month_card_def.description IS '月卡描述';
-COMMENT ON COLUMN month_card_def.duration_days IS '有效天数';
-COMMENT ON COLUMN month_card_def.daily_spirit_stones IS '每日奖励灵石';
-COMMENT ON COLUMN month_card_def.price_spirit_stones IS '购买价格（灵石）';
-COMMENT ON COLUMN month_card_def.enabled IS '是否启用';
-COMMENT ON COLUMN month_card_def.sort_weight IS '排序权重';
-COMMENT ON COLUMN month_card_def.created_at IS '创建时间';
-COMMENT ON COLUMN month_card_def.updated_at IS '更新时间';
-`;
-
 const monthCardOwnershipTableSQL = `
 CREATE TABLE IF NOT EXISTS month_card_ownership (
   id BIGSERIAL PRIMARY KEY,
   character_id BIGINT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-  month_card_id VARCHAR(64) NOT NULL REFERENCES month_card_def(id) ON DELETE RESTRICT,
+  month_card_id VARCHAR(64) NOT NULL,
   start_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   expire_at TIMESTAMPTZ NOT NULL,
   last_claim_date DATE DEFAULT NULL,
@@ -60,7 +31,7 @@ const monthCardClaimRecordTableSQL = `
 CREATE TABLE IF NOT EXISTS month_card_claim_record (
   id BIGSERIAL PRIMARY KEY,
   character_id BIGINT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-  month_card_id VARCHAR(64) NOT NULL REFERENCES month_card_def(id) ON DELETE RESTRICT,
+  month_card_id VARCHAR(64) NOT NULL,
   claim_date DATE NOT NULL,
   reward_spirit_stones INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -79,9 +50,10 @@ CREATE INDEX IF NOT EXISTS idx_month_card_claim_record_character_date ON month_c
 `;
 
 export const initMonthCardTables = async (): Promise<void> => {
-  await query(monthCardDefTableSQL);
   await query(monthCardOwnershipTableSQL);
   await query(monthCardClaimRecordTableSQL);
+  await query('ALTER TABLE month_card_ownership DROP CONSTRAINT IF EXISTS month_card_ownership_month_card_id_fkey');
+  await query('ALTER TABLE month_card_claim_record DROP CONSTRAINT IF EXISTS month_card_claim_record_month_card_id_fkey');
   console.log('✓ 月卡系统表检测完成');
 };
 

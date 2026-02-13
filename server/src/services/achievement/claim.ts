@@ -17,6 +17,11 @@ import type {
   PointRewardDef,
   PointRewardListResult,
 } from './types.js';
+import {
+  getAchievementDefinitions,
+  getAchievementPointsRewardDefinitions,
+  getTitleDefinitions,
+} from '../staticConfigLoader.js';
 
 const asRewardType = (value: unknown): 'silver' | 'spirit_stones' | 'exp' | 'item' | null => {
   const raw = asNonEmptyString(value);
@@ -121,22 +126,11 @@ const applyRewardsTx = async (
   return out;
 };
 
-const getTitleInfo = async (titleId: string, client?: PoolClient): Promise<AchievementClaimTitle | undefined> => {
+const getTitleInfo = async (titleId: string, _client?: PoolClient): Promise<AchievementClaimTitle | undefined> => {
   const id = asNonEmptyString(titleId);
   if (!id) return undefined;
-  const runner = client ?? { query };
-  const res = await runner.query(
-    `
-      SELECT id, name, rarity, color, icon
-      FROM title_def
-      WHERE id = $1
-        AND enabled = true
-      LIMIT 1
-    `,
-    [id],
-  );
-  if ((res.rows ?? []).length === 0) return undefined;
-  const row = res.rows[0] as Record<string, unknown>;
+  const row = getTitleDefinitions().find((entry) => entry.id === id && entry.enabled !== false);
+  if (!row) return undefined;
   return {
     id,
     name: asNonEmptyString(row.name) ?? id,
@@ -153,9 +147,8 @@ const grantTitleTx = async (
 ): Promise<AchievementClaimTitle | undefined> => {
   const id = asNonEmptyString(titleId);
   if (!id) return undefined;
-
-  const existsRes = await client.query(`SELECT id FROM title_def WHERE id = $1 AND enabled = true LIMIT 1`, [id]);
-  if ((existsRes.rows ?? []).length === 0) return undefined;
+  const titleDef = getTitleDefinitions().find((entry) => entry.id === id && entry.enabled !== false);
+  if (!titleDef) return undefined;
 
   await client.query(
     `
@@ -188,21 +181,22 @@ export const claimAchievement = async (
 
     const lockedRes = await client.query(
       `
-        SELECT
-          ca.status,
-          ad.rewards,
-          ad.title_id
-        FROM character_achievement ca
-        JOIN achievement_def ad ON ad.id = ca.achievement_id
-        WHERE ca.character_id = $1
-          AND ca.achievement_id = $2
-          AND ad.enabled = true
+        SELECT status
+        FROM character_achievement
+        WHERE character_id = $1
+          AND achievement_id = $2
         FOR UPDATE
       `,
       [cid, aid],
     );
 
     if ((lockedRes.rows ?? []).length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '成就不存在或未解锁' };
+    }
+
+    const achievementDef = getAchievementDefinitions().find((entry) => entry.id === aid && entry.enabled !== false);
+    if (!achievementDef) {
       await client.query('ROLLBACK');
       return { success: false, message: '成就不存在或未解锁' };
     }
@@ -218,9 +212,9 @@ export const claimAchievement = async (
       return { success: false, message: '成就尚未完成' };
     }
 
-    const rewards = normalizeRewards(row.rewards);
+    const rewards = normalizeRewards(achievementDef.rewards);
     const rewardViews = await applyRewardsTx(client, uid, cid, rewards, 'achievement_reward');
-    const title = await grantTitleTx(client, cid, asNonEmptyString(row.title_id));
+    const title = await grantTitleTx(client, cid, asNonEmptyString(achievementDef.title_id));
 
     await client.query(
       `
@@ -332,17 +326,19 @@ export const getAchievementPointsRewards = async (characterId: number): Promise<
   const totalPoints = asFiniteNonNegativeInt(pointRow.total_points, 0);
   const claimedThresholds = parseClaimedThresholds(pointRow.claimed_thresholds);
 
-  const defRes = await query(
-    `
-      SELECT id, points_threshold, name, description, rewards, title_id
-      FROM achievement_points_reward_def
-      WHERE enabled = true
-      ORDER BY points_threshold ASC, sort_weight DESC, id ASC
-    `,
-  );
-
   const rewards: PointRewardDef[] = [];
-  for (const row of defRes.rows as Array<Record<string, unknown>>) {
+  const defs = getAchievementPointsRewardDefinitions()
+    .filter((entry) => entry.enabled !== false)
+    .sort((left, right) => {
+      const thresholdDelta = asFiniteNonNegativeInt(left.points_threshold, 0) - asFiniteNonNegativeInt(right.points_threshold, 0);
+      if (thresholdDelta !== 0) return thresholdDelta;
+      const leftSortWeight = asFiniteNonNegativeInt(left.sort_weight, 0);
+      const rightSortWeight = asFiniteNonNegativeInt(right.sort_weight, 0);
+      if (leftSortWeight !== rightSortWeight) return rightSortWeight - leftSortWeight;
+      return String(left.id || '').localeCompare(String(right.id || ''));
+    });
+
+  for (const row of defs as Array<Record<string, unknown>>) {
     const parsed = await toPointRewardDef(row, totalPoints, claimedThresholds);
     if (parsed) rewards.push(parsed);
   }
@@ -396,24 +392,15 @@ export const claimAchievementPointsReward = async (
       return { success: false, message: '成就点数不足' };
     }
 
-    const defRes = await client.query(
-      `
-        SELECT rewards, title_id
-        FROM achievement_points_reward_def
-        WHERE enabled = true
-          AND points_threshold = $1
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [th],
+    const defRow = getAchievementPointsRewardDefinitions().find(
+      (entry) => entry.enabled !== false && asFiniteNonNegativeInt(entry.points_threshold, -1) === th,
     );
 
-    if ((defRes.rows ?? []).length === 0) {
+    if (!defRow) {
       await client.query('ROLLBACK');
       return { success: false, message: '点数奖励不存在' };
     }
 
-    const defRow = defRes.rows[0] as Record<string, unknown>;
     const rewards = normalizeRewards(defRow.rewards);
     const rewardViews = await applyRewardsTx(client, uid, cid, rewards, 'achievement_points_reward');
     const title = await grantTitleTx(client, cid, asNonEmptyString(defRow.title_id));

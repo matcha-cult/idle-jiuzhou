@@ -1,3 +1,4 @@
+import { getMonsterDefinitions } from './staticConfigLoader.js';
 import { pool, query } from '../config/database.js';
 import crypto from 'crypto';
 import { getBattleState, startDungeonPVEBattle } from './battleService.js';
@@ -593,15 +594,21 @@ export const getDungeonPreview = async (
   const monstersRes =
     monsterIds.length === 0
       ? { rows: [] as MonsterLiteRow[] }
-      : await query(
-          `
-            SELECT id, name, realm, level, avatar, kind, drop_pool_id
-            FROM monster_def
-            WHERE enabled = true AND id = ANY($1)
-            ORDER BY level ASC, id ASC
-          `,
-          [monsterIds]
-        );
+      : {
+          rows: getMonsterDefinitions()
+            .filter((entry) => entry.enabled !== false)
+            .filter((entry) => monsterIds.includes(entry.id))
+            .sort((left, right) => Number(left.level ?? 0) - Number(right.level ?? 0) || String(left.id).localeCompare(String(right.id)))
+            .map((entry) => ({
+              id: entry.id,
+              name: entry.name,
+              realm: entry.realm ?? null,
+              level: Number(entry.level ?? 0),
+              avatar: entry.avatar ?? null,
+              kind: entry.kind ?? null,
+              drop_pool_id: entry.drop_pool_id ?? null,
+            } as MonsterLiteRow)),
+        };
   const monsters = monstersRes.rows as MonsterLiteRow[];
 
   const stageNameById = new Map(stages.map((s) => [s.id, s.name ?? `第${s.stage_index}关`]));

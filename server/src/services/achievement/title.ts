@@ -6,6 +6,7 @@ import {
 } from './shared.js';
 import type { ServiceResult, TitleInfo, TitleListResult } from './types.js';
 import { invalidateCharacterComputedCache } from '../characterComputedService.js';
+import { getTitleDefinitions } from '../staticConfigLoader.js';
 
 const computeEffectDelta = (
   current: Record<string, number>,
@@ -39,20 +40,18 @@ export const getTitleList = async (characterId: number): Promise<TitleListResult
       SELECT
         ct.title_id,
         ct.is_equipped,
-        ct.obtained_at,
-        td.name,
-        td.description,
-        td.rarity,
-        td.color,
-        td.icon,
-        td.effects
+        ct.obtained_at
       FROM character_title ct
-      JOIN title_def td ON td.id = ct.title_id
       WHERE ct.character_id = $1
-        AND td.enabled = true
       ORDER BY ct.is_equipped DESC, ct.obtained_at ASC, ct.id ASC
     `,
     [cid],
+  );
+
+  const titleDefMap = new Map(
+    getTitleDefinitions()
+      .filter((row) => row.enabled !== false)
+      .map((row) => [row.id, row]),
   );
 
   const titles: TitleInfo[] = [];
@@ -61,17 +60,19 @@ export const getTitleList = async (characterId: number): Promise<TitleListResult
   for (const row of res.rows as Array<Record<string, unknown>>) {
     const id = asNonEmptyString(row.title_id);
     if (!id) continue;
+    const def = titleDefMap.get(id);
+    if (!def) continue;
     const isEquipped = row.is_equipped === true;
     if (isEquipped) equipped = id;
 
     titles.push({
       id,
-      name: asNonEmptyString(row.name) ?? id,
-      description: String(row.description ?? ''),
-      rarity: asNonEmptyString(row.rarity) ?? 'common',
-      color: asNonEmptyString(row.color),
-      icon: asNonEmptyString(row.icon),
-      effects: normalizeTitleEffects(row.effects),
+      name: asNonEmptyString(def.name) ?? id,
+      description: String(def.description ?? ''),
+      rarity: asNonEmptyString(def.rarity) ?? 'common',
+      color: asNonEmptyString(def.color),
+      icon: asNonEmptyString(def.icon),
+      effects: normalizeTitleEffects(def.effects),
       isEquipped,
       obtainedAt: row.obtained_at ? new Date(String(row.obtained_at)).toISOString() : new Date(0).toISOString(),
     });
@@ -90,14 +91,18 @@ export const equipTitle = async (characterId: number, titleId: string): Promise<
   try {
     await client.query('BEGIN');
 
+    const targetDef = getTitleDefinitions().find((row) => row.id === tid && row.enabled !== false);
+    if (!targetDef) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '未拥有该称号' };
+    }
+
     const targetRes = await client.query(
       `
-        SELECT ct.title_id, td.name, td.effects
-        FROM character_title ct
-        JOIN title_def td ON td.id = ct.title_id
-        WHERE ct.character_id = $1
-          AND ct.title_id = $2
-          AND td.enabled = true
+        SELECT title_id
+        FROM character_title
+        WHERE character_id = $1
+          AND title_id = $2
         LIMIT 1
         FOR UPDATE
       `,
@@ -109,17 +114,15 @@ export const equipTitle = async (characterId: number, titleId: string): Promise<
       return { success: false, message: '未拥有该称号' };
     }
 
-    const targetRow = targetRes.rows[0] as Record<string, unknown>;
-    const targetName = asNonEmptyString(targetRow.name) ?? tid;
-    const nextEffects = normalizeTitleEffects(targetRow.effects);
+    const targetName = asNonEmptyString(targetDef.name) ?? tid;
+    const nextEffects = normalizeTitleEffects(targetDef.effects);
 
     const currentRes = await client.query(
       `
-        SELECT ct.title_id, td.effects
-        FROM character_title ct
-        JOIN title_def td ON td.id = ct.title_id
-        WHERE ct.character_id = $1
-          AND ct.is_equipped = true
+        SELECT title_id
+        FROM character_title
+        WHERE character_id = $1
+          AND is_equipped = true
         LIMIT 1
         FOR UPDATE
       `,
@@ -128,7 +131,10 @@ export const equipTitle = async (characterId: number, titleId: string): Promise<
 
     const currentRow = (currentRes.rows?.[0] ?? null) as Record<string, unknown> | null;
     const currentTitleId = currentRow ? asNonEmptyString(currentRow.title_id) : null;
-    const currentEffects = currentRow ? normalizeTitleEffects(currentRow.effects) : {};
+    const currentDef = currentTitleId
+      ? getTitleDefinitions().find((row) => row.id === currentTitleId && row.enabled !== false)
+      : null;
+    const currentEffects = currentDef ? normalizeTitleEffects(currentDef.effects) : {};
 
     if (currentTitleId === tid) {
       await client.query('COMMIT');

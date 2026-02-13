@@ -17,6 +17,7 @@ import path from 'path';
 import { query } from '../config/database.js';
 import { redis } from '../config/redis.js';
 import { buildEquipmentDisplayBaseAttrs } from './equipmentGrowthRules.js';
+import { getTitleDefinitions } from './staticConfigLoader.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -641,18 +642,21 @@ const loadEquippedAttrBonuses = async (characterId: number): Promise<CharacterCo
 const loadEquippedTitleEffects = async (characterId: number): Promise<Record<string, number>> => {
   const result = await query(
     `
-      SELECT td.effects
+      SELECT title_id
       FROM character_title ct
-      JOIN title_def td ON td.id = ct.title_id
       WHERE ct.character_id = $1
         AND ct.is_equipped = true
-        AND td.enabled = true
       LIMIT 1
     `,
     [characterId],
   );
   if (result.rows.length <= 0) return {};
-  return parseTitleEffects(result.rows[0]?.effects);
+
+  const titleId = String(result.rows[0]?.title_id || '').trim();
+  if (!titleId) return {};
+  const titleDef = getTitleDefinitions().find((row) => row.id === titleId && row.enabled !== false);
+  if (!titleDef) return {};
+  return parseTitleEffects(titleDef.effects);
 };
 
 const computeStaticAttrs = async (base: CharacterBaseRow): Promise<CharacterComputedStats> => {

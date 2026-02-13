@@ -35,6 +35,7 @@ import {
   recoverBattleStartResourcesByUserIds,
   setCharacterResourcesByCharacterId,
 } from './characterComputedService.js';
+import { getMonsterDefinitions } from './staticConfigLoader.js';
 
 // 活跃战斗缓存
 const activeBattles = new Map<string, BattleEngine>();
@@ -550,8 +551,10 @@ async function getBattleMonsters(engine: BattleEngine): Promise<MonsterData[]> {
     .filter(Boolean);
   if (orderedIds.length === 0) return [];
   const uniqIds = [...new Set(orderedIds)];
-  const res = await query('SELECT * FROM monster_def WHERE enabled = true AND id = ANY($1)', [uniqIds]);
-  const defs = res.rows as MonsterData[];
+  const idSet = new Set(uniqIds);
+  const defs = getMonsterDefinitions()
+    .filter((entry) => entry.enabled !== false)
+    .filter((entry) => idSet.has(entry.id)) as MonsterData[];
   const defMap = new Map(defs.map((m) => [m.id, m] as const));
   const monsters: MonsterData[] = [];
   for (const id of orderedIds) {
@@ -854,16 +857,15 @@ export async function startPVEBattle(
       }
     }
 
-    const monsterResult = await query(
-      'SELECT * FROM monster_def WHERE enabled = true AND id = ANY($1)',
-      [uniqueStringIds(finalMonsterIds)]
-    );
+    const uniqIds = uniqueStringIds(finalMonsterIds);
+    const idSet = new Set(uniqIds);
+    const monsterDefs = getMonsterDefinitions()
+      .filter((entry) => entry.enabled !== false)
+      .filter((entry) => idSet.has(entry.id)) as MonsterData[];
 
-    if (monsterResult.rows.length === 0) {
+    if (monsterDefs.length === 0) {
       return { success: false, message: '怪物不存在' };
     }
-
-    const monsterDefs = monsterResult.rows as MonsterData[];
     const monsterDefMap = new Map(monsterDefs.map((m) => [m.id, m] as const));
     const monsters: MonsterData[] = [];
     for (const id of finalMonsterIds) {
@@ -1060,11 +1062,13 @@ export async function startDungeonPVEBattle(
     const finalMonsterIds = requestedMonsterIds.slice(0, maxMonsters);
 
     const uniqIds = uniqueStringIds(finalMonsterIds);
-    const monsterResult = await query('SELECT * FROM monster_def WHERE enabled = true AND id = ANY($1)', [uniqIds]);
-    if (monsterResult.rows.length === 0) {
+    const idSet = new Set(uniqIds);
+    const monsterDefs = getMonsterDefinitions()
+      .filter((entry) => entry.enabled !== false)
+      .filter((entry) => idSet.has(entry.id)) as MonsterData[];
+    if (monsterDefs.length === 0) {
       return { success: false, message: '怪物不存在' };
     }
-    const monsterDefs = monsterResult.rows as MonsterData[];
     const monsterDefMap = new Map(monsterDefs.map((m) => [m.id, m] as const));
     const monsters: MonsterData[] = [];
     for (const id of finalMonsterIds) {

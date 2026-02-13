@@ -1,0 +1,362 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const SEEDS_DIR = [
+  path.join(process.cwd(), 'src', 'data', 'seeds'),
+  path.join(process.cwd(), 'dist', 'data', 'seeds'),
+  path.join(__dirname, '../data/seeds'),
+].find((p) => fs.existsSync(p)) ?? path.join(__dirname, '../data/seeds');
+
+const readJsonFile = <T>(filename: string): T | null => {
+  try {
+    const filePath = path.join(SEEDS_DIR, filename);
+    if (!fs.existsSync(filePath)) return null;
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(content) as T;
+  } catch {
+    return null;
+  }
+};
+
+export type BattlePassRewardEntry =
+  | { type: 'item'; item_def_id: string; qty: number }
+  | { type: 'currency'; currency: 'spirit_stones' | 'silver'; amount: number };
+
+export type BattlePassSeasonConfig = {
+  id: string;
+  name: string;
+  start_at: string;
+  end_at: string;
+  max_level: number;
+  exp_per_level: number;
+  enabled: boolean;
+  sort_weight: number;
+};
+
+export type BattlePassTaskConfig = {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  task_type: 'daily' | 'weekly' | 'season';
+  condition: { event: string; params?: Record<string, unknown> };
+  target_value: number;
+  reward_exp: number;
+  reward_extra?: BattlePassRewardEntry[];
+  enabled?: boolean;
+  sort_weight?: number;
+};
+
+type BattlePassRewardFile = {
+  season: {
+    id: string;
+    name: string;
+    start_at: string;
+    end_at: string;
+    max_level?: number;
+    exp_per_level?: number;
+    enabled?: boolean;
+    sort_weight?: number;
+  };
+  rewards: Array<{ level: number; free?: BattlePassRewardEntry[]; premium?: BattlePassRewardEntry[] }>;
+};
+
+type BattlePassTaskFile = {
+  season_id: string;
+  tasks: BattlePassTaskConfig[];
+};
+
+export type BattlePassStaticConfig = {
+  season: BattlePassSeasonConfig;
+  rewards: Array<{ level: number; free: BattlePassRewardEntry[]; premium: BattlePassRewardEntry[] }>;
+  tasks: BattlePassTaskConfig[];
+};
+
+type MonthCardDef = {
+  id: string;
+  code?: string;
+  name: string;
+  description?: string;
+  duration_days?: number;
+  daily_spirit_stones?: number;
+  price_spirit_stones?: number | string;
+  enabled?: boolean;
+  sort_weight?: number;
+};
+
+type MonthCardFile = { month_cards: MonthCardDef[] };
+
+export type AchievementRewardEntry =
+  | { type: 'item'; item_def_id: string; qty?: number }
+  | { type: 'silver' | 'spirit_stones' | 'exp'; amount: number }
+  | Record<string, unknown>;
+
+export type AchievementDefConfig = {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  rarity?: string;
+  points?: number;
+  icon?: string;
+  hidden?: boolean;
+  prerequisite_id?: string | null;
+  track_type?: 'counter' | 'flag' | 'multi';
+  track_key: string;
+  target_value?: number;
+  target_list?: unknown[];
+  rewards?: AchievementRewardEntry[];
+  title_id?: string | null;
+  sort_weight?: number;
+  enabled?: boolean;
+  version?: number;
+};
+
+export type TitleDefConfig = {
+  id: string;
+  name: string;
+  description?: string;
+  rarity?: string;
+  color?: string;
+  icon?: string;
+  effects?: Record<string, unknown>;
+  source_type?: string;
+  source_id?: string;
+  enabled?: boolean;
+  sort_weight?: number;
+  version?: number;
+};
+
+export type AchievementPointsRewardConfig = {
+  id: string;
+  points_threshold: number;
+  name: string;
+  description?: string;
+  rewards?: AchievementRewardEntry[];
+  title_id?: string | null;
+  enabled?: boolean;
+  sort_weight?: number;
+  version?: number;
+};
+
+type AchievementDefFile = { achievements: AchievementDefConfig[] };
+type TitleDefFile = { titles: TitleDefConfig[] };
+type AchievementPointsRewardFile = { rewards: AchievementPointsRewardConfig[] };
+
+export type NpcDefConfig = {
+  id: string;
+  code?: string;
+  name: string;
+  title?: string;
+  gender?: string;
+  realm?: string;
+  avatar?: string;
+  description?: string;
+  npc_type?: string;
+  area?: string;
+  talk_tree_id?: string;
+  shop_id?: string;
+  quest_giver_id?: string;
+  drop_pool_id?: string;
+  base_attrs?: Record<string, unknown>;
+  enabled?: boolean;
+  sort_weight?: number;
+};
+
+export type TalkTreeDefConfig = {
+  id: string;
+  name: string;
+  greeting_lines?: string[];
+  enabled?: boolean;
+  sort_weight?: number;
+  version?: number;
+};
+
+export type MapDefConfig = {
+  id: string;
+  code?: string;
+  name: string;
+  description?: string;
+  background_image?: string;
+  map_type?: string;
+  parent_map_id?: string;
+  world_position?: unknown;
+  region?: string;
+  req_realm_min?: string | null;
+  req_level_min?: number;
+  req_quest_id?: string | null;
+  req_item_id?: string | null;
+  safe_zone?: boolean;
+  pk_mode?: string;
+  revive_map_id?: string | null;
+  revive_room_id?: string | null;
+  rooms?: unknown;
+  sort_weight?: number;
+  enabled?: boolean;
+};
+
+export type MonsterDefConfig = {
+  id: string;
+  code?: string;
+  name: string;
+  title?: string;
+  realm?: string;
+  level?: number;
+  avatar?: string;
+  kind?: string;
+  element?: string;
+  base_attrs?: Record<string, unknown>;
+  attr_variance?: number;
+  attr_multiplier_min?: number;
+  attr_multiplier_max?: number;
+  display_stats?: unknown[];
+  ai_profile?: Record<string, unknown>;
+  drop_pool_id?: string;
+  exp_reward?: number;
+  silver_reward_min?: number;
+  silver_reward_max?: number;
+  enabled?: boolean;
+};
+
+export type SpawnRuleConfig = {
+  id: string;
+  area: string;
+  pool_type?: string;
+  pool_entries?: Array<{ monster_def_id?: string; npc_def_id?: string; weight?: number }>;
+  max_alive?: number;
+  respawn_sec?: number;
+  elite_chance?: number;
+  boss_window?: Record<string, unknown>;
+  req_realm_min?: string;
+  req_quest_id?: string;
+  enabled?: boolean;
+};
+
+type NpcDefFile = { npcs: NpcDefConfig[]; talk_trees?: TalkTreeDefConfig[] };
+type MapDefFile = { maps: MapDefConfig[] };
+type MonsterDefFile = { monsters: MonsterDefConfig[] };
+type SpawnRuleFile = { rules: SpawnRuleConfig[] };
+
+let battlePassCache: BattlePassStaticConfig | null | undefined;
+let monthCardCache: MonthCardDef[] | null | undefined;
+let achievementDefCache: AchievementDefConfig[] | null | undefined;
+let titleDefCache: TitleDefConfig[] | null | undefined;
+let achievementPointsRewardCache: AchievementPointsRewardConfig[] | null | undefined;
+let npcDefCache: NpcDefConfig[] | null | undefined;
+let talkTreeDefCache: TalkTreeDefConfig[] | null | undefined;
+let mapDefCache: MapDefConfig[] | null | undefined;
+let monsterDefCache: MonsterDefConfig[] | null | undefined;
+let spawnRuleCache: SpawnRuleConfig[] | null | undefined;
+
+export const getBattlePassStaticConfig = (): BattlePassStaticConfig | null => {
+  if (battlePassCache !== undefined) return battlePassCache;
+
+  const rewardFile = readJsonFile<BattlePassRewardFile>('battle_pass_rewards.json');
+  const taskFile = readJsonFile<BattlePassTaskFile>('battle_pass_tasks.json');
+  if (!rewardFile?.season?.id || !Array.isArray(rewardFile.rewards) || !taskFile?.season_id || !Array.isArray(taskFile.tasks)) {
+    battlePassCache = null;
+    return battlePassCache;
+  }
+
+  const season: BattlePassSeasonConfig = {
+    id: String(rewardFile.season.id),
+    name: String(rewardFile.season.name || ''),
+    start_at: String(rewardFile.season.start_at),
+    end_at: String(rewardFile.season.end_at),
+    max_level: Number.isFinite(Number(rewardFile.season.max_level)) ? Number(rewardFile.season.max_level) : 30,
+    exp_per_level: Number.isFinite(Number(rewardFile.season.exp_per_level)) ? Number(rewardFile.season.exp_per_level) : 1000,
+    enabled: rewardFile.season.enabled !== false,
+    sort_weight: Number.isFinite(Number(rewardFile.season.sort_weight)) ? Number(rewardFile.season.sort_weight) : 0,
+  };
+
+  const rewards = rewardFile.rewards
+    .map((entry) => ({
+      level: Number(entry.level),
+      free: Array.isArray(entry.free) ? entry.free : [],
+      premium: Array.isArray(entry.premium) ? entry.premium : [],
+    }))
+    .filter((entry) => Number.isFinite(entry.level) && entry.level > 0)
+    .sort((a, b) => a.level - b.level);
+
+  if (String(taskFile.season_id) !== season.id) {
+    battlePassCache = null;
+    return battlePassCache;
+  }
+
+  const tasks = taskFile.tasks;
+
+  battlePassCache = {
+    season,
+    rewards,
+    tasks,
+  };
+  return battlePassCache;
+};
+
+export const getMonthCardDefinitions = (): MonthCardDef[] => {
+  if (monthCardCache !== undefined) return monthCardCache ?? [];
+  const file = readJsonFile<MonthCardFile>('month_card.json');
+  monthCardCache = Array.isArray(file?.month_cards) ? file.month_cards : [];
+  return monthCardCache;
+};
+
+export const getAchievementDefinitions = (): AchievementDefConfig[] => {
+  if (achievementDefCache !== undefined) return achievementDefCache ?? [];
+  const file = readJsonFile<AchievementDefFile>('achievement_def.json');
+  achievementDefCache = Array.isArray(file?.achievements) ? file.achievements : [];
+  return achievementDefCache;
+};
+
+export const getTitleDefinitions = (): TitleDefConfig[] => {
+  if (titleDefCache !== undefined) return titleDefCache ?? [];
+  const file = readJsonFile<TitleDefFile>('title_def.json');
+  titleDefCache = Array.isArray(file?.titles) ? file.titles : [];
+  return titleDefCache;
+};
+
+export const getAchievementPointsRewardDefinitions = (): AchievementPointsRewardConfig[] => {
+  if (achievementPointsRewardCache !== undefined) return achievementPointsRewardCache ?? [];
+  const file = readJsonFile<AchievementPointsRewardFile>('achievement_points_rewards.json');
+  achievementPointsRewardCache = Array.isArray(file?.rewards) ? file.rewards : [];
+  return achievementPointsRewardCache;
+};
+
+export const getNpcDefinitions = (): NpcDefConfig[] => {
+  if (npcDefCache !== undefined) return npcDefCache ?? [];
+  const file = readJsonFile<NpcDefFile>('npc_def.json');
+  npcDefCache = Array.isArray(file?.npcs) ? file.npcs : [];
+  return npcDefCache;
+};
+
+export const getTalkTreeDefinitions = (): TalkTreeDefConfig[] => {
+  if (talkTreeDefCache !== undefined) return talkTreeDefCache ?? [];
+  const file = readJsonFile<NpcDefFile>('npc_def.json');
+  talkTreeDefCache = Array.isArray(file?.talk_trees) ? file.talk_trees : [];
+  return talkTreeDefCache;
+};
+
+export const getMapDefinitions = (): MapDefConfig[] => {
+  if (mapDefCache !== undefined) return mapDefCache ?? [];
+  const file = readJsonFile<MapDefFile>('map_def.json');
+  mapDefCache = Array.isArray(file?.maps) ? file.maps : [];
+  return mapDefCache;
+};
+
+export const getMonsterDefinitions = (): MonsterDefConfig[] => {
+  if (monsterDefCache !== undefined) return monsterDefCache ?? [];
+  const file = readJsonFile<MonsterDefFile>('monster_def.json');
+  monsterDefCache = Array.isArray(file?.monsters) ? file.monsters : [];
+  return monsterDefCache;
+};
+
+export const getSpawnRuleDefinitions = (): SpawnRuleConfig[] => {
+  if (spawnRuleCache !== undefined) return spawnRuleCache ?? [];
+  const file = readJsonFile<SpawnRuleFile>('spawn_rule.json');
+  spawnRuleCache = Array.isArray(file?.rules) ? file.rules : [];
+  return spawnRuleCache;
+};
+

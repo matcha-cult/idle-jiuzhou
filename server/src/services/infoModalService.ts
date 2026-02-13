@@ -1,5 +1,6 @@
 import { query } from '../config/database.js';
 import type { MapObjectDto } from './roomObjectService.js';
+import { getMonsterDefinitions, getNpcDefinitions } from './staticConfigLoader.js';
 
 type InfoTargetType = 'npc' | 'monster' | 'item' | 'player';
 
@@ -323,16 +324,7 @@ const getDropsByPoolId = async (dropPoolId: string): Promise<Array<{ name: strin
 
 export const getInfoTargetDetail = async (type: InfoTargetType, id: string): Promise<MapObjectDto | null> => {
   if (type === 'npc') {
-    const npcRes = await query(
-      `
-        SELECT id, name, title, gender, realm, avatar, description, drop_pool_id
-        FROM npc_def
-        WHERE enabled = true AND id = $1
-        LIMIT 1
-      `,
-      [id]
-    );
-    const npc = (npcRes.rows[0] ?? null) as NpcRow | null;
+    const npc = (getNpcDefinitions().find((entry) => entry.enabled !== false && entry.id === id) ?? null) as NpcRow | null;
     if (!npc) return null;
     const drops = npc.drop_pool_id ? await getDropsByPoolId(npc.drop_pool_id) : [];
     return {
@@ -349,16 +341,7 @@ export const getInfoTargetDetail = async (type: InfoTargetType, id: string): Pro
   }
 
   if (type === 'monster') {
-    const monsterRes = await query(
-      `
-        SELECT id, name, title, realm, avatar, base_attrs, attr_variance, attr_multiplier_min, attr_multiplier_max, display_stats, drop_pool_id
-        FROM monster_def
-        WHERE enabled = true AND id = $1
-        LIMIT 1
-      `,
-      [id]
-    );
-    const monster = (monsterRes.rows[0] ?? null) as MonsterRow | null;
+    const monster = (getMonsterDefinitions().find((entry) => entry.enabled !== false && entry.id === id) ?? null) as MonsterRow | null;
     if (!monster) return null;
     const drops = monster.drop_pool_id ? await getDropsByPoolId(monster.drop_pool_id) : [];
     const baseAttrs = asNumberRecord(monster.base_attrs);

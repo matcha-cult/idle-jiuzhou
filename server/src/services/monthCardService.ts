@@ -1,5 +1,6 @@
 import { pool, query } from '../config/database.js';
 import { updateAchievementProgress } from './achievementService.js';
+import { getMonthCardDefinitions } from './staticConfigLoader.js';
 
 export type MonthCardStatusResult = {
   success: boolean;
@@ -70,6 +71,11 @@ const asNumber = (v: unknown, fallback: number) => {
 
 const defaultMonthCardItemDefId = 'cons-monthcard-001';
 
+const getMonthCardDefinition = (monthCardId: string) => {
+  const defs = getMonthCardDefinitions();
+  return defs.find((item) => item.id === monthCardId && item.enabled !== false) ?? null;
+};
+
 export const getMonthCardStatus = async (userId: number, monthCardId: string): Promise<MonthCardStatusResult> => {
   try {
     const charRes = await query(`SELECT id, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1`, [userId]);
@@ -77,17 +83,8 @@ export const getMonthCardStatus = async (userId: number, monthCardId: string): P
     const characterId = Number(charRes.rows[0].id);
     const spiritStones = Number(charRes.rows[0].spirit_stones ?? 0);
 
-    const defRes = await query(
-      `
-        SELECT id, name, description, duration_days, daily_spirit_stones, price_spirit_stones
-        FROM month_card_def
-        WHERE id = $1 AND enabled = true
-        LIMIT 1
-      `,
-      [monthCardId],
-    );
-    if (defRes.rows.length === 0) return { success: false, message: '月卡不存在' };
-    const def = defRes.rows[0] as Record<string, unknown>;
+    const def = getMonthCardDefinition(monthCardId);
+    if (!def) return { success: false, message: '月卡不存在' };
 
     const ownRes = await query(
       `
@@ -140,25 +137,15 @@ export const useMonthCardItem = async (
   monthCardId: string,
   options?: { itemInstanceId?: number; itemDefId?: string },
 ): Promise<MonthCardUseItemResult> => {
+  const monthCardDef = getMonthCardDefinition(monthCardId);
+  if (!monthCardDef) {
+    return { success: false, message: '月卡不存在或未启用' };
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
-    const defRes = await client.query(
-      `
-        SELECT id, duration_days, enabled
-        FROM month_card_def
-        WHERE id = $1
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [monthCardId],
-    );
-    if (defRes.rows.length === 0 || defRes.rows[0]?.enabled === false) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '月卡不存在或未启用' };
-    }
-    const durationDays = asNumber(defRes.rows[0]?.duration_days, 30);
+    const durationDays = asNumber(monthCardDef.duration_days, 30);
 
     const charRes = await client.query(`SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE`, [userId]);
     if (charRes.rows.length === 0) {
@@ -288,26 +275,16 @@ export const useMonthCardItem = async (
 };
 
 export const buyMonthCard = async (userId: number, monthCardId: string): Promise<MonthCardBuyResult> => {
+  const monthCardDef = getMonthCardDefinition(monthCardId);
+  if (!monthCardDef) {
+    return { success: false, message: '月卡不存在或未启用' };
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
-    const defRes = await client.query(
-      `
-        SELECT id, duration_days, price_spirit_stones, enabled
-        FROM month_card_def
-        WHERE id = $1
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [monthCardId],
-    );
-    if (defRes.rows.length === 0 || defRes.rows[0]?.enabled === false) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '月卡不存在或未启用' };
-    }
-    const durationDays = asNumber(defRes.rows[0]?.duration_days, 30);
-    const priceSpiritStones = BigInt(defRes.rows[0]?.price_spirit_stones ?? 0);
+    const durationDays = asNumber(monthCardDef.duration_days, 30);
+    const priceSpiritStones = BigInt(monthCardDef.price_spirit_stones ?? 0);
 
     const charRes = await client.query(`SELECT id, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE`, [userId]);
     if (charRes.rows.length === 0) {
@@ -390,6 +367,11 @@ export const buyMonthCard = async (userId: number, monthCardId: string): Promise
 };
 
 export const claimMonthCardReward = async (userId: number, monthCardId: string): Promise<MonthCardClaimResult> => {
+  const monthCardDef = getMonthCardDefinition(monthCardId);
+  if (!monthCardDef) {
+    return { success: false, message: '月卡不存在或未启用' };
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -401,21 +383,7 @@ export const claimMonthCardReward = async (userId: number, monthCardId: string):
     }
     const characterId = Number(charRes.rows[0].id);
 
-    const defRes = await client.query(
-      `
-        SELECT daily_spirit_stones, enabled
-        FROM month_card_def
-        WHERE id = $1
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [monthCardId],
-    );
-    if (defRes.rows.length === 0 || defRes.rows[0]?.enabled === false) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '月卡不存在或未启用' };
-    }
-    const reward = asNumber(defRes.rows[0]?.daily_spirit_stones, 100);
+    const reward = asNumber(monthCardDef.daily_spirit_stones, 100);
 
     const ownRes = await client.query(
       `

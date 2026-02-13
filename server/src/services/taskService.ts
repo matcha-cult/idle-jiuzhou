@@ -3,6 +3,7 @@ import { createItem } from './itemService.js';
 import type { PoolClient } from 'pg';
 import { updateSectionProgress } from './mainQuestService.js';
 import { updateAchievementProgress } from './achievementService.js';
+import { getNpcDefinitions, getTalkTreeDefinitions } from './staticConfigLoader.js';
 
 export type TaskCategory = 'main' | 'side' | 'daily' | 'event';
 
@@ -1239,22 +1240,18 @@ export const npcTalk = async (
   if (!nid) return { success: false, message: 'NPC不存在' };
   await resetRecurringTaskProgressIfNeeded(cid);
 
-  const npcRes = await query(`SELECT id, name, talk_tree_id FROM npc_def WHERE enabled = true AND id = $1 LIMIT 1`, [nid]);
-  if ((npcRes.rows ?? []).length === 0) return { success: false, message: 'NPC不存在' };
-  const npcName = String(npcRes.rows[0]?.name ?? nid);
-  const talkTreeId = asNonEmptyString(npcRes.rows[0]?.talk_tree_id);
+  const npcDef = getNpcDefinitions().find((entry) => entry.enabled !== false && entry.id === nid);
+  if (!npcDef) return { success: false, message: 'NPC不存在' };
+  const npcName = String(npcDef.name || nid);
+  const talkTreeId = asNonEmptyString(npcDef.talk_tree_id);
 
   await recordTalkNpcEvent(cid, nid);
 
   const lines: string[] = [];
   if (talkTreeId) {
-    const talkRes = await query(`SELECT greeting_lines FROM talk_tree_def WHERE enabled = true AND id = $1 LIMIT 1`, [talkTreeId]);
-    if ((talkRes.rows ?? []).length > 0) {
-      try {
-        const parsed = talkRes.rows[0]?.greeting_lines;
-        const list = Array.isArray(parsed) ? parsed : typeof parsed === 'string' ? JSON.parse(parsed) : [];
-        lines.push(...(Array.isArray(list) ? list.map((x) => String(x ?? '').trim()).filter(Boolean) : []));
-      } catch {}
+    const talkTree = getTalkTreeDefinitions().find((entry) => entry.enabled !== false && entry.id === talkTreeId);
+    if (talkTree && Array.isArray(talkTree.greeting_lines)) {
+      lines.push(...talkTree.greeting_lines.map((x) => String(x ?? '').trim()).filter(Boolean));
     }
   }
   if (lines.length === 0) {

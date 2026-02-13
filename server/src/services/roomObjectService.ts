@@ -5,6 +5,7 @@ import { getGameServer } from '../game/GameServer.js';
 import { addItemToInventoryTx } from './inventoryService.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { recordGatherResourceEvent } from './taskService.js';
+import { getNpcDefinitions, getMonsterDefinitions, getSpawnRuleDefinitions } from './staticConfigLoader.js';
 
 export type MapObjectDto =
   | {
@@ -151,28 +152,41 @@ const asNumber = (value: unknown): number | undefined => {
 
 const getNpcLiteByIds = async (ids: string[]): Promise<Map<string, NpcLiteRow>> => {
   if (ids.length === 0) return new Map();
-  const result = await query(
-    `
-      SELECT id, name, title, gender, realm, avatar, description
-      FROM npc_def
-      WHERE enabled = true AND id = ANY($1)
-    `,
-    [ids]
-  );
-  return new Map(result.rows.map((r: NpcLiteRow) => [r.id, r]));
+  const idSet = new Set(ids);
+  const rows = getNpcDefinitions()
+    .filter((entry) => entry.enabled !== false)
+    .filter((entry) => idSet.has(entry.id))
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      title: entry.title ?? null,
+      gender: entry.gender ?? null,
+      realm: entry.realm ?? null,
+      avatar: entry.avatar ?? null,
+      description: entry.description ?? null,
+    } satisfies NpcLiteRow));
+  return new Map(rows.map((row) => [row.id, row]));
 };
 
 const getMonsterLiteByIds = async (ids: string[]): Promise<Map<string, MonsterLiteRow>> => {
   if (ids.length === 0) return new Map();
-  const result = await query(
-    `
-      SELECT id, name, title, realm, avatar, base_attrs, attr_variance, attr_multiplier_min, attr_multiplier_max, display_stats
-      FROM monster_def
-      WHERE enabled = true AND id = ANY($1)
-    `,
-    [ids]
-  );
-  return new Map(result.rows.map((r: MonsterLiteRow) => [r.id, r]));
+  const idSet = new Set(ids);
+  const rows = getMonsterDefinitions()
+    .filter((entry) => entry.enabled !== false)
+    .filter((entry) => idSet.has(entry.id))
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      title: entry.title ?? null,
+      realm: entry.realm ?? null,
+      avatar: entry.avatar ?? null,
+      base_attrs: entry.base_attrs ?? null,
+      attr_variance: entry.attr_variance ?? null,
+      attr_multiplier_min: entry.attr_multiplier_min ?? null,
+      attr_multiplier_max: entry.attr_multiplier_max ?? null,
+      display_stats: entry.display_stats ?? null,
+    } satisfies MonsterLiteRow));
+  return new Map(rows.map((row) => [row.id, row]));
 };
 
 const getItemLiteByIds = async (ids: string[]): Promise<Map<string, ItemLiteRow>> => {
@@ -862,27 +876,38 @@ const parseSpawnEntries = (value: unknown): SpawnEntry[] => {
 };
 
 export const getAreaObjects = async (area: GridPosition): Promise<MapObjectDto[]> => {
-  const npcResult = await query(
-    `
-      SELECT id, name, title, gender, realm, avatar, description
-      FROM npc_def
-      WHERE enabled = true AND area = $1
-      ORDER BY sort_weight DESC, id ASC
-    `,
-    [area]
-  );
+  const npcRows: NpcLiteRow[] = getNpcDefinitions()
+    .filter((entry) => entry.enabled !== false)
+    .filter((entry) => String(entry.area ?? '') === area)
+    .sort((left, right) => {
+      const leftSortWeight = Number(left.sort_weight ?? 0);
+      const rightSortWeight = Number(right.sort_weight ?? 0);
+      if (leftSortWeight !== rightSortWeight) return rightSortWeight - leftSortWeight;
+      return String(left.id || '').localeCompare(String(right.id || ''));
+    })
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      title: entry.title ?? null,
+      gender: entry.gender ?? null,
+      realm: entry.realm ?? null,
+      avatar: entry.avatar ?? null,
+      description: entry.description ?? null,
+    }));
 
-  const spawnResult = await query(
-    `
-      SELECT id, area, pool_type, pool_entries, max_alive, respawn_sec, enabled
-      FROM spawn_rule
-      WHERE enabled = true AND area = $1 AND pool_type = 'monster'
-      ORDER BY id ASC
-    `,
-    [area]
-  );
-
-  const spawnRules: SpawnRuleRow[] = spawnResult.rows;
+  const spawnRules: SpawnRuleRow[] = getSpawnRuleDefinitions()
+    .filter((entry) => entry.enabled !== false)
+    .filter((entry) => String(entry.area ?? '') === area)
+    .filter((entry) => String(entry.pool_type ?? 'monster') === 'monster')
+    .map((entry) => ({
+      id: entry.id,
+      area: entry.area,
+      pool_type: entry.pool_type ?? 'monster',
+      pool_entries: entry.pool_entries ?? [],
+      max_alive: Number(entry.max_alive ?? 0),
+      respawn_sec: Number(entry.respawn_sec ?? 0),
+      enabled: entry.enabled !== false,
+    }));
   const monsterIds = [
     ...new Set(
       spawnRules
@@ -896,7 +921,7 @@ export const getAreaObjects = async (area: GridPosition): Promise<MapObjectDto[]
 
   const objects: MapObjectDto[] = [];
 
-  for (const npc of npcResult.rows as NpcLiteRow[]) {
+  for (const npc of npcRows) {
     objects.push({
       type: 'npc',
       id: npc.id,

@@ -2007,29 +2007,18 @@ export const loadAllSeeds = async (): Promise<void> => {
   const recipeCount = await loadRecipeSeeds();
   console.log(`  配方: ${recipeCount} 条`);
 
-  // 6. 加载NPC定义
-  const npcCount = await loadNpcDefSeeds();
-  console.log(`  NPC定义: ${npcCount} 条`);
-
-  // 6.1 加载对话树定义
-  const talkTreeCount = await loadTalkTreeSeeds();
-  console.log(`  对话树定义: ${talkTreeCount} 条`);
-
-  // 7. 加载怪物定义
-  const monsterCount = await loadMonsterDefSeeds();
-  console.log(`  怪物定义: ${monsterCount} 条`);
+  // 6. NPC/对话树/怪物定义改为静态 JSON 直读，不再写入数据库
+  console.log('  NPC定义: 使用静态JSON加载（跳过入库）');
+  console.log('  对话树定义: 使用静态JSON加载（跳过入库）');
+  console.log('  怪物定义: 使用静态JSON加载（跳过入库）');
 
   // 8. 加载掉落池
   const dropPoolCount = await loadDropPoolSeeds();
   console.log(`  掉落池: ${dropPoolCount} 条`);
 
-  // 9. 加载刷新规则
-  const spawnRuleCount = await loadSpawnRuleSeeds();
-  console.log(`  刷新规则: ${spawnRuleCount} 条`);
-
-  // 10. 加载地图定义
-  const mapCount = await loadMapDefSeeds();
-  console.log(`  地图定义: ${mapCount} 条`);
+  // 9. 刷新规则/地图定义改为静态 JSON 直读，不再写入数据库
+  console.log('  刷新规则: 使用静态JSON加载（跳过入库）');
+  console.log('  地图定义: 使用静态JSON加载（跳过入库）');
 
   // 11. 加载任务定义
   const taskCount = await loadTaskDefSeeds();
@@ -2037,43 +2026,33 @@ export const loadAllSeeds = async (): Promise<void> => {
   const bountyDefCount = await loadBountyDefSeeds();
   console.log(`  悬赏定义: ${bountyDefCount} 条`);
 
-  // 11.1 加载成就系统定义
-  const achievementDefCount = await loadAchievementDefSeeds();
-  console.log(`  成就定义: ${achievementDefCount} 条`);
-  const titleDefCount = await loadTitleDefSeeds();
-  console.log(`  称号定义: ${titleDefCount} 条`);
-  const achievementPointsRewardCount = await loadAchievementPointsRewardSeeds();
-  console.log(`  成就点奖励: ${achievementPointsRewardCount} 条`);
+  // 11.1 成就系统定义改为静态 JSON 直读，不再写入数据库
+  console.log('  成就定义: 使用静态JSON加载（跳过入库）');
+  console.log('  称号定义: 使用静态JSON加载（跳过入库）');
+  console.log('  成就点奖励: 使用静态JSON加载（跳过入库）');
 
-  // 12. 加载月卡定义
-  const monthCardCount = await loadMonthCardSeeds();
-  console.log(`  月卡定义: ${monthCardCount} 条`);
+  // 12. 月卡/战令改为静态 JSON 直读，不再写入数据库
+  console.log('  月卡定义: 使用静态JSON加载（跳过入库）');
+  console.log('  战令奖励: 使用静态JSON加载（跳过入库）');
+  console.log('  战令任务: 使用静态JSON加载（跳过入库）');
 
-  // 13. 加载战令奖励
-  const battlePassRewardCount = await loadBattlePassRewardSeeds();
-  console.log(`  战令奖励: ${battlePassRewardCount} 条`);
-
-  // 14. 加载战令任务
-  const battlePassTaskCount = await loadBattlePassTaskSeeds();
-  console.log(`  战令任务: ${battlePassTaskCount} 条`);
-
-  // 15. 加载秘境定义
+  // 13. 加载秘境定义
   const dungeonCount = await loadDungeonSeeds();
   console.log(`  秘境定义: ${dungeonCount} 组`);
 
-  // 16. 加载功法定义
+  // 14. 加载功法定义
   const techCount = await loadTechniqueDefSeeds();
   console.log(`  功法定义: ${techCount} 条`);
 
-  // 17. 加载技能定义（需在功法之后，因为技能引用功法）
+  // 15. 加载技能定义（需在功法之后，因为技能引用功法）
   const skillCount = await loadSkillDefSeeds();
   console.log(`  技能定义: ${skillCount} 条`);
 
-  // 18. 加载功法层级（需在功法和技能之后）
+  // 16. 加载功法层级（需在功法和技能之后）
   const layerCount = await loadTechniqueLayerSeeds();
   console.log(`  功法层级: ${layerCount} 条`);
 
-  // 19. 加载主线任务章节和对话
+  // 17. 加载主线任务章节和对话
   const mainQuestCount = await loadMainQuestSeeds();
   console.log(`  主线任务: ${mainQuestCount.chapters} 章, ${mainQuestCount.sections} 节, ${mainQuestCount.dialogues} 对话`);
 

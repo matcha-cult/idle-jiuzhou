@@ -291,63 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_item_set_bonus_set ON item_set_bonus(set_id);
 
 
 // ============================================
-// 7. 物品效果表 (item_def_effect) - 可选扩展
-// ============================================
-const itemDefEffectTableSQL = `
-CREATE TABLE IF NOT EXISTS item_def_effect (
-  id BIGSERIAL PRIMARY KEY,
-  item_def_id VARCHAR(64) NOT NULL REFERENCES item_def(id), -- 物品定义ID
-  trigger_type VARCHAR(32) NOT NULL,                  -- 触发时机（use/equip/unequip/battle_start/turn_start/on_hit/on_be_hit/on_kill/on_death）
-  target_type VARCHAR(32) NOT NULL DEFAULT 'self',    -- 目标规则（self/enemy/ally/team/random）
-  effect_type VARCHAR(32) NOT NULL,                   -- 效果类型（damage/heal/shield/buff/debuff/control/summon/dispel/resource）
-  element VARCHAR(16),                                -- 元素（金木水火土/阴阳/无）
-  value NUMERIC(12,4) DEFAULT 0,                      -- 数值（基础值）
-  scale_key VARCHAR(32),                              -- 加成属性（wugong/fagong/maxQixue等）
-  scale_rate NUMERIC(8,4) DEFAULT 0,                  -- 加成系数
-  duration_round INTEGER DEFAULT 0,                   -- 回合持续（0为即时）
-  stack_max INTEGER DEFAULT 1,                        -- 最大叠加层数
-  dispel_tag VARCHAR(32),                             -- 可被驱散标签
-  hit_rule JSONB,                                     -- 命中/豁免规则
-  params JSONB,                                       -- 其他参数
-  sort_order INTEGER NOT NULL DEFAULT 0,              -- 执行顺序
-  
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-COMMENT ON TABLE item_def_effect IS '物品效果表';
-COMMENT ON COLUMN item_def_effect.item_def_id IS '物品定义ID';
-COMMENT ON COLUMN item_def_effect.trigger_type IS '触发时机';
-COMMENT ON COLUMN item_def_effect.effect_type IS '效果类型';
-COMMENT ON COLUMN item_def_effect.duration_round IS '回合持续（0为即时）';
-
-CREATE INDEX IF NOT EXISTS idx_item_def_effect_item ON item_def_effect(item_def_id);
-`;
-
-// ============================================
-// 8. 物品基础属性表 (item_def_attr) - 可选扩展
-// ============================================
-const itemDefAttrTableSQL = `
-CREATE TABLE IF NOT EXISTS item_def_attr (
-  id BIGSERIAL PRIMARY KEY,
-  item_def_id VARCHAR(64) NOT NULL REFERENCES item_def(id), -- 物品定义ID
-  attr_key VARCHAR(32) NOT NULL,                      -- 属性键（qixue/maxQixue/wugong/fagong等）
-  attr_value NUMERIC(12,4) NOT NULL DEFAULT 0,        -- 属性值
-  apply_type VARCHAR(16) NOT NULL DEFAULT 'flat',     -- 生效方式（flat/percent）
-  
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-COMMENT ON TABLE item_def_attr IS '物品基础属性表';
-COMMENT ON COLUMN item_def_attr.item_def_id IS '物品定义ID';
-COMMENT ON COLUMN item_def_attr.attr_key IS '属性键';
-COMMENT ON COLUMN item_def_attr.attr_value IS '属性值';
-COMMENT ON COLUMN item_def_attr.apply_type IS '生效方式（flat固定值/percent百分比）';
-
-CREATE INDEX IF NOT EXISTS idx_item_def_attr_item ON item_def_attr(item_def_id);
-`;
-
-// ============================================
-// 9. 合成配方表 (item_recipe)
+// 7. 合成配方表 (item_recipe)
 // ============================================
 const itemRecipeTableSQL = `
 CREATE TABLE IF NOT EXISTS item_recipe (
@@ -395,104 +339,7 @@ CREATE INDEX IF NOT EXISTS idx_item_recipe_type ON item_recipe(recipe_type);
 `;
 
 // ============================================
-// 10. 掉落规则表 (drop_rule)
-// ============================================
-const dropRuleTableSQL = `
-CREATE TABLE IF NOT EXISTS drop_rule (
-  id BIGSERIAL PRIMARY KEY,
-  source_type VARCHAR(32) NOT NULL,                   -- 来源类型（monster/boss/dungeon/chest/idle/quest）
-  source_id VARCHAR(64) NOT NULL,                     -- 来源配置ID
-  
-  -- 掉落物
-  item_def_id VARCHAR(64) NOT NULL REFERENCES item_def(id), -- 掉落物品ID
-  chance NUMERIC(8,4) NOT NULL DEFAULT 100.0000,      -- 掉落概率（百分比）
-  qty_min INTEGER NOT NULL DEFAULT 1,                 -- 数量下限
-  qty_max INTEGER NOT NULL DEFAULT 1,                 -- 数量上限
-  
-  -- 品质控制（装备专用）
-  quality_weights JSONB,                              -- 品质权重（{"黄":70,"玄":25,"地":4,"天":1}）
-  
-  -- 保底
-  pity_group VARCHAR(64),                             -- 保底组ID
-  pity_count INTEGER DEFAULT 0,                       -- 保底次数
-  
-  -- 条件
-  req_realm VARCHAR(64),                              -- 境界要求
-  req_level_min INTEGER DEFAULT 0,                    -- 等级下限
-  req_level_max INTEGER DEFAULT 0,                    -- 等级上限
-  
-  -- 运营控制
-  version INTEGER NOT NULL DEFAULT 1,
-  enabled BOOLEAN NOT NULL DEFAULT true,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-COMMENT ON TABLE drop_rule IS '掉落规则表';
-COMMENT ON COLUMN drop_rule.source_type IS '来源类型（monster/boss/dungeon/chest/idle/quest）';
-COMMENT ON COLUMN drop_rule.source_id IS '来源配置ID';
-COMMENT ON COLUMN drop_rule.item_def_id IS '掉落物品ID';
-COMMENT ON COLUMN drop_rule.chance IS '掉落概率（百分比）';
-COMMENT ON COLUMN drop_rule.quality_weights IS '品质权重';
-COMMENT ON COLUMN drop_rule.pity_group IS '保底组ID';
-
-CREATE INDEX IF NOT EXISTS idx_drop_rule_source ON drop_rule(source_type, source_id);
-CREATE INDEX IF NOT EXISTS idx_drop_rule_item ON drop_rule(item_def_id);
-`;
-
-
-// ============================================
-// 11. 商店上架表 (shop_listing)
-// ============================================
-const shopListingTableSQL = `
-CREATE TABLE IF NOT EXISTS shop_listing (
-  id BIGSERIAL PRIMARY KEY,
-  shop_id VARCHAR(64) NOT NULL,                       -- 商店ID
-  item_def_id VARCHAR(64) NOT NULL REFERENCES item_def(id), -- 商品物品ID
-  
-  -- 价格
-  price_silver INTEGER NOT NULL DEFAULT 0,            -- 银两价格
-  price_spirit_stones INTEGER NOT NULL DEFAULT 0,     -- 灵石价格
-  price_special JSONB,                                -- 特殊货币价格
-  
-  -- 限购
-  limit_daily INTEGER DEFAULT 0,                      -- 每日限购（0不限）
-  limit_weekly INTEGER DEFAULT 0,                     -- 每周限购
-  limit_total INTEGER DEFAULT 0,                      -- 总限购
-  stock INTEGER DEFAULT -1,                           -- 库存（-1无限）
-  
-  -- 条件
-  req_realm VARCHAR(64),                              -- 境界要求
-  req_level INTEGER DEFAULT 0,                        -- 等级要求
-  req_vip INTEGER DEFAULT 0,                          -- VIP等级要求
-  
-  -- 排序与展示
-  sort_weight INTEGER NOT NULL DEFAULT 0,
-  display_tag VARCHAR(32),                            -- 展示标签（hot/new/discount）
-  discount_rate NUMERIC(5,2) DEFAULT 100.00,          -- 折扣率
-  
-  -- 运营控制
-  version INTEGER NOT NULL DEFAULT 1,
-  enabled BOOLEAN NOT NULL DEFAULT true,
-  publish_start_at TIMESTAMPTZ,
-  publish_end_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-COMMENT ON TABLE shop_listing IS '商店上架表';
-COMMENT ON COLUMN shop_listing.shop_id IS '商店ID';
-COMMENT ON COLUMN shop_listing.item_def_id IS '商品物品ID';
-COMMENT ON COLUMN shop_listing.price_silver IS '银两价格';
-COMMENT ON COLUMN shop_listing.price_spirit_stones IS '灵石价格';
-COMMENT ON COLUMN shop_listing.limit_daily IS '每日限购（0不限）';
-
-CREATE INDEX IF NOT EXISTS idx_shop_listing_shop ON shop_listing(shop_id);
-CREATE INDEX IF NOT EXISTS idx_shop_listing_item ON shop_listing(item_def_id);
-`;
-
-// ============================================
-// 12. 物品使用冷却表 (item_use_cooldown)
+// 8. 物品使用冷却表 (item_use_cooldown)
 // ============================================
 const itemUseCooldownTableSQL = `
 CREATE TABLE IF NOT EXISTS item_use_cooldown (
@@ -517,7 +364,7 @@ CREATE INDEX IF NOT EXISTS idx_item_use_cooldown_item ON item_use_cooldown(item_
 `;
 
 // ============================================
-// 13. 物品使用次数表 (item_use_count)
+// 9. 物品使用次数表 (item_use_count)
 // ============================================
 const itemUseCountTableSQL = `
 CREATE TABLE IF NOT EXISTS item_use_count (
@@ -642,25 +489,13 @@ export const initItemTables = async (): Promise<void> => {
     // 6. 创建套装加成表
     await query(itemSetBonusTableSQL);
     
-    // 7. 创建物品效果表
-    await query(itemDefEffectTableSQL);
-    
-    // 8. 创建物品属性表
-    await query(itemDefAttrTableSQL);
-    
-    // 9. 创建合成配方表
+    // 7. 创建合成配方表
     await query(itemRecipeTableSQL);
-    
-    // 10. 创建掉落规则表
-    await query(dropRuleTableSQL);
-    
-    // 11. 创建商店上架表
-    await query(shopListingTableSQL);
 
-    // 12. 创建物品使用冷却表
+    // 8. 创建物品使用冷却表
     await query(itemUseCooldownTableSQL);
 
-    // 13. 创建物品使用次数表
+    // 9. 创建物品使用次数表
     await query(itemUseCountTableSQL);
     
     // 检查并补齐缺失字段

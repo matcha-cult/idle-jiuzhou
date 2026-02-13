@@ -11,6 +11,7 @@ import {
   parseJsonObject,
 } from './shared.js';
 import type { AchievementDefRow } from './types.js';
+import { getAchievementDefinitions } from '../staticConfigLoader.js';
 
 const normalizeIncrement = (value: number): number => {
   const n = Math.floor(Number(value));
@@ -136,17 +137,9 @@ export const updateAchievementProgress = async (
 
     await ensureCharacterAchievementPoints(cid, client);
 
-    const defRes = await client.query(
-      `
-        SELECT *
-        FROM achievement_def
-        WHERE enabled = true
-          AND track_key = ANY($1::varchar[])
-      `,
-      [candidates],
-    );
-
-    const defs = (defRes.rows as Array<Record<string, unknown>>)
+    const defs = getAchievementDefinitions()
+      .filter((row) => candidates.includes(String(row.track_key ?? '')))
+      .filter((row) => row.enabled !== false)
       .map(parseAchievementDefRow)
       .filter((row): row is AchievementDefRow => row !== null);
 
@@ -180,9 +173,8 @@ export const updateAchievementProgress = async (
       await client.query(
         `
           INSERT INTO character_achievement (character_id, achievement_id, status, progress, progress_data)
-          SELECT $1, id, 'in_progress', 0, '{}'::jsonb
-          FROM achievement_def
-          WHERE id = ANY($2::varchar[])
+          SELECT $1, x.achievement_id, 'in_progress', 0, '{}'::jsonb
+          FROM unnest($2::varchar[]) AS x(achievement_id)
           ON CONFLICT (character_id, achievement_id) DO NOTHING
         `,
         [cid, missingIds],
