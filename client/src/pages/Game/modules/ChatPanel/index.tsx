@@ -1,4 +1,4 @@
-import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Button, Drawer, Input, Popover, Select, Table, Tabs, Tooltip, type InputRef } from 'antd';
 import { BarChartOutlined, CloseOutlined, LineChartOutlined, SendOutlined } from '@ant-design/icons';
 import { gameSocket, type CharacterData, type OnlinePlayerDto } from '../../../../services/gameSocket';
@@ -100,20 +100,6 @@ interface PieSlice {
   color: string;
   percent: number;
 }
-
-type BattleInlineTokenKind = 'role' | 'skill' | 'damage' | 'heal' | 'state' | 'round';
-interface BattleInlineTokenSegment {
-  text: string;
-  kind?: BattleInlineTokenKind;
-}
-
-interface BattleParsedLine {
-  plainText: string;
-  segments: BattleInlineTokenSegment[];
-}
-
-const BATTLE_PARSED_LINE_CACHE_LIMIT = 2048;
-const battleParsedLineCache = new Map<string, BattleParsedLine>();
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
@@ -297,99 +283,21 @@ const buildInitialMessageBuckets = (list: Message[]): MessageBuckets => {
   return appendMessages(createEmptyMessageBuckets(), list);
 };
 
-const BATTLE_INLINE_TOKEN_RE = /⟦(role|skill|damage|heal|state|round)\|([^⟧]*)⟧/g;
-
-const decodeBattleInlineTokenText = (raw: string): string => {
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
+const sumByRegex = (line: string, pattern: RegExp): number => {
+  let sum = 0;
+  for (const matched of line.matchAll(pattern)) {
+    sum += Math.max(0, Math.floor(Number(matched[1]) || 0));
   }
+  return sum;
 };
 
-const parseBattleInlineTokens = (line: string): BattleInlineTokenSegment[] => {
-  const text = String(line ?? '');
-  if (!text) return [];
-
-  const out: BattleInlineTokenSegment[] = [];
-  let cursor = 0;
-  BATTLE_INLINE_TOKEN_RE.lastIndex = 0;
-
-  for (const m of text.matchAll(BATTLE_INLINE_TOKEN_RE)) {
-    const idx = m.index ?? -1;
-    if (idx < 0) continue;
-    if (cursor < idx) out.push({ text: text.slice(cursor, idx) });
-    const kind = m[1] as BattleInlineTokenKind;
-    const encoded = m[2] ?? '';
-    out.push({ text: decodeBattleInlineTokenText(encoded), kind });
-    cursor = idx + m[0].length;
+const countByRegex = (line: string, pattern: RegExp): number => {
+  let count = 0;
+  for (const _ of line.matchAll(pattern)) {
+    count += 1;
   }
-
-  if (cursor < text.length) out.push({ text: text.slice(cursor) });
-  return out;
+  return count;
 };
-
-const parseBattleLineCached = (line: string): BattleParsedLine => {
-  const raw = String(line ?? '');
-  const cached = battleParsedLineCache.get(raw);
-  if (cached) return cached;
-
-  const segments = parseBattleInlineTokens(raw);
-  const parsed: BattleParsedLine = {
-    plainText: segments.map((x) => x.text).join(''),
-    segments,
-  };
-  battleParsedLineCache.set(raw, parsed);
-
-  if (battleParsedLineCache.size > BATTLE_PARSED_LINE_CACHE_LIMIT) {
-    const oldestKey = battleParsedLineCache.keys().next().value;
-    if (typeof oldestKey === 'string') {
-      battleParsedLineCache.delete(oldestKey);
-    }
-  }
-  return parsed;
-};
-
-const stripBattleInlineTokens = (line: string): string => parseBattleLineCached(line).plainText;
-
-const renderBattleMessageContent = (line: string): Array<string | ReactNode> => {
-  const { segments } = parseBattleLineCached(line);
-  if (segments.length === 0) return [''];
-  return segments.map((seg, idx) => {
-    if (!seg.kind) return seg.text;
-    return (
-      <span key={`battle-token-${idx}`} className={`battle-token battle-token-${seg.kind}`}>
-        {seg.text}
-      </span>
-    );
-  });
-};
-
-const BATTLE_CRIT_STATE_TEXT = new Set([
-  '会心一击',
-  '命中要害',
-  '重击得手',
-  '一击破势',
-  '锐势贯体',
-  '狠击入肉',
-  '招式直中命门',
-  '这一击尤为凶猛',
-  '灵力暴发命中',
-  '重招击实',
-]);
-
-const BATTLE_MISS_STATE_TEXT = new Set([
-  '一击落空',
-  '此击未中',
-  '被身法避开',
-  '擦身而过',
-  '招式偏离要害',
-  '闪身躲过',
-  '被轻巧避过',
-  '攻势未能命中',
-  '出手扑空',
-  '对手避其锋芒',
-]);
 
 interface ChatPanelProps {
   onSelectPlayer?: (target: InfoTarget) => void;
@@ -529,9 +437,6 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
       }
 
       if (!isPublicChatChannel(channel)) return;
-      if (channel === 'battle') {
-        parseBattleLineCached(msg.content);
-      }
 
       setMessageBuckets((prev) => {
         const nextMessage: Message = {
@@ -608,9 +513,6 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
       if (channel !== 'system' && channel !== 'battle') return;
       const content = String(ce.detail?.content ?? '').trim();
       if (!content) return;
-      if (channel === 'battle') {
-        parseBattleLineCached(content);
-      }
 
       const senderName = String(ce.detail?.senderName ?? '').trim() || '系统';
       const senderTitle = String(ce.detail?.senderTitle ?? '').trim();
@@ -654,9 +556,6 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
   const appendBattleLines = useCallback((lines: string[]) => {
     const list = (lines ?? []).map((x) => String(x ?? '').trim()).filter(Boolean);
     if (list.length === 0) return;
-    list.forEach((line) => {
-      parseBattleLineCached(line);
-    });
     const now = Date.now();
     const next: Message[] = list.map((content, idx) => ({
       id: `battle-${now}-${idx}-${Math.random().toString(16).slice(2)}`,
@@ -712,11 +611,8 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
 
   const activePrivateTarget = privateTargets.find((t) => t.id === activePrivateTargetId) ?? null;
 
-  const renderMessageContent = useCallback((msg: Message): Array<string | ReactNode> | string => {
-    const text = String(msg.content ?? '');
-    if (!text) return '';
-    if (msg.channel !== 'battle') return text;
-    return renderBattleMessageContent(text);
+  const renderMessageContent = useCallback((msg: Message): string => {
+    return String(msg.content ?? '');
   }, []);
 
   const handleRemovePrivateTarget = (targetId: string) => {
@@ -860,10 +756,7 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
     if (!dropStatsOpen && !outputStatsOpen) return [];
     return messageBuckets.battle
       .filter((m) => (battleStatsFromTs > 0 ? m.timestamp >= battleStatsFromTs : true))
-      .map((m) => {
-        const raw = String(m.content ?? '');
-        return { raw, content: stripBattleInlineTokens(raw).trim(), timestamp: m.timestamp };
-      })
+      .map((m) => ({ content: String(m.content ?? '').trim(), timestamp: m.timestamp }))
       .filter((m) => Boolean(m.content));
   }, [battleStatsFromTs, dropStatsOpen, messageBuckets.battle, outputStatsOpen]);
 
@@ -970,7 +863,7 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
 
     for (const bm of battleMessages) {
       const line = bm.content;
-      const actionMatch = /^第(\d+)回合\s+(.+?)\s+.+?【(.+?)】/.exec(line);
+      const actionMatch = /^第(\d+)回合\s+(.+?)\s+施展【(.+?)】/.exec(line);
       if (!actionMatch) continue;
 
       const round = Math.max(0, Math.floor(Number(actionMatch[1]) || 0));
@@ -978,25 +871,10 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
       const skillName = String(actionMatch[3] ?? '').trim() || '未知技能';
       if (!actorName) continue;
 
-      const tokenSegments = parseBattleLineCached(bm.raw).segments;
-      let damage = 0;
-      let heal = 0;
-      let critCount = 0;
-      let missCount = 0;
-
-      for (const seg of tokenSegments) {
-        if (seg.kind === 'damage' || seg.kind === 'heal') {
-          const value = Math.max(0, Math.floor(Number(seg.text) || 0));
-          if (value > 0) {
-            if (seg.kind === 'damage') damage += value;
-            if (seg.kind === 'heal') heal += value;
-          }
-          continue;
-        }
-        if (seg.kind !== 'state') continue;
-        if (BATTLE_CRIT_STATE_TEXT.has(seg.text)) critCount += 1;
-        if (BATTLE_MISS_STATE_TEXT.has(seg.text)) missCount += 1;
-      }
+      const damage = sumByRegex(line, /伤害-(\d+)/g);
+      const heal = sumByRegex(line, /治疗\+(\d+)/g);
+      const critCount = countByRegex(line, /暴击/g);
+      const missCount = countByRegex(line, /未命中/g);
 
       details.push({ round, actorName, skillName, damage, heal, critCount, missCount, raw: line });
 

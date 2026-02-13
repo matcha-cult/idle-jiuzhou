@@ -10,7 +10,14 @@ import {
   type BattleStateDto,
 } from '../../../../services/api';
 import { gameSocket } from '../../../../services/gameSocket';
-import { translateBuffName, translateBuffNames, translateControlName } from './logNameMap';
+import {
+  FAST_BATTLE_LOG_SYSTEM_LINES,
+  buildBattleEndLineFast,
+  buildBattleStartLineFast,
+  buildDropLinesFast,
+  buildRewardSummaryLinesFast,
+  formatBattleLogLineFast,
+} from './logFormatterFast';
 import './index.scss';
 
 export type BattleUnit = {
@@ -47,7 +54,12 @@ const toPercent = (value: number, total: number) => {
 type BattleResult = 'idle' | 'running' | 'win' | 'lose' | 'draw';
 type FloatText = { id: string; unitId: string; value: number; dx: number; createdAt: number };
 
-const createFloatId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+let floatIdSeed = 0;
+const createFloatId = () => {
+  floatIdSeed += 1;
+  return `float-${Date.now()}-${floatIdSeed}`;
+};
+const FLOAT_DX_PATTERN = [-10, -5, 0, 5, 10] as const;
 
 const pickAlive = (units: BattleUnit[]) => units.filter((u) => (Number(u.hp) || 0) > 0);
 
@@ -187,28 +199,6 @@ const isNewerBattleState = (next: BattleStateDto, current: BattleStateDto | null
   return nextTeam === currentTeam;
 };
 
-const stableHash = (seed: string): number => {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  }
-  return hash;
-};
-
-const pickVariant = (seed: string, variants: readonly string[]): string => {
-  if (variants.length === 0) return '';
-  const index = stableHash(seed) % variants.length;
-  return variants[index] ?? variants[0] ?? '';
-};
-
-type BattleInlineTokenKind = 'role' | 'skill' | 'damage' | 'heal' | 'state' | 'round';
-
-const encodeBattleInlineTokenText = (text: string): string => encodeURIComponent(String(text ?? ''));
-
-const battleInlineToken = (kind: BattleInlineTokenKind, text: string): string => `⟦${kind}|${encodeBattleInlineTokenText(text)}⟧`;
-
-const battleInlineRound = (round: number): string => battleInlineToken('round', `第${round}回合`);
-
 const TRANSIENT_BATTLE_ACTION_ERRORS = new Set([
   '当前不是玩家行动回合',
   '不是玩家方的回合',
@@ -247,6 +237,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   const [isTeamBattle, setIsTeamBattle] = useState(false);
   const [teamMemberCount, setTeamMemberCount] = useState(1);
   const [nexting, setNexting] = useState(false);
+  const floatDxIndexRef = useRef(0);
   const floatTimerSetRef = useRef<Set<number>>(new Set());
   const nextingRef = useRef(false);
   const battleIdRef = useRef<string | null>(null);
@@ -300,437 +291,27 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     fn(list);
   }, []);
 
-  const buildRewardSummaryLines = useCallback(
-    (state: BattleStateDto | null | undefined, rewards: BattleRewardsDto | null | undefined): string[] => {
-      if (!state || state.phase !== 'finished') return [];
-      if (!rewards) return ['【斗法所得】暂无收获'];
-
-      const totalExp = Math.max(0, Math.floor(Number(rewards.totalExp ?? rewards.exp) || 0));
-      const totalSilver = Math.max(0, Math.floor(Number(rewards.totalSilver ?? rewards.silver) || 0));
-      const participantCount = Math.max(1, Math.floor(Number(rewards.participantCount) || 1));
-
-      const playerNameByCharacterId = new Map<number, string>();
-      for (const u of state.teams?.attacker?.units ?? []) {
-        if (u.type !== 'player') continue;
-        const m = /^player-(\d+)$/.exec(String(u.id || ''));
-        const characterId = m ? Number(m[1]) : null;
-        if (!characterId || !Number.isFinite(characterId)) continue;
-        const name = String(u.name || '').trim();
-        if (name) playerNameByCharacterId.set(characterId, name);
-      }
-
-      const per = rewards.perPlayerRewards ?? [];
-      if (Array.isArray(per) && per.length > 0) {
-        const totalLine =
-          participantCount > 1
-            ? `【斗法所得】队伍共得 修为+${totalExp} 银两+${totalSilver}（${participantCount}人）`
-            : `【斗法所得】修为+${totalExp} 银两+${totalSilver}`;
-        const perLines = per
-          .map((r) => {
-            const name = playerNameByCharacterId.get(r.characterId) || `角色${r.characterId}`;
-            const roleName = battleInlineToken('role', name);
-            const exp = Math.max(0, Math.floor(Number(r.exp) || 0));
-            const silver = Math.max(0, Math.floor(Number(r.silver) || 0));
-            return `【斗法所得】${roleName} 分得 修为+${exp} 银两+${silver}`;
-          })
-          .filter(Boolean);
-        return [totalLine, ...perLines];
-      }
-
-      return [`【斗法所得】修为+${totalExp} 银两+${totalSilver}`];
-    },
-    [],
-  );
-
-  const buildDropLines = useCallback((state: BattleStateDto | null | undefined, rewards: BattleRewardsDto | null | undefined): string[] => {
-    const items = rewards?.items ?? [];
-    if (!state || items.length === 0) return [];
-
-    const playerNameByCharacterId = new Map<number, string>();
-    for (const u of state.teams?.attacker?.units ?? []) {
-      if (u.type !== 'player') continue;
-      const m = /^player-(\d+)$/.exec(String(u.id || ''));
-      const characterId = m ? Number(m[1]) : null;
-      if (!characterId || !Number.isFinite(characterId)) continue;
-      const name = String(u.name || '').trim();
-      if (name) playerNameByCharacterId.set(characterId, name);
-    }
-
-    return items
-      .map((it) => {
-        const receiverName = playerNameByCharacterId.get(it.receiverId) || `角色${it.receiverId}`;
-        const receiverToken = battleInlineToken('role', receiverName);
-        const itemName = String(it.name || it.itemDefId || '').trim();
-        if (!itemName) return null;
-        const itemToken = battleInlineToken('skill', itemName);
-        const qty = Math.max(1, Math.floor(Number(it.quantity) || 0));
-        return `【战利分配】${receiverToken} 取走 ${itemToken}×${qty}`;
-      })
-      .filter((x): x is string => Boolean(x));
-  }, []);
-
   const ensureBattleDropsAnnounced = useCallback(
     (state: BattleStateDto | null | undefined, rewards: BattleRewardsDto | null | undefined) => {
       const battleId = state?.battleId;
       if (!battleId) return;
       if (announcedBattleDropsIdRef.current === battleId) return;
-      const lines = [...buildRewardSummaryLines(state, rewards), ...buildDropLines(state, rewards)];
+      const lines = [...buildRewardSummaryLinesFast(state, rewards), ...buildDropLinesFast(state, rewards)];
       if (lines.length === 0) return;
       announcedBattleDropsIdRef.current = battleId;
       pushBattleLines(lines);
     },
-    [buildDropLines, buildRewardSummaryLines, pushBattleLines],
+    [pushBattleLines],
   );
 
-  const formatLogToLine = useCallback((log: BattleLogEntryDto): string | null => {
-    if (!log) return null;
-    const roundText = battleInlineRound(log.round);
-    if (log.type === 'round_start') {
-      const title = pickVariant(`round_start:${log.round}`, [
-        '斗法再起',
-        '灵潮再涌',
-        '战势重开',
-        '气机复转',
-        '真元再聚',
-        '双方再度交锋',
-        '法诀再鸣',
-        '剑意复燃',
-        '杀机再现',
-        '战局续开',
-        '灵压再起',
-        '阵势重启',
-      ]);
-      return `——【${roundText}】${battleInlineToken('state', title)}——`;
-    }
-    if (log.type === 'round_end') {
-      const title = pickVariant(`round_end:${log.round}`, [
-        '回合落定',
-        '攻守暂歇',
-        '气机稍定',
-        '双方收势',
-        '余劲渐平',
-        '战线暂稳',
-        '法力回流',
-        '杀势略缓',
-        '招意既尽',
-        '胜负未决',
-        '场势稍静',
-        '心法归位',
-      ]);
-      return `——【${roundText}】${battleInlineToken('state', title)}——`;
-    }
-    if (log.type === 'dot') {
-      const damage = Math.floor(log.damage);
-      const buffName = translateBuffName(log.buffName);
-      const unitText = battleInlineToken('role', log.unitName);
-      const buffText = battleInlineToken('skill', `【${buffName}】`);
-      const damageText = battleInlineToken('damage', String(damage));
-      return pickVariant(`dot:${log.round}:${log.unitId}:${log.buffName}:${damage}`, [
-        `${roundText} ${unitText} 受${buffText}蚀体，气血-${damageText}`,
-        `${roundText} ${unitText} 遭${buffText}侵脉，损血-${damageText}`,
-        `${roundText} ${buffText}反噬${unitText}，受创-${damageText}`,
-        `${roundText} ${unitText} 被${buffText}折磨，气血-${damageText}`,
-        `${roundText} ${unitText} 受${buffText}余劲灼身，损血-${damageText}`,
-        `${roundText} ${buffText}持续发作，${unitText} 气血-${damageText}`,
-        `${roundText} ${unitText} 经脉受${buffText}牵制，受创-${damageText}`,
-        `${roundText} ${unitText} 被${buffText}缠身，气血-${damageText}`,
-        `${roundText} ${unitText} 遭${buffText}压迫，气机受损${damageText}`,
-        `${roundText} ${buffText}侵蚀未止，${unitText} 气血再失${damageText}`,
-        `${roundText} ${unitText} 在${buffText}影响下伤势加重，气血-${damageText}`,
-        `${roundText} ${unitText} 受${buffText}牵引，血线下跌${damageText}`,
-      ]);
-    }
-    if (log.type === 'hot') {
-      const heal = Math.floor(log.heal);
-      const buffName = translateBuffName(log.buffName);
-      const unitText = battleInlineToken('role', log.unitName);
-      const buffText = battleInlineToken('skill', `【${buffName}】`);
-      const healText = battleInlineToken('heal', String(heal));
-      return pickVariant(`hot:${log.round}:${log.unitId}:${log.buffName}:${heal}`, [
-        `${roundText} ${unitText} 得${buffText}温养，气血+${healText}`,
-        `${roundText} ${unitText} 受${buffText}回元，回春+${healText}`,
-        `${roundText} ${unitText} 借${buffText}疗伤，调息+${healText}`,
-        `${roundText} ${buffText}生效，${unitText} 气血回升${healText}`,
-        `${roundText} ${unitText} 在${buffText}护持下恢复${healText}点气血`,
-        `${roundText} ${unitText} 受${buffText}滋养，回元+${healText}`,
-        `${roundText} ${buffText}持续修复，${unitText} 气血+${healText}`,
-        `${roundText} ${unitText} 得${buffText}扶持，生机回复${healText}`,
-        `${roundText} ${unitText} 藉由${buffText}稳住伤势，气血+${healText}`,
-        `${roundText} ${unitText} 被${buffText}润养，血量回补${healText}`,
-        `${roundText} ${unitText} 于${buffText}加持下疗伤${healText}`,
-        `${roundText} ${unitText} 经${buffText}调理，气血回升${healText}`,
-      ]);
-    }
-    if (log.type === 'buff_expire') {
-      const buffName = translateBuffName(log.buffName);
-      const unitText = battleInlineToken('role', log.unitName);
-      const buffText = battleInlineToken('skill', `【${buffName}】`);
-      return pickVariant(`buff_expire:${log.round}:${log.unitId}:${log.buffName}`, [
-        `${roundText} ${unitText} 身上的${buffText}${battleInlineToken('state', '灵效散去')}`,
-        `${roundText} ${unitText} 的${buffText}${battleInlineToken('state', '加持消退')}`,
-        `${roundText} ${unitText} 的${buffText}${battleInlineToken('state', '余韵尽散')}`,
-        `${roundText} ${unitText}${battleInlineToken('state', '失去')}${buffText}护持`,
-        `${roundText} ${unitText} 身上的${buffText}${battleInlineToken('state', '到此为止')}`,
-        `${roundText} ${unitText} 的${buffText}${battleInlineToken('state', '效果终止')}`,
-        `${roundText} ${unitText} 的${buffText}${battleInlineToken('state', '已然消隐')}`,
-        `${roundText} ${unitText} 与${buffText}${battleInlineToken('state', '的连结中断')}`,
-        `${roundText} ${unitText} 身上的${buffText}${battleInlineToken('state', '彻底消散')}`,
-        `${roundText} ${unitText} 体内${buffText}${battleInlineToken('state', '之力归于沉寂')}`,
-        `${roundText} ${unitText}${battleInlineToken('state', '再无')}${buffText}加持`,
-        `${roundText} ${unitText} 的${buffText}${battleInlineToken('state', '光华褪尽')}`,
-      ]);
-    }
-    if (log.type === 'death') {
-      const unitText = battleInlineToken('role', log.unitName);
-      const killer = log.killerName?.trim();
-      if (killer) {
-        const killerText = battleInlineToken('role', killer);
-        return pickVariant(`death-by:${log.round}:${log.unitId}:${killer}`, [
-          `${roundText} ${unitText} 被 ${killerText} ${battleInlineToken('state', '斩落')}`,
-          `${roundText} ${unitText} 在 ${killerText} 攻势下${battleInlineToken('state', '败退倒地')}`,
-          `${roundText} ${unitText} 被 ${killerText} ${battleInlineToken('state', '一式击溃')}`,
-          `${roundText} ${unitText} 受 ${killerText} 重击，${battleInlineToken('state', '失去战力')}`,
-          `${roundText} ${unitText} 未挡住 ${killerText} 的杀招，${battleInlineToken('state', '当场倒下')}`,
-          `${roundText} ${unitText} 被 ${killerText} 破开防线，${battleInlineToken('state', '颓然倒地')}`,
-          `${roundText} ${unitText} 在 ${killerText} 连招压制下${battleInlineToken('state', '力竭')}`,
-          `${roundText} ${unitText} 被 ${killerText} ${battleInlineToken('state', '当场击倒')}`,
-          `${roundText} ${unitText} 遭 ${killerText} ${battleInlineToken('state', '终结一击')}`,
-          `${roundText} ${unitText} 不敌 ${killerText}，${battleInlineToken('state', '战意尽失')}`,
-          `${roundText} ${unitText} 被 ${killerText} 逼至绝境后${battleInlineToken('state', '倒下')}`,
-          `${roundText} ${unitText} 在 ${killerText} 强压下${battleInlineToken('state', '彻底失势')}`,
-        ]);
-      }
-      return pickVariant(`death-self:${log.round}:${log.unitId}`, [
-        `${roundText} ${unitText} ${battleInlineToken('state', '灵力溃散，倒地不起')}`,
-        `${roundText} ${unitText} ${battleInlineToken('state', '真元尽竭，失去战力')}`,
-        `${roundText} ${unitText} ${battleInlineToken('state', '气机断续，难再起身')}`,
-        `${roundText} ${unitText} ${battleInlineToken('state', '力竭而倒，无法再战')}`,
-        `${roundText} ${unitText} ${battleInlineToken('state', '伤势过重，当场倒下')}`,
-        `${roundText} ${unitText} ${battleInlineToken('state', '经脉紊乱，战斗不能')}`,
-        `${roundText} ${unitText} ${battleInlineToken('state', '真气散乱，颓然倒地')}`,
-        `${roundText} ${unitText} ${battleInlineToken('state', '失去支撑，已无再战之力')}`,
-        `${roundText} ${unitText} ${battleInlineToken('state', '护体尽破，战线崩溃')}`,
-        `${roundText} ${unitText} ${battleInlineToken('state', '气血见底，倒在阵前')}`,
-        `${roundText} ${unitText} ${battleInlineToken('state', '战意与灵力同时告竭')}`,
-        `${roundText} ${unitText} ${battleInlineToken('state', '再难维持身形，倒地不支')}`,
-      ]);
-    }
-    if (log.type === 'action') {
-      const actorText = battleInlineToken('role', log.actorName);
-      const skillText = battleInlineToken('skill', `【${log.skillName}】`);
-      const targets = (log.targets ?? [])
-        .map((t, index) => {
-          const targetSeed = `${log.round}:${log.actorId}:${log.skillId}:${t.targetId}:${index}`;
-          const pickTargetVariant = (kind: string, variants: readonly string[]) => pickVariant(`${targetSeed}:${kind}`, variants);
-          const markState = (seed: string, variants: readonly string[]) => battleInlineToken('state', pickTargetVariant(seed, variants));
-          const parts: string[] = [];
-          if (t.controlResisted) {
-            parts.push(markState('resist', ['稳住心神', '强行破开控制', '以灵识抗下', '定神抵住压制', '心法护住神台', '凭意志挣脱', '迅速稳住气机', '抗住控制冲击', '神识未乱', '化去控制之力']));
-          }
-          if (t.controlApplied) {
-            const controlName = translateControlName(t.controlApplied);
-            parts.push(markState(`control:${controlName}`, [`受${controlName}`, `陷入${controlName}`, `被施以${controlName}`, `遭${controlName}束缚`, `身中${controlName}`, `状态转为${controlName}`, `被${controlName}命中`, `受${controlName}影响`, `当场进入${controlName}`, `行动受${controlName}牵制`]));
-          }
-          if (t.hits.length > 1) {
-            const value = t.hits.length;
-            parts.push(
-              battleInlineToken(
-                'state',
-                pickTargetVariant(`combo:${value}`, [
-                  `连击${value}段`,
-                  `连环出手${value}次`,
-                  `连续斩击${value}次`,
-                  `一式连打${value}击`,
-                  `攻势连贯${value}段`,
-                  `转瞬连发${value}击`,
-                ]),
-              ),
-            );
-          }
-          if (t.hits.length > 0) {
-            const hitTexts = t.hits.map((hit) => {
-              const hitSeed = `hit:${hit.index}`;
-              const hitParts: string[] = [];
-              if (hit.isMiss) {
-                hitParts.push(markState(`${hitSeed}:miss`, ['未命中', '这一击落空', '被闪身避开', '攻势扑空', '未能触及对手']));
-              }
-              if (hit.isParry) {
-                hitParts.push(markState(`${hitSeed}:parry`, ['被招架', '被稳稳格开', '来势被架住', '攻势被截断', '这一击被挡下']));
-              }
-              if (hit.isCrit) {
-                hitParts.push(markState(`${hitSeed}:crit`, ['暴击', '会心重击', '命中要害', '重招得手', '狠击入肉']));
-              }
-              if (hit.isElementBonus) {
-                hitParts.push(markState(`${hitSeed}:element`, ['五行克制', '属性压制', '行属相克', '克制优势生效', '灵根克制显现']));
-              }
-              if (hit.shieldAbsorbed > 0) {
-                const absorbed = Math.floor(hit.shieldAbsorbed);
-                hitParts.push(
-                  battleInlineToken(
-                    'state',
-                    pickTargetVariant(`${hitSeed}:shield:${absorbed}`, [
-                      `护体化解${absorbed}`,
-                      `护盾抵消${absorbed}`,
-                      `罡气卸去${absorbed}`,
-                      `护身屏障吸收${absorbed}`,
-                      `守势拦截${absorbed}`,
-                    ]),
-                  ),
-                );
-              }
-              if (hit.damage > 0) {
-                const damageValue = Math.floor(hit.damage);
-                const damageText = battleInlineToken('damage', String(damageValue));
-                hitParts.push(
-                  pickTargetVariant(`${hitSeed}:damage:${damageValue}`, [
-                    '气血-{v}',
-                    '受创-{v}',
-                    '损血-{v}',
-                    '伤势-{v}',
-                    '受到{v}点伤害',
-                    '身受{v}伤',
-                  ]).replace('{v}', damageText),
-                );
-              }
-              if (hitParts.length === 0) {
-                hitParts.push(markState(`${hitSeed}:empty`, ['未造成伤害', '攻势受阻', '这一击未见成效']));
-              }
-              // 只有多次攻击才显示"第X击"
-              if (t.hits.length > 1) {
-                const hitLabel = battleInlineToken('state', `第${hit.index}击`);
-                return `${hitLabel}${hitParts.join('，')}`;
-              }
-              return hitParts.join('，');
-            });
-            parts.push(hitTexts.join('；'));
-          } else {
-            if (t.isMiss) {
-              parts.push(markState('miss', ['一击落空', '此击未中', '被身法避开', '擦身而过', '招式偏离要害', '闪身躲过', '被轻巧避过', '攻势未能命中', '出手扑空', '对手避其锋芒']));
-            }
-            if (t.isParry) {
-              parts.push(markState('parry', ['招式被格', '攻势被架开', '被对手卸去锋芒', '刀势被拦下', '出手被稳稳挡住', '攻击遭格挡', '被正面招架', '劲道被化开', '进攻被截断', '来势被封住']));
-            }
-            if (t.isCrit) {
-              parts.push(markState('crit', ['会心一击', '命中要害', '重击得手', '一击破势', '锐势贯体', '狠击入肉', '招式直中命门', '这一击尤为凶猛', '灵力暴发命中', '重招击实']));
-            }
-            if (t.isElementBonus) {
-              parts.push(markState('element', ['五行克制', '借五行之势占优', '属性压制', '行属相克', '灵根克制生效', '五行相胜', '对位相克', '属性优势显现', '克制之势成形', '五行压制到位']));
-            }
-            if (t.shieldAbsorbed && t.shieldAbsorbed > 0) {
-              const value = Math.floor(t.shieldAbsorbed);
-              parts.push(
-                battleInlineToken(
-                  'state',
-                  pickTargetVariant(`shield:${value}`, [`护体化解${value}`, `护盾抵消${value}`, `罡气卸去${value}`, `外层护罩吸收${value}`, `护身灵光挡下${value}`, `护体真气吞掉${value}`, `护盾拦截${value}`, `守势化去${value}`, `防护层承受${value}`, `护身屏障吸纳${value}`]),
-                ),
-              );
-            }
-            if (t.damage && t.damage > 0) {
-              const value = Math.floor(t.damage);
-              const damageText = battleInlineToken('damage', String(value));
-              parts.push(
-                pickTargetVariant(`damage:${value}`, [
-                  '气血-{v}',
-                  '受创-{v}',
-                  '损血-{v}',
-                  '伤势-{v}',
-                  '血量下跌{v}',
-                  '气机受损{v}',
-                  '被打掉{v}点气血',
-                  '这一击造成{v}伤害',
-                  '受到{v}点伤害',
-                  '身受{v}伤',
-                ]).replace('{v}', damageText),
-              );
-            }
-          }
-          if (t.heal && t.heal > 0) {
-            const value = Math.floor(t.heal);
-            const healText = battleInlineToken('heal', String(value));
-            parts.push(
-              pickTargetVariant(`heal:${value}`, [
-                '气血+{v}',
-                '回春+{v}',
-                '调息+{v}',
-                '回元+{v}',
-                '伤势恢复{v}',
-                '气血回升{v}',
-                '恢复{v}点气血',
-                '疗伤{v}',
-                '生机回复{v}',
-                '血量回补{v}',
-              ]).replace('{v}', healText),
-            );
-          }
-          const buffsApplied = translateBuffNames(t.buffsApplied);
-          if (buffsApplied.length > 0) {
-            const value = buffsApplied.join('、');
-            parts.push(
-              battleInlineToken(
-                'state',
-                pickTargetVariant(`buffsApplied:${value}`, [`得${value}`, `获${value}加持`, `身附${value}`, `气机转得${value}`, `增益转入${value}`, `被赋予${value}`, `状态获得${value}`, `身上新增${value}`, `受${value}护持`, `获得${value}效果`]),
-              ),
-            );
-          }
-          const buffsRemoved = translateBuffNames(t.buffsRemoved);
-          if (buffsRemoved.length > 0) {
-            const value = buffsRemoved.join('、');
-            parts.push(
-              battleInlineToken(
-                'state',
-                pickTargetVariant(`buffsRemoved:${value}`, [`${value}被破`, `${value}散去`, `${value}遭驱散`, `${value}被化解`, `${value}已剥离`, `${value}不复存在`, `${value}被清除`, `${value}被打散`, `${value}效果终止`, `${value}被抹去`]),
-              ),
-            );
-          }
-          const targetNameText = battleInlineToken('role', t.targetName);
-          return parts.length > 0 ? `${targetNameText}（${parts.join('，')}）` : targetNameText;
-        })
-        .filter(Boolean);
-      const actionHead = pickVariant(`action-head:${log.round}:${log.actorId}:${log.skillId}`, [
-        `${roundText} ${actorText} 掐诀施展${skillText}`,
-        `${roundText} ${actorText} 运转灵力，催动${skillText}`,
-        `${roundText} ${actorText} 起手一式${skillText}`,
-        `${roundText} ${actorText} 法诀既成，放出${skillText}`,
-        `${roundText} ${actorText} 真元奔涌，祭出${skillText}`,
-        `${roundText} ${actorText} 借势发招${skillText}`,
-        `${roundText} ${actorText} 掌心凝光，施放${skillText}`,
-        `${roundText} ${actorText} 凝神出手，催发${skillText}`,
-        `${roundText} ${actorText} 灵力激荡，打出${skillText}`,
-        `${roundText} ${actorText} 顺势追击，施展${skillText}`,
-        `${roundText} ${actorText} 心法流转，贯出${skillText}`,
-        `${roundText} ${actorText} 借阵势之力，引动${skillText}`,
-      ]);
-      if (targets.length === 0) return actionHead;
-      const targetPrefix = pickVariant(`action-target:${log.round}:${log.actorId}:${log.skillId}`, [
-        '波及',
-        '直取',
-        '劲势扫向',
-        '杀机锁定',
-        '锋芒压向',
-        '灵压笼罩',
-        '气劲直逼',
-        '招意覆盖',
-        '攻势席卷',
-        '当头落向',
-        '余波震向',
-        '法势倾轧向',
-      ]);
-      return `${actionHead}，${battleInlineToken('state', targetPrefix)} ${targets.join('；')}`;
-    }
-    return null;
+  const formatNewLogs = useCallback((prevIndex: number, nextLogs: BattleLogEntryDto[]) => {
+    if (!Array.isArray(nextLogs) || nextLogs.length === 0) return [];
+    const safePrev = Math.max(0, Math.min(prevIndex, nextLogs.length));
+    return nextLogs
+      .slice(safePrev)
+      .map((log) => formatBattleLogLineFast(log))
+      .filter((x): x is string => Boolean(x && x.trim()));
   }, []);
-
-  const formatNewLogs = useCallback(
-    (prevIndex: number, nextLogs: BattleLogEntryDto[]) => {
-      if (!Array.isArray(nextLogs) || nextLogs.length === 0) return [];
-      const safePrev = Math.max(0, Math.min(prevIndex, nextLogs.length));
-      return nextLogs
-        .slice(safePrev)
-        .map((log) => formatLogToLine(log))
-        .filter((x): x is string => Boolean(x && x.trim()));
-    },
-    [formatLogToLine],
-  );
 
   const ensureBattleStartAnnounced = useCallback(
     (state: BattleStateDto) => {
@@ -741,14 +322,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       announcedBattleDropsIdRef.current = null;
       announcedAutoNextBattleIdRef.current = null;
       lastChatLogIndexRef.current = 0;
-
-      const attacker = state.teams?.attacker?.units ?? [];
-      const defender = state.teams?.defender?.units ?? [];
-      const attackerText = attacker.map((u) => String(u.name || '').trim()).filter(Boolean).map((name) => battleInlineToken('role', name)).join('、') || '未知';
-      const defenderText = defender.map((u) => String(u.name || '').trim()).filter(Boolean).map((name) => battleInlineToken('role', name)).join('、') || '未知';
-      const playerCount = attacker.filter((u) => u.type === 'player').length;
-      const teamHint = playerCount > 1 ? `（${battleInlineToken('state', `同门${playerCount}人`)}）` : '';
-      pushBattleLines([`【斗法开启】我方：${attackerText}；敌方：${defenderText}${teamHint}`]);
+      pushBattleLines([buildBattleStartLineFast(state)]);
     },
     [pushBattleLines],
   );
@@ -759,29 +333,15 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       if (state.phase !== 'finished') return;
       if (announcedBattleEndIdRef.current === state.battleId) return;
       announcedBattleEndIdRef.current = state.battleId;
-      const resultText =
-        state.result === 'attacker_win' ? '得胜' : state.result === 'defender_win' ? '落败' : state.result === 'draw' ? '平局' : '落幕';
-      const attackerAlive = (state.teams?.attacker?.units ?? [])
-        .filter((u) => u.isAlive)
-        .map((u) => String(u.name || '').trim())
-        .filter(Boolean)
-        .map((name) => battleInlineToken('role', name))
-        .join('、');
-      const defenderAlive = (state.teams?.defender?.units ?? [])
-        .filter((u) => u.isAlive)
-        .map((u) => String(u.name || '').trim())
-        .filter(Boolean)
-        .map((name) => battleInlineToken('role', name))
-        .join('、');
-      const aliveText = `我方尚存：${attackerAlive || '无'}；敌方尚存：${defenderAlive || '无'}`;
-      pushBattleLines([`【斗法落幕】${battleInlineToken('state', resultText)}，历经${battleInlineRound(state.roundCount)}；${aliveText}`]);
+      pushBattleLines([buildBattleEndLineFast(state)]);
     },
     [pushBattleLines],
   );
 
   const addFloat = useCallback((unitId: string, value: number) => {
     const id = createFloatId();
-    const dx = clamp((Math.random() - 0.5) * 26, -13, 13);
+    const dx = FLOAT_DX_PATTERN[floatDxIndexRef.current] ?? 0;
+    floatDxIndexRef.current = (floatDxIndexRef.current + 1) % FLOAT_DX_PATTERN.length;
     const createdAt = Date.now();
     setFloats((prev) => [...prev, { id, unitId, value, dx, createdAt }]);
     const t = window.setTimeout(() => {
@@ -829,6 +389,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       setSelectedEnemyId(null);
       clearFloatTimers();
       setFloats([]);
+      floatDxIndexRef.current = 0;
       lastLogIndexRef.current = 0;
       lastChatLogIndexRef.current = 0;
       announcedBattleIdRef.current = null;
@@ -842,7 +403,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         setBattleId(null);
         setBattleState(null);
         setResult('idle');
-        pushBattleLines([`【斗法落幕】${battleInlineToken('state', '战斗取消')}`]);
+        pushBattleLines([FAST_BATTLE_LOG_SYSTEM_LINES.cancelled]);
         startingBattleRef.current = false;
         return;
       }
@@ -881,7 +442,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         setBattleId(null);
         setBattleState(null);
         setResult('idle');
-        pushBattleLines([`【斗法落幕】${battleInlineToken('state', '战斗发起失败')}`]);
+        pushBattleLines([FAST_BATTLE_LOG_SYSTEM_LINES.startFailed]);
       } finally {
         startingBattleRef.current = false;
       }
@@ -905,6 +466,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     clearAutoNextTimer();
     clearFloatTimers();
     setFloats([]);
+    floatDxIndexRef.current = 0;
     lastLogIndexRef.current = 0;
     lastChatLogIndexRef.current = 0;
     announcedBattleIdRef.current = null;
@@ -1136,7 +698,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       if (kind === 'battle_abandoned') {
         if (announcedBattleEndIdRef.current !== incomingBattleId) {
           announcedBattleEndIdRef.current = incomingBattleId;
-          pushBattleLines([`【斗法落幕】${battleInlineToken('state', '已遁离战场')}`]);
+          pushBattleLines([FAST_BATTLE_LOG_SYSTEM_LINES.abandoned]);
         }
         setBattleId(null);
         setBattleState(null);
@@ -1190,7 +752,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     }
     if (id && announcedBattleEndIdRef.current !== id) {
       announcedBattleEndIdRef.current = id;
-      pushBattleLines(['【战斗结束】已撤退']);
+      pushBattleLines([FAST_BATTLE_LOG_SYSTEM_LINES.escaped]);
     }
     clearAutoNextTimer();
     setBattleId(null);
