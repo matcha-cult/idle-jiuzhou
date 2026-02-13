@@ -375,11 +375,9 @@ class GameServer {
         'shui_kangxing',
         'huo_kangxing',
         'tu_kangxing',
-        'qixue_huifu',
-        'lingqi_huifu',
       ]);
       const percentMultiplyKeys = new Set(['wugong', 'fagong', 'wufang', 'fafang', 'max_qixue']);
-      const scaledHundredAddKeys = new Set(['sudu', 'max_lingqi']);
+      const scaledHundredAddKeys = new Set(['sudu', 'max_lingqi', 'qixue_huifu', 'lingqi_huifu']);
       const toCamel = (k: string) => k.replace(/_([a-z])/g, (_, c) => String(c).toUpperCase());
       const mergedAny = merged as any;
       for (const key of keys) {

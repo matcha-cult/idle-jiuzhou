@@ -276,12 +276,10 @@ async function applyTechniquePassivesToCharacterData<T extends Record<string, an
       'shui_kangxing',
       'huo_kangxing',
       'tu_kangxing',
-      'qixue_huifu',
-      'lingqi_huifu',
       'shuxing_shuzhi',
     ]);
     const percentMultiplyKeys = new Set(['wugong', 'fagong', 'wufang', 'fafang', 'max_qixue']);
-    const scaledHundredAddKeys = new Set(['sudu', 'max_lingqi']);
+    const scaledHundredAddKeys = new Set(['sudu', 'max_lingqi', 'qixue_huifu', 'lingqi_huifu']);
 
     for (const key of keys) {
       const value = passives[key];

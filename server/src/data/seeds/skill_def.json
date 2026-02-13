@@ -164,7 +164,7 @@
       "effects": [
         {
           "type": "restore_lingqi",
-          "value": 1500,
+          "value": 15,
           "valueType": "flat"
         }
       ],
@@ -178,7 +178,7 @@
             "effects": [
               {
                 "type": "restore_lingqi",
-                "value": 2500,
+                "value": 25,
                 "valueType": "flat"
               }
             ]
@@ -731,14 +731,14 @@
       "effects": [
         {
           "type": "restore_lingqi",
-          "value": 2000,
+          "value": 20,
           "valueType": "flat"
         },
         {
           "type": "buff",
           "buffId": "buff-max-lingqi-up",
           "duration": 3,
-          "value": 500
+          "value": 5
         }
       ],
       "trigger_type": "active",
@@ -751,14 +751,14 @@
             "effects": [
               {
                 "type": "restore_lingqi",
-                "value": 3000,
+                "value": 30,
                 "valueType": "flat"
               },
               {
                 "type": "buff",
                 "buffId": "buff-max-lingqi-up",
                 "duration": 3,
-                "value": 800
+                "value": 8
               }
             ]
           }

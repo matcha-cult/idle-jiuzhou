@@ -2621,10 +2621,10 @@
       "equip_req_realm": "炼炁化神·炼己期",
       "base_attrs": {
         "zengshang": 180,
-        "lingqi_huifu": 120
+        "lingqi_huifu": 12
       },
       "implicit_attrs": {
-        "lingqi_huifu": 90
+        "lingqi_huifu": 9
       },
       "affix_pool_id": "ap-artifact-uncommon",
       "affix_count_min": 2,

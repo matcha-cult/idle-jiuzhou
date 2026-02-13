@@ -79,8 +79,7 @@ const PlayerInfo: React.FC = () => {
   }, []);
 
   const formatRecovery = useCallback((value: number) => {
-    const v = value / 100;
-    const fixed = Math.abs(v - Math.round(v)) < 1e-9 ? v.toFixed(0) : v.toFixed(2);
+    const fixed = Math.abs(value - Math.round(value)) < 1e-9 ? value.toFixed(0) : value.toFixed(2);
     return fixed.replace(/\.?0+$/, '') || '0';
   }, []);
 
