@@ -2,6 +2,7 @@ import { App, Tooltip } from 'antd';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { SERVER_BASE, getCharacterTechniqueStatus, type CharacterSkillSlotDto } from '../../../../services/api';
 import { gameSocket } from '../../../../services/gameSocket';
+import { readIsMobileViewport } from '../../shared/responsive';
 import { formatSkillEffectLines } from '../skillEffectFormatter';
 import './index.scss';
 
@@ -26,11 +27,9 @@ type SkillItem = {
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
-const MOBILE_BREAKPOINT = 768;
 const FAB_SIZE_DESKTOP = 72;
 const FAB_SIZE_MOBILE = 48;
-const getFabSize = () =>
-  typeof window !== 'undefined' && window.innerWidth <= MOBILE_BREAKPOINT ? FAB_SIZE_MOBILE : FAB_SIZE_DESKTOP;
+const getFabSize = () => (readIsMobileViewport() ? FAB_SIZE_MOBILE : FAB_SIZE_DESKTOP);
 
 type SkillCooldownMapDto = Record<string, unknown>;
 

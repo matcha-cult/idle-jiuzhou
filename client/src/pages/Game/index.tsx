@@ -60,6 +60,7 @@ import equipMale from '../../assets/images/ui/ep-n.png';
 import equipFemale from '../../assets/images/ui/ep.png';
 import coin01 from '../../assets/images/ui/sh_icon_0006_jinbi_02.png';
 import './index.scss';
+import { useIsMobile } from './shared/responsive';
 
 interface GameProps {
   onLogout?: () => void;
@@ -669,7 +670,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const [currentMapId, setCurrentMapId] = useState<string>('map-qingyun-village');
   const [currentRoomId, setCurrentRoomId] = useState<string>('room-village-center');
   const [trackedRoomIds, setTrackedRoomIds] = useState<string[]>([]);
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useIsMobile();
   const [topTab, setTopTab] = useState<'map' | 'room'>('map');
   const [mobileBattleChatOpen, setMobileBattleChatOpen] = useState(false);
   const [playerInfoOpen, setPlayerInfoOpen] = useState(false);
@@ -1477,14 +1478,6 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [flushPendingPosition]);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 768px)');
-    const apply = () => setIsMobile(mq.matches);
-    apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, []);
 
   const refreshSignInDot = useCallback(async () => {
     try {

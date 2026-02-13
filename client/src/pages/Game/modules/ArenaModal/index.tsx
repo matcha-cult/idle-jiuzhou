@@ -11,6 +11,7 @@ import {
   type ArenaRecordDto,
   type ArenaStatusDto,
 } from '../../../../services/api';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 interface ArenaModalProps {
@@ -42,10 +43,7 @@ const formatRate = (v: number) => `${Math.round(clamp(v, 0, 1) * 100)}%`;
 const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onStartBattle }) => {
   const { message } = App.useApp();
   const [tab, setTab] = useState<ArenaTab>('match');
-  const [isMobile, setIsMobile] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth <= 768;
-  });
+  const isMobile = useIsMobile();
   const [matching, setMatching] = useState(false);
   const [matchProgress, setMatchProgress] = useState(0);
   const matchTimerRef = useRef<number | null>(null);
@@ -147,12 +145,6 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
       clearTimers();
     };
   }, [clearTimers]);
-
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   const startQuickMatch = useCallback(() => {
     if (matching) return;

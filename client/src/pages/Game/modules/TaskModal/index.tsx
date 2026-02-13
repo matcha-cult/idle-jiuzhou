@@ -14,6 +14,7 @@ import {
   submitBountyMaterials,
   type DungeonWeeklyTargetDto,
 } from '../../../../services/api';
+import { useIsMobile } from '../../shared/responsive';
 import MainQuestPanel from './MainQuestPanel';
 import './index.scss';
 import './MainQuestPanel.scss';
@@ -157,10 +158,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
     () => taskCategoryKeys.map((k) => ({ label: categoryShortLabels[k], value: k })),
     [taskCategoryKeys],
   );
-  const [isMobile, setIsMobile] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth <= 768;
-  });
+  const isMobile = useIsMobile();
   const [mobilePane, setMobilePane] = useState<'list' | 'detail'>('list');
   const [category, setCategory] = useState<TaskCategory>('main');
   const [query, setQuery] = useState('');
@@ -360,16 +358,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
       setLoading(false);
     }
   }, [message]);
-
-  useEffect(() => {
-    const updateMobileFlag = () => {
-      setIsMobile(window.innerWidth <= 768);
-    };
-
-    updateMobileFlag();
-    window.addEventListener('resize', updateMobileFlag);
-    return () => window.removeEventListener('resize', updateMobileFlag);
-  }, []);
 
   useEffect(() => {
     if (!open) return;

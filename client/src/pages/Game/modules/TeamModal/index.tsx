@@ -24,6 +24,7 @@ import {
   type TeamInvitation,
   type TeamMember,
 } from '../../../../services/teamApi';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 type TeamPanelKey = 'my' | 'apply' | 'near' | 'lobby';
@@ -56,10 +57,7 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
   const { message } = App.useApp();
   const messageRef = useRef(message);
   const [panel, setPanel] = useState<TeamPanelKey>('my');
-  const [isMobile, setIsMobile] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth <= 768;
-  });
+  const isMobile = useIsMobile();
   const [lobbyQuery, setLobbyQuery] = useState('');
   const lobbyQueryRef = useRef('');
 
@@ -120,12 +118,6 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
       unsubChar();
       unsubError();
     };
-  }, []);
-
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
   }, []);
 
   useEffect(() => {

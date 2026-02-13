@@ -17,6 +17,7 @@ import {
   getMapDetail,
   getRoomObjects,
 } from '../../../../services/api';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 type MapCategory = 'world' | 'dungeon' | 'event';
@@ -135,17 +136,10 @@ const MapModal: React.FC<MapModalProps> = ({ open, onClose, initialCategory, onE
   const [listLoading, setListLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [showMobileDetail, setShowMobileDetail] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useIsMobile();
   const [dungeonRankById, setDungeonRankById] = useState<Record<string, number>>({});
   const [dungeonDifficultyOptionsById, setDungeonDifficultyOptionsById] = useState<Record<string, DungeonDifficultyOption[]>>({});
   const [dungeonDifficultyLoadingById, setDungeonDifficultyLoadingById] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
 
   useEffect(() => {
     if (open) setShowMobileDetail(false);

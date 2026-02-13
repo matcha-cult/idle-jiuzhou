@@ -50,6 +50,7 @@ import type { BagAction, BagCategory, BagItem, BagQuality, BagSort, BatchMode } 
 import DisassembleModal from './DisassembleModal';
 import CraftModal from './CraftModal';
 import GemSynthesisModal from './GemSynthesisModal';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 interface BagModalProps {
@@ -1499,18 +1500,6 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
       </Modal>
     </Modal>
   );
-};
-
-const MOBILE_BREAKPOINT = 768;
-
-const useIsMobile = () => {
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= MOBILE_BREAKPOINT);
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
-  return isMobile;
 };
 
 const BagModalSwitch: React.FC<{ open: boolean; onClose: () => void }> = (props) => {

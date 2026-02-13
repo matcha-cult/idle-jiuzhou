@@ -17,6 +17,7 @@ import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
 import lingshiIcon from '../../../../assets/images/ui/lingshi.png';
 import tongqianIcon from '../../../../assets/images/ui/tongqian.png';
 import expIcon from '../../../../assets/images/ui/icon_exp.png';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 interface AchievementModalProps {
@@ -210,10 +211,7 @@ const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, onCh
   const { message } = App.useApp();
 
   const [tab, setTab] = useState<AchievementTab>('all');
-  const [isMobile, setIsMobile] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth <= 768;
-  });
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
   const [achievements, setAchievements] = useState<AchievementItemDto[]>([]);
   const [pointsInfo, setPointsInfo] = useState({
@@ -270,12 +268,6 @@ const AchievementModal: React.FC<AchievementModalProps> = ({ open, onClose, onCh
     if (!open) return;
     void refreshData();
   }, [open, refreshData]);
-
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   const overall = useMemo(() => {
     const total = achievements.length;

@@ -11,6 +11,7 @@ import {
   type BattlePassRewardDto,
   type BattlePassTaskDto,
 } from '../../../../services/api';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 interface BattlePassModalProps {
@@ -48,10 +49,7 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
   const [seasonTasks, setSeasonTasks] = useState<BattlePassTask[]>([]);
 
   const [tab, setTab] = useState<BattlePassTab>('rewards');
-  const [isMobile, setIsMobile] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth <= 768;
-  });
+  const isMobile = useIsMobile();
 
   const maxLevel = status?.maxLevel ?? 30;
   const expPerLevel = status?.expPerLevel ?? 1000;
@@ -120,12 +118,6 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
     setTab('rewards');
     void refreshAll();
   }, [open, refreshAll]);
-
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   const levelProgress = useMemo(() => {
     if (level >= maxLevel) return { percent: 100, current: expPerLevel, need: expPerLevel };

@@ -9,6 +9,7 @@ import {
   type SectRankRowDto,
   type WealthRankRowDto,
 } from '../../../../services/api';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 interface RankModalProps {
@@ -22,10 +23,7 @@ const rankTabKeys: RankTab[] = ['realm', 'sect', 'wealth', 'arena'];
 const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
   const { message } = App.useApp();
   const [tab, setTab] = useState<RankTab>('realm');
-  const [isMobile, setIsMobile] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth <= 768;
-  });
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
   const [realmRanks, setRealmRanks] = useState<RealmRankRowDto[]>([]);
   const [sectRanks, setSectRanks] = useState<SectRankRowDto[]>([]);
@@ -58,12 +56,6 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
     setTab('realm');
     void refreshRanks();
   }, [open, refreshRanks]);
-
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   const leftItems = useMemo(
     () => [

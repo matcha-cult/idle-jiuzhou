@@ -14,6 +14,7 @@ import {
 } from '../../../../services/api';
 import type { InventoryItemDto, ItemDefLite, MarketListingDto, MarketTradeRecordDto } from '../../../../services/api';
 import { gameSocket, type CharacterData } from '../../../../services/gameSocket';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 type MarketPanel = 'market' | 'my' | 'list' | 'records';
@@ -655,10 +656,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   }, []);
 
   const [panel, setPanel] = useState<MarketPanel>('market');
-  const [isMobile, setIsMobile] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth <= 768;
-  });
+  const isMobile = useIsMobile();
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
   const [category, setCategory] = useState<MarketCategory>('all');
@@ -852,16 +850,6 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     ],
     [],
   );
-
-  useEffect(() => {
-    const updateMobileFlag = () => {
-      setIsMobile(window.innerWidth <= 768);
-    };
-
-    updateMobileFlag();
-    window.addEventListener('resize', updateMobileFlag);
-    return () => window.removeEventListener('resize', updateMobileFlag);
-  }, []);
 
   useEffect(() => {
     if (!open) return;

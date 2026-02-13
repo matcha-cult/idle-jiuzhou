@@ -11,14 +11,13 @@ import {
   markAllMailsRead,
 } from '../../../../services/api';
 import type { MailDto } from '../../../../services/api';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 interface MailModalProps {
   open: boolean;
   onClose: () => void;
 }
-
-const MOBILE_BREAKPOINT = 768;
 
 const formatTime = (iso: string) => {
   const d = new Date(iso);
@@ -40,16 +39,7 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [unclaimedCount, setUnclaimedCount] = useState(0);
   const [showMobileDetail, setShowMobileDetail] = useState(false);
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth <= MOBILE_BREAKPOINT : false
-  );
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleResize = () => setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  const isMobile = useIsMobile();
 
   // 加载邮件列表
   const loadMails = useCallback(async (options?: { resetActive?: boolean }) => {

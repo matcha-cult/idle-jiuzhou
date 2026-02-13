@@ -2,6 +2,7 @@ import { App, Button, Drawer, Modal, Segmented, Spin, Tabs, Tooltip } from 'antd
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
 import { SERVER_BASE, getInventoryInfo, getInventoryItems, moveInventoryItem, type InventoryItemDto, type ItemDefLite } from '../../../../services/api';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 type SlotSide = 'bag' | 'warehouse';
@@ -589,10 +590,7 @@ interface WarehouseModalProps {
 const WarehouseModal: React.FC<WarehouseModalProps> = ({ open, onClose }) => {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
-  const [isMobile, setIsMobile] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth <= 768;
-  });
+  const isMobile = useIsMobile();
   const [mobileSide, setMobileSide] = useState<SlotSide>('warehouse');
   const [mobilePreview, setMobilePreview] = useState<MobilePreview | null>(null);
   const [bagCapacity, setBagCapacity] = useState(0);
@@ -672,12 +670,6 @@ const WarehouseModal: React.FC<WarehouseModalProps> = ({ open, onClose }) => {
     setMobilePreview(null);
     void refreshAll();
   }, [open, refreshAll]);
-
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   useEffect(() => {
     if (!mobilePreview) return;

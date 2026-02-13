@@ -24,6 +24,7 @@ import {
   unequipCharacterTechnique,
   upgradeCharacterTechnique,
 } from '../../../../services/api';
+import { useIsMobile } from '../../shared/responsive';
 import { formatSkillEffectLines } from '../skillEffectFormatter';
 import './index.scss';
 
@@ -510,8 +511,6 @@ const slotLabels: Record<SlotKey, string> = {
   sub3: '副功法Ⅲ',
 };
 
-const MOBILE_BREAKPOINT = 768;
-
 interface TechniqueModalProps {
   open: boolean;
   onClose: () => void;
@@ -530,9 +529,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [cultivateSubmitting, setCultivateSubmitting] = useState(false);
   const [availableSkills, setAvailableSkills] = useState<TechniqueSkill[]>([]);
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth <= MOBILE_BREAKPOINT : false
-  );
+  const isMobile = useIsMobile();
   const techniqueDetailCacheRef = useRef<
     Map<string, { technique: TechniqueDefDto; layers: TechniqueLayerDto[]; skills: SkillDefDto[] }>
   >(new Map());
@@ -550,13 +547,6 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
     Array.from({ length: 10 }).map(() => null),
   );
   const [activeSkillSlot, setActiveSkillSlot] = useState<number>(0);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleResize = () => setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   useEffect(() => {
     gameSocket.connect();

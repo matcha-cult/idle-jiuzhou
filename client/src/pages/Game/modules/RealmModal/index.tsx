@@ -6,6 +6,7 @@ import { SERVER_BASE, breakthroughToNextRealm, getRealmOverview, type RealmOverv
 import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
 import lingshiIcon from '../../../../assets/images/ui/lingshi.png';
 import tongqianIcon from '../../../../assets/images/ui/tongqian.png';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 interface RealmModalProps {
@@ -114,8 +115,6 @@ const realmSubToFull: Record<string, (typeof realmOrder)[number]> = {
   成圣期: '炼虚合道·成圣期',
 };
 
-const MOBILE_BREAKPOINT = 768;
-
 const normalizeRealm = (realm: string) => {
   const s = String(realm || '').trim();
   if (!s) return '凡人';
@@ -144,9 +143,7 @@ const RealmModal: React.FC<RealmModalProps> = ({ open, onClose, character }) => 
   const [overview, setOverview] = useState<RealmOverviewDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [breakthroughLoading, setBreakthroughLoading] = useState(false);
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth <= MOBILE_BREAKPOINT : false,
-  );
+  const isMobile = useIsMobile();
   const [mobileSection, setMobileSection] = useState<MobileSectionKey>('requirements');
 
   const refreshOverview = useCallback(async () => {
@@ -176,13 +173,6 @@ const RealmModal: React.FC<RealmModalProps> = ({ open, onClose, character }) => 
       setOverview(null);
     }
   }, [open, refreshOverview]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleResize = () => setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   const rank = useMemo<RealmRank>(() => {
     if (overview) {

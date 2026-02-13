@@ -2,6 +2,7 @@ import { App, Button, Input, Menu, Modal, Select, Space, Switch, Typography } fr
 import { useEffect, useMemo, useState } from 'react';
 import { getCharacterInfo, updateCharacterAutoDisassemble } from '../../../../services/api';
 import { emitThemeModeChange, getStoredThemeMode, persistThemeMode, type ThemeMode } from '../../../../constants/theme';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 type SettingKey = 'base' | 'battle' | 'cdk';
@@ -12,7 +13,6 @@ interface SettingModalProps {
 }
 
 const CDK_STORAGE_KEY = 'cdk_redeemed_v1';
-const MOBILE_BREAKPOINT = 768;
 
 const loadRedeemedCdks = () => {
   const raw = localStorage.getItem(CDK_STORAGE_KEY);
@@ -47,16 +47,7 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
   const [autoDisassembleSaving, setAutoDisassembleSaving] = useState(false);
   const [autoDisassembleLoading, setAutoDisassembleLoading] = useState(false);
   const [cdk, setCdk] = useState('');
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth <= MOBILE_BREAKPOINT : false
-  );
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleResize = () => setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  const isMobile = useIsMobile();
 
   const menuItems = useMemo(
     () => [

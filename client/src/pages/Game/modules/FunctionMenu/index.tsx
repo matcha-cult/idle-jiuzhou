@@ -17,7 +17,8 @@ import {
   ExperimentOutlined,
   ToolOutlined,
 } from '@ant-design/icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 interface MenuItem {
@@ -40,7 +41,7 @@ interface FunctionMenuProps {
 }
 
 const FunctionMenu: React.FC<FunctionMenuProps> = ({ onAction, indicators }) => {
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useIsMobile();
   const [moreOpen, setMoreOpen] = useState(false);
   const getIndicatorTooltip = (key: string): string | undefined => {
     if (isMobile) return undefined;
@@ -73,14 +74,6 @@ const FunctionMenu: React.FC<FunctionMenuProps> = ({ onAction, indicators }) => 
   const handleClick = (key: string) => {
     onAction?.(key);
   };
-
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 768px)');
-    const apply = () => setIsMobile(mq.matches);
-    apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, []);
 
   const mobilePrimaryCount = 4;
   const { primaryItems, overflowItems } = useMemo(() => {
