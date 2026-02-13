@@ -1,5 +1,13 @@
 import type { PoolClient } from 'pg';
 import type { AffixDef, AffixPoolRules, GeneratedAffix, Quality } from './equipmentService.js';
+import { QUALITY_BY_RANK, QUALITY_MULTIPLIER_BY_RANK, isQualityName } from './shared/itemQuality.js';
+import {
+  REALM_MAJOR_TO_FIRST,
+  REALM_ORDER,
+  REALM_SUB_TO_FULL,
+  isRealmName,
+  type RealmName,
+} from './shared/realmOrder.js';
 
 export interface RerollAffixPool {
   rules: AffixPoolRules;
@@ -12,64 +20,7 @@ export interface RerollResult {
   affixes?: GeneratedAffix[];
 }
 
-const QUALITY_BY_RANK: Record<number, Quality> = {
-  1: '黄',
-  2: '玄',
-  3: '地',
-  4: '天',
-};
-
-const QUALITY_MULTIPLIER_BY_RANK: Record<number, number> = {
-  1: 1,
-  2: 1.2,
-  3: 1.45,
-  4: 1.75,
-};
-
-const EQUIP_REALM_ORDER = [
-  '凡人',
-  '炼精化炁·养气期',
-  '炼精化炁·通脉期',
-  '炼精化炁·凝炁期',
-  '炼炁化神·炼己期',
-  '炼炁化神·采药期',
-  '炼炁化神·结胎期',
-  '炼神返虚·养神期',
-  '炼神返虚·还虚期',
-  '炼神返虚·合道期',
-  '炼虚合道·证道期',
-  '炼虚合道·历劫期',
-  '炼虚合道·成圣期',
-] as const;
-
-type EquipRealm = (typeof EQUIP_REALM_ORDER)[number];
-
-const EQUIP_REALM_MAJOR_TO_FIRST: Record<string, EquipRealm> = {
-  凡人: '凡人',
-  炼精化炁: '炼精化炁·养气期',
-  炼炁化神: '炼炁化神·炼己期',
-  炼神返虚: '炼神返虚·养神期',
-  炼虚合道: '炼虚合道·证道期',
-};
-
-const EQUIP_REALM_SUB_TO_FULL: Record<string, EquipRealm> = {
-  养气期: '炼精化炁·养气期',
-  通脉期: '炼精化炁·通脉期',
-  凝炁期: '炼精化炁·凝炁期',
-  炼己期: '炼炁化神·炼己期',
-  采药期: '炼炁化神·采药期',
-  结胎期: '炼炁化神·结胎期',
-  养神期: '炼神返虚·养神期',
-  还虚期: '炼神返虚·还虚期',
-  合道期: '炼神返虚·合道期',
-  证道期: '炼虚合道·证道期',
-  历劫期: '炼虚合道·历劫期',
-  成圣期: '炼虚合道·成圣期',
-};
-
-const isQuality = (value: unknown): value is Quality => {
-  return value === '黄' || value === '玄' || value === '地' || value === '天';
-};
+type EquipRealm = RealmName;
 
 const toNumber = (value: unknown, fallback = 0): number => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -97,8 +48,8 @@ export const resolveQualityForReroll = (
   defQualityRaw: unknown,
   defQualityRankRaw: unknown
 ): Quality => {
-  if (isQuality(instanceQualityRaw)) return instanceQualityRaw;
-  if (isQuality(defQualityRaw)) return defQualityRaw;
+  if (isQualityName(instanceQualityRaw)) return instanceQualityRaw;
+  if (isQualityName(defQualityRaw)) return defQualityRaw;
   const instanceRankQuality = normalizeQualityByRank(instanceQualityRankRaw);
   if (instanceRankQuality) return instanceRankQuality;
   return normalizeQualityByRank(defQualityRankRaw);
@@ -110,7 +61,7 @@ export const getQualityMultiplierForReroll = (qualityRankRaw: unknown): number =
 };
 
 const isEquipRealm = (value: string): value is EquipRealm => {
-  return (EQUIP_REALM_ORDER as readonly string[]).includes(value);
+  return isRealmName(value);
 };
 
 const normalizeEquipRealm = (realmRaw?: unknown): EquipRealm => {
@@ -118,17 +69,17 @@ const normalizeEquipRealm = (realmRaw?: unknown): EquipRealm => {
   if (!raw) return '凡人';
   if (isEquipRealm(raw)) return raw;
 
-  const mappedMajor = EQUIP_REALM_MAJOR_TO_FIRST[raw];
+  const mappedMajor = REALM_MAJOR_TO_FIRST[raw];
   if (mappedMajor) return mappedMajor;
 
-  const mappedSub = EQUIP_REALM_SUB_TO_FULL[raw];
+  const mappedSub = REALM_SUB_TO_FULL[raw];
   if (mappedSub) return mappedSub;
 
   const split = raw.split('·');
   if (split.length >= 2) {
     const full = `${split[0]}·${split[1]}`;
     if (isEquipRealm(full)) return full;
-    const subMapped = EQUIP_REALM_SUB_TO_FULL[split[1] ?? ''];
+    const subMapped = REALM_SUB_TO_FULL[split[1] ?? ''];
     if (subMapped) return subMapped;
   }
   return '凡人';
@@ -136,7 +87,7 @@ const normalizeEquipRealm = (realmRaw?: unknown): EquipRealm => {
 
 export const getEquipRealmRankForReroll = (realmRaw?: unknown): number => {
   const normalized = normalizeEquipRealm(realmRaw);
-  const index = EQUIP_REALM_ORDER.indexOf(normalized);
+  const index = REALM_ORDER.indexOf(normalized);
   return index >= 0 ? index + 1 : 1;
 };
 

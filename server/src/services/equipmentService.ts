@@ -12,15 +12,29 @@ import { query, pool } from '../config/database.js';
 import type { PoolClient } from 'pg';
 import { findEmptySlotsWithClient } from './inventoryService.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
+import {
+  QUALITY_MULTIPLIER_BY_RANK,
+  QUALITY_ORDER,
+  QUALITY_RANK_MAP,
+  isQualityName,
+  type QualityName,
+} from './shared/itemQuality.js';
+import {
+  REALM_MAJOR_TO_FIRST,
+  REALM_ORDER,
+  REALM_SUB_TO_FULL,
+  isRealmName,
+  type RealmName,
+} from './shared/realmOrder.js';
 
 // ============================================
 // 类型定义
 // ============================================
 
 // 品质类型
-export type Quality = '黄' | '玄' | '地' | '天';
-export const QUALITY_RANK: Record<Quality, number> = { '黄': 1, '玄': 2, '地': 3, '天': 4 };
-const QUALITIES: Quality[] = ['黄', '玄', '地', '天'];
+export type Quality = QualityName;
+export const QUALITY_RANK: Record<Quality, number> = QUALITY_RANK_MAP;
+const QUALITIES: Quality[] = [...QUALITY_ORDER];
 const DEFAULT_AFFIX_COUNT_BY_QUALITY: Record<Quality, { min: number; max: number }> = {
   '黄': { min: 1, max: 2 },
   '玄': { min: 2, max: 4 },
@@ -28,49 +42,10 @@ const DEFAULT_AFFIX_COUNT_BY_QUALITY: Record<Quality, { min: number; max: number
   '天': { min: 6, max: 6 },
 };
 
-const EQUIP_REALM_ORDER = [
-  '凡人',
-  '炼精化炁·养气期',
-  '炼精化炁·通脉期',
-  '炼精化炁·凝炁期',
-  '炼炁化神·炼己期',
-  '炼炁化神·采药期',
-  '炼炁化神·结胎期',
-  '炼神返虚·养神期',
-  '炼神返虚·还虚期',
-  '炼神返虚·合道期',
-  '炼虚合道·证道期',
-  '炼虚合道·历劫期',
-  '炼虚合道·成圣期',
-] as const;
-
-type EquipRealm = (typeof EQUIP_REALM_ORDER)[number];
-
-const EQUIP_REALM_MAJOR_TO_FIRST: Record<string, EquipRealm> = {
-  凡人: '凡人',
-  炼精化炁: '炼精化炁·养气期',
-  炼炁化神: '炼炁化神·炼己期',
-  炼神返虚: '炼神返虚·养神期',
-  炼虚合道: '炼虚合道·证道期',
-};
-
-const EQUIP_REALM_SUB_TO_FULL: Record<string, EquipRealm> = {
-  养气期: '炼精化炁·养气期',
-  通脉期: '炼精化炁·通脉期',
-  凝炁期: '炼精化炁·凝炁期',
-  炼己期: '炼炁化神·炼己期',
-  采药期: '炼炁化神·采药期',
-  结胎期: '炼炁化神·结胎期',
-  养神期: '炼神返虚·养神期',
-  还虚期: '炼神返虚·还虚期',
-  合道期: '炼神返虚·合道期',
-  证道期: '炼虚合道·证道期',
-  历劫期: '炼虚合道·历劫期',
-  成圣期: '炼虚合道·成圣期',
-};
+type EquipRealm = RealmName;
 
 const isEquipRealm = (value: string): value is EquipRealm => {
-  return (EQUIP_REALM_ORDER as readonly string[]).includes(value);
+  return isRealmName(value);
 };
 
 const normalizeEquipRealm = (realmRaw?: string | null): EquipRealm => {
@@ -78,17 +53,17 @@ const normalizeEquipRealm = (realmRaw?: string | null): EquipRealm => {
   if (!raw) return '凡人';
   if (isEquipRealm(raw)) return raw;
 
-  const mappedMajor = EQUIP_REALM_MAJOR_TO_FIRST[raw];
+  const mappedMajor = REALM_MAJOR_TO_FIRST[raw];
   if (mappedMajor) return mappedMajor;
 
-  const mappedSub = EQUIP_REALM_SUB_TO_FULL[raw];
+  const mappedSub = REALM_SUB_TO_FULL[raw];
   if (mappedSub) return mappedSub;
 
   const split = raw.split('·');
   if (split.length >= 2) {
     const full = `${split[0]}·${split[1]}`;
     if (isEquipRealm(full)) return full;
-    const subMapped = EQUIP_REALM_SUB_TO_FULL[split[1] ?? ''];
+    const subMapped = REALM_SUB_TO_FULL[split[1] ?? ''];
     if (subMapped) return subMapped;
   }
 
@@ -97,19 +72,13 @@ const normalizeEquipRealm = (realmRaw?: string | null): EquipRealm => {
 
 const getEquipRealmRank = (realmRaw?: string | null): number => {
   const normalized = normalizeEquipRealm(realmRaw);
-  const index = EQUIP_REALM_ORDER.indexOf(normalized);
+  const index = REALM_ORDER.indexOf(normalized);
   return index >= 0 ? index + 1 : 1;
 };
 
 const coerceQuality = (value: unknown): Quality | null => {
-  return QUALITIES.includes(value as Quality) ? (value as Quality) : null;
-};
-
-const QUALITY_MULTIPLIER_BY_RANK: Record<number, number> = {
-  1: 1,
-  2: 1.2,
-  3: 1.45,
-  4: 1.75,
+  if (!isQualityName(value)) return null;
+  return value;
 };
 
 const getQualityMultiplier = (rank: number): number => {

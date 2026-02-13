@@ -1,20 +1,5 @@
 import { query } from '../config/database.js';
-
-const REALM_ORDER = [
-  '凡人',
-  '炼精化炁·养气期',
-  '炼精化炁·通脉期',
-  '炼精化炁·凝炁期',
-  '炼炁化神·炼己期',
-  '炼炁化神·采药期',
-  '炼炁化神·结胎期',
-  '炼神返虚·养神期',
-  '炼神返虚·还虚期',
-  '炼神返虚·合道期',
-  '炼虚合道·证道期',
-  '炼虚合道·历劫期',
-  '炼虚合道·成圣期',
-];
+import { REALM_ORDER } from './shared/realmOrder.js';
 
 const clampLimit = (limit?: number, fallback: number = 50): number => {
   const n = Number.isFinite(Number(limit)) ? Math.floor(Number(limit)) : fallback;

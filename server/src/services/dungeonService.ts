@@ -6,6 +6,7 @@ import { sendSystemMail, type MailAttachItem } from './mailService.js';
 import { recordDungeonClearEvent } from './taskService.js';
 import { applyStaminaRecoveryTx, STAMINA_MAX } from './staminaService.js';
 import { clampQualityRank } from './equipmentDisassembleRules.js';
+import { REALM_ORDER } from './shared/realmOrder.js';
 import {
   grantRewardItemWithAutoDisassemble,
   type AutoDisassembleSetting,
@@ -160,24 +161,8 @@ const asNumber = (v: unknown, fallback: number): number => {
   return fallback;
 };
 
-const REALM_ORDER = [
-  '凡人',
-  '炼精化炁·养气期',
-  '炼精化炁·通脉期',
-  '炼精化炁·凝炁期',
-  '炼炁化神·炼己期',
-  '炼炁化神·采药期',
-  '炼炁化神·结胎期',
-  '炼神返虚·养神期',
-  '炼神返虚·还虚期',
-  '炼神返虚·合道期',
-  '炼虚合道·证道期',
-  '炼虚合道·历劫期',
-  '炼虚合道·成圣期',
-];
-
 const getRealmRank = (realm: string): number => {
-  const idx = REALM_ORDER.indexOf(realm);
+  const idx = (REALM_ORDER as readonly string[]).indexOf(realm);
   return idx >= 0 ? idx : 0;
 };
 

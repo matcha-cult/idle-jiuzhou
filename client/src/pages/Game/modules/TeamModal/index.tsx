@@ -25,6 +25,7 @@ import {
   type TeamMember,
 } from '../../../../services/teamApi';
 import { useIsMobile } from '../../shared/responsive';
+import { REALM_ORDER } from '../../shared/realm';
 import './index.scss';
 
 type TeamPanelKey = 'my' | 'apply' | 'near' | 'lobby';
@@ -37,21 +38,7 @@ interface TeamModalProps {
   playerName?: string;
 }
 
-const realmOptions = [
-  '凡人',
-  '炼精化炁·养气期',
-  '炼精化炁·通脉期',
-  '炼精化炁·凝炁期',
-  '炼炁化神·炼己期',
-  '炼炁化神·采药期',
-  '炼炁化神·结胎期',
-  '炼神返虚·养神期',
-  '炼神返虚·还虚期',
-  '炼神返虚·合道期',
-  '炼虚合道·证道期',
-  '炼虚合道·历劫期',
-  '炼虚合道·成圣期',
-] as const;
+const realmOptions = REALM_ORDER;
 
 const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我' }) => {
   const { message } = App.useApp();

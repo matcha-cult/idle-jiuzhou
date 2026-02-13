@@ -18,6 +18,7 @@ import {
   getRoomObjects,
 } from '../../../../services/api';
 import { useIsMobile } from '../../shared/responsive';
+import { getRealmRankFromLiteral as getRealmRank, normalizeRealmText } from '../../shared/realm';
 import './index.scss';
 
 type MapCategory = 'world' | 'dungeon' | 'event';
@@ -46,33 +47,6 @@ type MapEntry = {
 type DungeonDifficultyOption = {
   value: number;
   label: string;
-};
-
-const REALM_ORDER = [
-  '凡人',
-  '炼精化炁·养气期',
-  '炼精化炁·通脉期',
-  '炼精化炁·凝炁期',
-  '炼炁化神·炼己期',
-  '炼炁化神·采药期',
-  '炼炁化神·结胎期',
-  '炼神返虚·养神期',
-  '炼神返虚·还虚期',
-  '炼神返虚·合道期',
-  '炼虚合道·证道期',
-  '炼虚合道·历劫期',
-  '炼虚合道·成圣期',
-];
-
-const normalizeRealmText = (value: unknown): string => {
-  if (typeof value !== 'string') return '凡人';
-  const t = value.trim();
-  return t ? t : '凡人';
-};
-
-const getRealmRank = (realm: string): number => {
-  const idx = REALM_ORDER.indexOf(normalizeRealmText(realm));
-  return idx >= 0 ? idx : 0;
 };
 
 const formatDropProbPercent = (value: number | null | undefined): string => {

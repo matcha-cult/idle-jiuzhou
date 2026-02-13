@@ -1,3 +1,5 @@
+import { QUALITY_MULTIPLIER_BY_RANK } from './shared/itemQuality.js';
+
 export type CharacterAttrRecord = Record<string, number>;
 
 export type SocketApplyType = 'flat' | 'percent' | 'special';
@@ -16,13 +18,6 @@ export interface SocketedGemEntry {
   name?: string;
   icon?: string;
 }
-
-const QUALITY_MULTIPLIER_BY_RANK: Record<number, number> = {
-  1: 1,
-  2: 1.2,
-  3: 1.45,
-  4: 1.75,
-};
 
 const DEFAULT_SOCKET_MAX_BY_QUALITY_RANK: Record<number, number> = {
   1: 1,

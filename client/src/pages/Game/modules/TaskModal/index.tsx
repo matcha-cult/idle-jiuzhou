@@ -15,6 +15,7 @@ import {
   type DungeonWeeklyTargetDto,
 } from '../../../../services/api';
 import { useIsMobile } from '../../shared/responsive';
+import { getRealmRankFromLiteral as getRealmRank } from '../../shared/realm';
 import MainQuestPanel from './MainQuestPanel';
 import './index.scss';
 import './MainQuestPanel.scss';
@@ -72,27 +73,6 @@ const resolveRewardIcon = (icon: string | null | undefined): string => {
   }
 
   return filename ? (ITEM_ICON_BY_FILENAME[filename] ?? coin01) : coin01;
-};
-
-const REALM_ORDER = [
-  '凡人',
-  '炼精化炁·养气期',
-  '炼精化炁·通脉期',
-  '炼精化炁·凝炁期',
-  '炼炁化神·炼己期',
-  '炼炁化神·采药期',
-  '炼炁化神·结胎期',
-  '炼神返虚·养神期',
-  '炼神返虚·还虚期',
-  '炼神返虚·合道期',
-  '炼虚合道·证道期',
-  '炼虚合道·历劫期',
-  '炼虚合道·成圣期',
-];
-
-const getRealmRank = (realm: string): number => {
-  const idx = REALM_ORDER.indexOf(realm);
-  return idx >= 0 ? idx : 0;
 };
 
 const formatRewardAmount = (amount: number, amountMax?: number): string => {

@@ -1,13 +1,9 @@
 /**
  * 分解规则
  */
+import { QUALITY_RANK_MAP as SHARED_QUALITY_RANK_MAP } from './shared/itemQuality.js';
 
-export const QUALITY_RANK_MAP: Record<string, number> = {
-  黄: 1,
-  玄: 2,
-  地: 3,
-  天: 4,
-};
+export const QUALITY_RANK_MAP: Record<string, number> = { ...SHARED_QUALITY_RANK_MAP };
 
 export const clampQualityRank = (value: unknown, fallback: number = 1): number => {
   const n = Number(value);

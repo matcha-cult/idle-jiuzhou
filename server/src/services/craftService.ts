@@ -3,6 +3,7 @@ import { pool, query } from '../config/database.js';
 import { addItemToInventoryTx } from './inventoryService.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { recordCraftItemEvent } from './taskService.js';
+import { REALM_ORDER } from './shared/realmOrder.js';
 
 type CraftRecipeType = 'craft' | 'refine' | 'decompose' | 'upgrade' | string;
 
@@ -119,22 +120,6 @@ export type CraftExecuteResult =
     }
   | { success: false; message: string };
 
-const REALM_ORDER = [
-  '凡人',
-  '炼精化炁·养气期',
-  '炼精化炁·通脉期',
-  '炼精化炁·凝炁期',
-  '炼炁化神·炼己期',
-  '炼炁化神·采药期',
-  '炼炁化神·结胎期',
-  '炼神返虚·养神期',
-  '炼神返虚·还虚期',
-  '炼神返虚·合道期',
-  '炼虚合道·证道期',
-  '炼虚合道·历劫期',
-  '炼虚合道·成圣期',
-];
-
 const asString = (value: unknown, fallback = ''): string => {
   return typeof value === 'string' ? value.trim() : fallback;
 };
@@ -164,7 +149,7 @@ const parseCostItems = (value: unknown): Array<{ itemDefId: string; qty: number 
 };
 
 const getRealmRank = (realm: string): number => {
-  const idx = REALM_ORDER.indexOf(realm);
+  const idx = (REALM_ORDER as readonly string[]).indexOf(realm);
   return idx >= 0 ? idx : 0;
 };
 

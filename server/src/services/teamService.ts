@@ -3,22 +3,14 @@ import crypto from 'crypto';
 import { getGameServer } from '../game/GameServer.js';
 import { onUserJoinTeam, onUserLeaveTeam } from './battleService.js';
 import { updateAchievementProgress } from './achievementService.js';
+import { REALM_ORDER } from './shared/realmOrder.js';
 
 /**
  * 九州修仙录 - 组队系统服务
  */
 
-// 境界排序（用于境界比较）
-const REALM_ORDER = [
-  '凡人',
-  '炼精化炁·养气期', '炼精化炁·通脉期', '炼精化炁·凝炁期',
-  '炼炁化神·炼己期', '炼炁化神·采药期', '炼炁化神·结胎期',
-  '炼神返虚·养神期', '炼神返虚·还虚期', '炼神返虚·合道期',
-  '炼虚合道·证道期', '炼虚合道·历劫期', '炼虚合道·成圣期',
-];
-
 const getRealmRank = (realm: string): number => {
-  const idx = REALM_ORDER.indexOf(realm);
+  const idx = (REALM_ORDER as readonly string[]).indexOf(realm);
   return idx >= 0 ? idx : 0;
 };
 

@@ -7,6 +7,7 @@ import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
 import lingshiIcon from '../../../../assets/images/ui/lingshi.png';
 import tongqianIcon from '../../../../assets/images/ui/tongqian.png';
 import { useIsMobile } from '../../shared/responsive';
+import { REALM_ORDER, getRealmRankFromAlias, normalizeRealmWithAlias } from '../../shared/realm';
 import './index.scss';
 
 interface RealmModalProps {
@@ -76,59 +77,11 @@ const resolveIcon = (icon: string | null | undefined): string => {
   return ITEM_ICON_BY_FILENAME[filename] ?? coin01;
 };
 
-const realmOrder = [
-  '凡人',
-  '炼精化炁·养气期',
-  '炼精化炁·通脉期',
-  '炼精化炁·凝炁期',
-  '炼炁化神·炼己期',
-  '炼炁化神·采药期',
-  '炼炁化神·结胎期',
-  '炼神返虚·养神期',
-  '炼神返虚·还虚期',
-  '炼神返虚·合道期',
-  '炼虚合道·证道期',
-  '炼虚合道·历劫期',
-  '炼虚合道·成圣期',
-] as const;
-
-const realmRank: Record<string, number> = realmOrder.reduce((acc, r, idx) => ({ ...acc, [r]: idx }), {});
-const realmMajorToFirst: Record<string, (typeof realmOrder)[number]> = {
-  凡人: '凡人',
-  炼精化炁: '炼精化炁·养气期',
-  炼炁化神: '炼炁化神·炼己期',
-  炼神返虚: '炼神返虚·养神期',
-  炼虚合道: '炼虚合道·证道期',
-};
-const realmSubToFull: Record<string, (typeof realmOrder)[number]> = {
-  养气期: '炼精化炁·养气期',
-  通脉期: '炼精化炁·通脉期',
-  凝炁期: '炼精化炁·凝炁期',
-  炼己期: '炼炁化神·炼己期',
-  采药期: '炼炁化神·采药期',
-  结胎期: '炼炁化神·结胎期',
-  养神期: '炼神返虚·养神期',
-  还虚期: '炼神返虚·还虚期',
-  合道期: '炼神返虚·合道期',
-  证道期: '炼虚合道·证道期',
-  历劫期: '炼虚合道·历劫期',
-  成圣期: '炼虚合道·成圣期',
-};
-
-const normalizeRealm = (realm: string) => {
-  const s = String(realm || '').trim();
-  if (!s) return '凡人';
-  if (realmRank[s] != null) return s;
-  if (realmMajorToFirst[s]) return realmMajorToFirst[s];
-  if (realmSubToFull[s]) return realmSubToFull[s];
-  return s;
-};
-
 const buildRealmRank = (character: CharacterData | null): RealmRank => {
-  const current = normalizeRealm(character?.realm ?? '凡人');
-  const currentIdx = realmRank[current] ?? 0;
-  const next = currentIdx + 1 < realmOrder.length ? realmOrder[currentIdx + 1] : null;
-  return { currentIdx, total: realmOrder.length, current, next };
+  const current = normalizeRealmWithAlias(character?.realm ?? '凡人');
+  const currentIdx = getRealmRankFromAlias(current);
+  const next = currentIdx + 1 < REALM_ORDER.length ? REALM_ORDER[currentIdx + 1] : null;
+  return { currentIdx, total: REALM_ORDER.length, current, next };
 };
 
 const getRequirementTag = (status: RequirementRow['status']) => {
