@@ -27,6 +27,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  box-sizing: border-box;
+  /* 与右侧 .market-pane-top 统一桌面端基线高度，避免顶部横线错位。 */
+  min-height: 76px;
 }
 
 .market-left-icon {
@@ -91,12 +94,15 @@
 
 .market-pane-top {
   flex: 0 0 auto;
-  padding: 12px 14px;
+  /* 桌面端预留右上角关闭按钮点击区，避免顶部筛选控件与关闭按钮重叠。 */
+  padding: 12px 56px 12px 14px;
   border-bottom: 1px solid var(--border-color-soft);
   background: var(--panel-bg);
   display: flex;
   flex-direction: column;
   gap: 10px;
+  box-sizing: border-box;
+  min-height: 76px;
 }
 
 .market-pane-actions {
@@ -124,6 +130,13 @@
   flex-direction: column;
   padding: 12px 14px 14px;
   background: var(--panel-bg);
+}
+
+.market-market-filters-wrap {
+  flex: 0 0 auto;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-color-soft);
 }
 
 .market-pane-scroll {
@@ -734,6 +747,7 @@
     padding: 10px 12px 8px;
     border-bottom: none;
     gap: 8px;
+    min-height: 0;
   }
 
   .market-left-name {
@@ -759,10 +773,16 @@
   .market-pane-top {
     padding: 10px 12px;
     gap: 8px;
+    min-height: 0;
   }
 
   .market-pane-body {
     padding: 10px 12px 12px;
+  }
+
+  .market-market-filters-wrap {
+    padding-bottom: 10px;
+    margin-bottom: 10px;
   }
 
   .market-filters {

@@ -1070,9 +1070,9 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     <div className="market-pane">
       <div className="market-pane-top">
         <div className="market-title">坊市</div>
-        {renderMarketFilters()}
       </div>
       <div className="market-pane-body">
+        <div className="market-market-filters-wrap">{renderMarketFilters()}</div>
         <div className="market-pane-scroll">
           {isMobile ? (
             <div className="market-mobile-list">
