@@ -38,6 +38,7 @@ import achievementRoutes from './routes/achievementRoutes.js';
 import titleRoutes from './routes/titleRoutes.js';
 import { initGameTimeService } from './services/gameTimeService.js';
 import { recoverBattlesFromRedis } from './services/battleService.js';
+import { cleanupUndefinedItemDataOnStartup } from './services/itemDataCleanupService.js';
 
 dotenv.config();
 
@@ -162,6 +163,9 @@ const startServer = async () => {
 
     // 初始化数据库表
     await initTables();
+
+    // 启动清理：删除数据库中已不存在静态定义的物品数据
+    await cleanupUndefinedItemDataOnStartup();
 
     // 初始化游戏时间（启动计时）
     await initGameTimeService();
