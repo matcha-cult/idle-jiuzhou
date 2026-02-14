@@ -63,7 +63,7 @@ const ShopPanel: React.FC<ShopPanelProps> = ({ loading, myContribution, shopItem
             const rawDailyLimit = Number(item.limitDaily);
             const dailyLimit = Number.isFinite(rawDailyLimit) ? Math.max(0, Math.floor(rawDailyLimit)) : 0;
             const displayName = normalizeShopItemName(item.name, item.qty);
-            const iconUrl = resolveIcon({ id: item.itemDefId, name: item.name, icon: item.itemIcon ?? null } as any);
+            const iconUrl = resolveIcon({ icon: item.itemIcon ?? null });
 
             return (
               <div key={item.id} className={`sect-shop-card ${!affordable ? 'is-unaffordable' : ''}`}>

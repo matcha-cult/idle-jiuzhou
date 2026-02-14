@@ -52,19 +52,6 @@ const BuildingsPanel: React.FC<BuildingsPanelProps> = ({ buildings, permissions,
                         {building.requirement.upgradable ? `Lv.${building.level}` : '已满级'}
                       </Tag>
                     </div>
-                    <div className="sect-building-level-progress">
-                      {building.requirement.upgradable && building.requirement.nextLevel ? (
-                        <div className="sect-building-lv-next">
-                          <span>Lv.{building.level}</span>
-                          <ArrowRightOutlined className="lv-arrow" />
-                          <span className="next-hl">Lv.{building.requirement.nextLevel}</span>
-                        </div>
-                      ) : (
-                        <div className="sect-building-lv-max">
-                          当前已达最高等级 Lv.{building.level}
-                        </div>
-                      )}
-                    </div>
                   </div>
                 </div>
 

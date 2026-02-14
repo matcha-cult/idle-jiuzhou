@@ -277,7 +277,7 @@ const ITEM_ICON_BY_FILENAME: Record<string, string> = Object.fromEntries(
   }),
 );
 
-export const resolveIcon = (def?: ItemDefLite): string => {
+export const resolveIcon = (def?: Pick<ItemDefLite, "icon"> | null): string => {
   const raw = (def?.icon ?? "").trim();
   if (!raw) return coin01;
   if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;

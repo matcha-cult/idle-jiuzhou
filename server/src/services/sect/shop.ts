@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { pool } from '../../config/database.js';
 import { createItem } from '../itemService.js';
+import { getItemDefinitionById } from '../staticConfigLoader.js';
 import { assertMember, getCharacterUserId, toNumber } from './db.js';
 import { recordSectShopBuyEventTx } from './quests.js';
 import type { BuyResult, ShopItem } from './types.js';
@@ -9,6 +10,7 @@ const BAG_EXPAND_SHOP_ITEM_ID = 'sect-shop-007';
 const BAG_EXPAND_DAILY_LIMIT = 1;
 const REROLL_SCROLL_SHOP_ITEM_ID = 'sect-shop-008';
 const REROLL_SCROLL_DAILY_LIMIT = 50;
+type BaseShopItem = Omit<ShopItem, 'itemIcon'>;
 
 const buildShopLogMarker = (shopItemId: string): string => `[shop_item:${shopItemId}]`;
 const extractShopBuyQtyFromLogContent = (content: string, marker: string): number => {
@@ -21,7 +23,14 @@ const extractShopBuyQtyFromLogContent = (content: string, marker: string): numbe
   return qty;
 };
 
-const SHOP: ShopItem[] = [
+const resolveShopItemIcon = (itemDefId: string): string | null => {
+  const rawIcon = getItemDefinitionById(itemDefId)?.icon;
+  if (typeof rawIcon !== 'string') return null;
+  const icon = rawIcon.trim();
+  return icon.length > 0 ? icon : null;
+};
+
+const SHOP_BASE: BaseShopItem[] = [
   { id: 'sect-shop-001', name: '淬灵石×10', costContribution: 100, itemDefId: 'enhance-001', qty: 10 },
   { id: 'sect-shop-002', name: '强化符·黄×1', costContribution: 120, itemDefId: 'enhance-003', qty: 1 },
   { id: 'sect-shop-003', name: '保护符×1', costContribution: 300, itemDefId: 'enhance-005', qty: 1 },
@@ -45,6 +54,12 @@ const SHOP: ShopItem[] = [
     limitDaily: BAG_EXPAND_DAILY_LIMIT,
   },
 ];
+
+const SHOP: ShopItem[] = SHOP_BASE.map((item) => ({
+  ...item,
+  // 统一按 itemDefId 补齐图标，前端无需再额外查表。
+  itemIcon: resolveShopItemIcon(item.itemDefId),
+}));
 
 export const getSectShop = async (
   characterId: number

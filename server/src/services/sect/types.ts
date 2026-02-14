@@ -135,6 +135,7 @@ export interface ShopItem {
   name: string;
   costContribution: number;
   itemDefId: string;
+  itemIcon?: string | null;
   qty: number;
   limitDaily?: number;
 }
