@@ -821,6 +821,40 @@
   border-radius: 4px;
 }
 
+.sect-shop-batch {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sect-shop-batch-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+
+  .ant-btn {
+    height: 28px;
+    border-radius: 8px;
+    padding-inline: 10px;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .ant-input-number {
+    width: 72px;
+    border-radius: 8px;
+  }
+}
+
+.sect-shop-batch-input {
+  .ant-input-number-input {
+    text-align: center;
+  }
+}
+
 .sect-shop-card-footer {
   display: flex;
   align-items: center;
@@ -833,7 +867,15 @@
 .sect-shop-price {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
+}
+
+.sect-shop-price-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 
 .sect-shop-price-label {
@@ -1317,6 +1359,38 @@
   .sect-manage-grid,
   .sect-member-action-grid {
     grid-template-columns: 1fr;
+  }
+
+  .sect-shop-card-content {
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .sect-shop-item-icon {
+    flex-basis: 40px;
+    height: 40px;
+  }
+
+  .sect-shop-batch {
+    margin-left: auto;
+    width: auto;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .sect-shop-batch-controls .ant-btn {
+    min-width: 28px;
+    height: 26px;
+    padding-inline: 6px;
+  }
+
+  .sect-shop-batch-controls .ant-input-number {
+    width: 52px;
+  }
+
+  .sect-shop-batch-btn-max {
+    display: none;
   }
 
   .sect-mobile-card {

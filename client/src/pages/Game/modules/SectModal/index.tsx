@@ -176,8 +176,8 @@ const SectModal: React.FC<SectModalProps> = ({ open, onClose, spiritStones = 0, 
           myContribution={data.myContribution}
           shopItems={data.shopItems}
           actionLoadingKey={data.actionLoadingKey}
-          onBuy={(itemId) => {
-            void data.buyShopItemAction(itemId);
+          onBuy={(itemId, quantity) => {
+            void data.buyShopItemAction(itemId, quantity);
           }}
         />
       );

@@ -519,11 +519,12 @@ export const useSectData = ({ open, spiritStones, playerName, onChanged }: UseSe
   );
 
   const buyShopItemAction = useCallback(
-    async (itemId: string) => {
+    async (itemId: string, quantity: number) => {
+      const safeQuantity = Number.isFinite(quantity) ? Math.max(1, Math.floor(quantity)) : 1;
       const loadingKey = `shop-buy-${itemId}`;
       setActionLoadingKey(loadingKey);
       try {
-        const res = await buyFromSectShop(itemId, 1);
+        const res = await buyFromSectShop(itemId, safeQuantity);
         if (!res.success) throw new Error(res.message || '兑换失败');
         message.success(res.message || '兑换成功');
         await Promise.all([fetchShop(), loadMySectInfo()]);

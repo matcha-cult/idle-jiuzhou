@@ -173,7 +173,7 @@ export interface UseSectDataState {
   createSectAction: () => Promise<void>;
   donateAction: () => Promise<void>;
   upgradeBuildingAction: (buildingType: string) => Promise<void>;
-  buyShopItemAction: (itemId: string) => Promise<void>;
+  buyShopItemAction: (itemId: string, quantity: number) => Promise<void>;
   acceptQuestAction: (questId: string) => Promise<void>;
   submitQuestAction: (questId: string) => Promise<void>;
   claimQuestAction: (questId: string) => Promise<void>;

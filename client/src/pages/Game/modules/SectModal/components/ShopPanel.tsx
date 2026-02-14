@@ -4,7 +4,8 @@
  * 输出：可兑换商品卡片与贡献消耗提示。
  * 边界：贡献不足时按钮禁用，显示“贡献不足”。
  */
-import { Button } from 'antd';
+import { Button, InputNumber } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
 import type { SectShopItemDto } from '../../../../../services/api';
 import { resolveIcon } from '../../BagModal/bagShared';
 
@@ -13,8 +14,14 @@ interface ShopPanelProps {
   myContribution: number;
   shopItems: SectShopItemDto[];
   actionLoadingKey: string | null;
-  onBuy: (itemId: string) => void;
+  onBuy: (itemId: string, quantity: number) => void;
 }
+
+/**
+ * 后端当前单次购买上限（buyFromSectShop 内部会 clamp 到 99）。
+ * 前端同步该上限，避免用户输入超范围后再被服务端回退。
+ */
+const SERVER_MAX_BUY_COUNT = 99;
 
 /**
  * 商店名称去重：当名称末尾已经包含“xN / ×N”数量后缀时，移除该后缀，
@@ -29,6 +36,41 @@ const normalizeShopItemName = (name: string, qty: number): string => {
 };
 
 /**
+ * 将后端字段归一化为“每天最多可兑换次数”。
+ * 约定：
+ * 1) <= 0 或非法值 = 不限购；
+ * 2) 限购存在时，仍会再叠加服务端单次上限 99。
+ */
+const resolveDailyLimit = (rawLimit: number | undefined): number => {
+  if (!Number.isFinite(rawLimit)) return 0;
+  const safe = Math.floor(rawLimit as number);
+  if (safe <= 0) return 0;
+  return safe;
+};
+
+/**
+ * 计算当前可兑换次数上限。
+ * 输入：个人贡献、单次兑换消耗、每日限购（0 表示不限）。
+ * 输出：本次请求允许提交的最大 quantity（>=0）。
+ */
+const calcMaxBuyCount = (myContribution: number, costContribution: number, dailyLimit: number): number => {
+  const maxByContribution =
+    costContribution > 0 ? Math.max(0, Math.floor(myContribution / costContribution)) : SERVER_MAX_BUY_COUNT;
+  const maxByDailyLimit = dailyLimit > 0 ? Math.max(0, dailyLimit) : SERVER_MAX_BUY_COUNT;
+  return Math.max(0, Math.min(SERVER_MAX_BUY_COUNT, maxByContribution, maxByDailyLimit));
+};
+
+const clampBuyCount = (value: number, maxCount: number): number => {
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(1, Math.min(maxCount, Math.floor(value)));
+};
+
+const normalizeUnitQty = (qty: number): number => {
+  if (!Number.isFinite(qty)) return 1;
+  return Math.max(1, Math.floor(qty));
+};
+
+/**
  * 提取物品占位图标字符：
  * 跳过常见的前缀符号（如《、[、( 等），获取第一个有效的文字字符。
  */
@@ -38,6 +80,48 @@ const getItemPlaceholder = (name: string): string => {
 };
 
 const ShopPanel: React.FC<ShopPanelProps> = ({ loading, myContribution, shopItems, actionLoadingKey, onBuy }) => {
+  const [buyCountMap, setBuyCountMap] = useState<Record<string, number>>({});
+
+  /**
+   * 当商品列表或贡献变化时，重新夹紧各商品的批量兑换输入。
+   * 这样可保证：
+   * 1) 贡献减少后不会保留一个超上限旧值；
+   * 2) 商品下线后自动清理无效键，避免状态膨胀。
+   */
+  useEffect(() => {
+    setBuyCountMap((prev) => {
+      const next: Record<string, number> = {};
+      for (const item of shopItems) {
+        const dailyLimit = resolveDailyLimit(item.limitDaily);
+        const maxCount = calcMaxBuyCount(myContribution, item.costContribution, dailyLimit);
+        if (maxCount <= 1) continue;
+        next[item.id] = clampBuyCount(prev[item.id] ?? 1, maxCount);
+      }
+
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      const same =
+        prevKeys.length === nextKeys.length &&
+        nextKeys.every((key) => Object.prototype.hasOwnProperty.call(prev, key) && prev[key] === next[key]);
+      return same ? prev : next;
+    });
+  }, [myContribution, shopItems]);
+
+  const updateBuyCount = useCallback((itemId: string, nextValue: number, maxCount: number) => {
+    setBuyCountMap((prev) => {
+      const safeValue = clampBuyCount(nextValue, maxCount);
+      if (prev[itemId] === safeValue) return prev;
+      return { ...prev, [itemId]: safeValue };
+    });
+  }, []);
+
+  const stepBuyCount = useCallback(
+    (itemId: string, delta: number, currentValue: number, maxCount: number) => {
+      updateBuyCount(itemId, currentValue + delta, maxCount);
+    },
+    [updateBuyCount]
+  );
+
   return (
     <div className="sect-pane">
       <div className="sect-pane-top">
@@ -58,12 +142,17 @@ const ShopPanel: React.FC<ShopPanelProps> = ({ loading, myContribution, shopItem
 
         <div className="sect-shop-grid">
           {shopItems.map((item) => {
-            const affordable = myContribution >= item.costContribution;
+            const unitQty = normalizeUnitQty(item.qty);
             const loadingKey = `shop-buy-${item.id}`;
-            const rawDailyLimit = Number(item.limitDaily);
-            const dailyLimit = Number.isFinite(rawDailyLimit) ? Math.max(0, Math.floor(rawDailyLimit)) : 0;
-            const displayName = normalizeShopItemName(item.name, item.qty);
+            const isLoading = actionLoadingKey === loadingKey;
+            const dailyLimit = resolveDailyLimit(item.limitDaily);
+            const maxBuyCount = calcMaxBuyCount(myContribution, item.costContribution, dailyLimit);
+            const affordable = maxBuyCount >= 1;
+            const canBatchBuy = maxBuyCount > 1;
+            const buyCount = canBatchBuy ? clampBuyCount(buyCountMap[item.id] ?? 1, maxBuyCount) : 1;
+            const displayName = normalizeShopItemName(item.name, unitQty);
             const iconUrl = resolveIcon({ icon: item.itemIcon ?? null });
+            const costTotal = item.costContribution * buyCount;
 
             return (
               <div key={item.id} className={`sect-shop-card ${!affordable ? 'is-unaffordable' : ''}`}>
@@ -87,33 +176,84 @@ const ShopPanel: React.FC<ShopPanelProps> = ({ loading, myContribution, shopItem
                   <div className="sect-shop-item-info">
                     <div className="sect-shop-item-name">{displayName}</div>
                     <div className="sect-shop-item-meta">
-                      <span className="sect-shop-qty">数量 x{item.qty}</span>
+                      <span className="sect-shop-qty">数量 x{unitQty}</span>
                       {dailyLimit > 0 && (
                         <span className="sect-shop-limit">每日限购 {dailyLimit}</span>
                       )}
                     </div>
                   </div>
+                  {canBatchBuy ? (
+                    <div className="sect-shop-batch" aria-label="兑换次数">
+                      <div className="sect-shop-batch-controls">
+                        <Button
+                          className="sect-shop-batch-btn-dec"
+                          size="small"
+                          disabled={!affordable || isLoading || buyCount <= 1}
+                          onClick={() => {
+                            stepBuyCount(item.id, -1, buyCount, maxBuyCount);
+                          }}
+                        >
+                          -
+                        </Button>
+                        <InputNumber
+                          size="small"
+                          min={1}
+                          max={maxBuyCount}
+                          controls={false}
+                          value={buyCount}
+                          className="sect-shop-batch-input"
+                          disabled={!affordable || isLoading}
+                          onChange={(value) => {
+                            if (typeof value !== 'number') return;
+                            updateBuyCount(item.id, value, maxBuyCount);
+                          }}
+                        />
+                        <Button
+                          className="sect-shop-batch-btn-inc"
+                          size="small"
+                          disabled={!affordable || isLoading || buyCount >= maxBuyCount}
+                          onClick={() => {
+                            stepBuyCount(item.id, 1, buyCount, maxBuyCount);
+                          }}
+                        >
+                          +
+                        </Button>
+                        <Button
+                          className="sect-shop-batch-btn-max"
+                          size="small"
+                          disabled={!affordable || isLoading || buyCount >= maxBuyCount}
+                          onClick={() => {
+                            updateBuyCount(item.id, maxBuyCount, maxBuyCount);
+                          }}
+                        >
+                          最大
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
-                
+
                 <div className="sect-shop-card-footer">
                   <div className="sect-shop-price">
                     <span className="sect-shop-price-label">消耗</span>
-                    <span className={`sect-shop-price-value ${!affordable ? 'is-shortage' : ''}`}>
-                      {item.costContribution.toLocaleString()} 贡献
-                    </span>
+                    <div className="sect-shop-price-main">
+                      <span className={`sect-shop-price-value ${!affordable ? 'is-shortage' : ''}`}>
+                        {costTotal.toLocaleString()} 贡献
+                      </span>
+                    </div>
                   </div>
                   <div className="sect-shop-actions">
                     <Button
                       size="small"
                       type="primary"
                       disabled={!affordable}
-                      loading={actionLoadingKey === loadingKey}
+                      loading={isLoading}
                       onClick={() => {
                         if (!affordable) return;
-                        void onBuy(item.id);
+                        void onBuy(item.id, buyCount);
                       }}
                     >
-                      {affordable ? '兑换' : '贡献不足'}
+                      {!affordable ? '贡献不足' : buyCount > 1 ? `兑换×${buyCount}` : '兑换'}
                     </Button>
                   </div>
                 </div>
