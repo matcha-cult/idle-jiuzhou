@@ -7,7 +7,7 @@ import {
 } from '../equipmentAffixRerollService.js';
 import type { GeneratedAffix } from '../equipmentService.js';
 
-test('special词条缺失attr_key时应在解析阶段保留并回填', () => {
+test('special词条缺失attr_key时应在解析阶段按key回填', () => {
   const parsed = parseGeneratedAffixesForReroll([
     {
       key: 'proc_lingchao',
@@ -35,7 +35,7 @@ test('special词条缺失attr_key时应在解析阶段保留并回填', () => {
   ]);
 
   assert.equal(parsed.length, 2);
-  assert.equal(parsed[0]?.attr_key, 'lingqi_restore_percent');
+  assert.equal(parsed[0]?.attr_key, 'proc_lingchao');
   assert.equal(parsed[1]?.attr_key, 'proc_baonu');
 });
 

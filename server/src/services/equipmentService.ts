@@ -149,16 +149,13 @@ const shouldKeepRatioPrecision = (affix: AffixDef): boolean => {
 const normalizeGeneratedAffixAttrKey = (
   attrKeyRaw: unknown,
   applyType: GeneratedAffix['apply_type'],
-  fallbackKey: string,
-  params?: Record<string, string | number | boolean>
+  fallbackKey: string
 ): string | null => {
   const normalizedAttrKey = typeof attrKeyRaw === 'string' ? attrKeyRaw.trim() : '';
   if (normalizedAttrKey) return normalizedAttrKey;
   if (applyType !== 'special') return null;
 
-  // 兼容历史special词条缺少attr_key的情况，保证生成入库结构稳定，避免后续洗炼解析误删词缀。
-  const paramAttrKey = params && typeof params.attr_key === 'string' ? params.attr_key.trim() : '';
-  if (paramAttrKey) return paramAttrKey;
+  // special词条身份匹配以key为准，缺失attr_key时回填为key，确保后续洗炼流程稳定。
   const normalizedFallbackKey = fallbackKey.trim();
   return normalizedFallbackKey || null;
 };
@@ -608,8 +605,7 @@ const rollAffixValue = (
   const affixAttrKey = normalizeGeneratedAffixAttrKey(
     affix.attr_key,
     affix.apply_type,
-    affix.key,
-    affix.params
+    affix.key
   );
   if (!affixAttrKey) return null;
   const scaledValue = normalizeAffixValuePrecision(affix, rawScaledValue);
