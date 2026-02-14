@@ -72,55 +72,6 @@
           "show_in_ui": true
         },
         {
-          "item_def_id": "equip-clothes-001",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "equip-clothes-001",
-          "chance": 0.015,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "equip-head-001",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "equip-head-001",
-          "chance": 0.015,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "equip-necklace-001",
-          "chance": 0.02,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "equip-weapon-001",
-          "chance": 0.06,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "equip-weapon-001",
-          "chance": 0.02,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
           "item_def_id": "mat-002",
           "chance": 0.03,
           "qty_min": 1,
@@ -130,6 +81,34 @@
         {
           "item_def_id": "mat-005",
           "chance": 0.03,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "equip-clothes-001",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "equip-head-001",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "equip-necklace-001",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "equip-weapon-001",
+          "chance": 0.04,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -158,161 +137,238 @@
         },
         {
           "item_def_id": "equip-clothes-002",
-          "chance": 0.02,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "equip-weapon-002",
-          "chance": 0.06,
+          "chance": 0.04,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-biluo-artifact",
-          "chance": 0.065,
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-biluo-clothes",
-          "chance": 0.045,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-biluo-head",
-          "chance": 0.06,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-biluo-weapon",
-          "chance": 0.07,
+          "chance": 0.04,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-qingfeng-accessory",
-          "chance": 0.05,
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-qingfeng-artifact",
-          "chance": 0.045,
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-qingfeng-clothes",
-          "chance": 0.06,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-qingfeng-gloves",
-          "chance": 0.055,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-qingfeng-head",
-          "chance": 0.06,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-qingfeng-necklace",
-          "chance": 0.05,
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-qingfeng-pants",
-          "chance": 0.055,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-qingfeng-weapon",
-          "chance": 0.07,
+          "chance": 0.04,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-xuantie-weapon",
-          "chance": 0.02,
+          "chance": 0.04,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-zixiao-accessory",
-          "chance": 0.05,
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-zixiao-artifact",
-          "chance": 0.065,
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-zixiao-clothes",
-          "chance": 0.045,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-zixiao-gloves",
-          "chance": 0.01,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-zixiao-head",
-          "chance": 0.07,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-zixiao-necklace",
-          "chance": 0.05,
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-zixiao-pants",
-          "chance": 0.055,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-zixiao-weapon",
+          "chance": 0.04,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuantie-head",
           "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuantie-clothes",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuantie-gloves",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuantie-pants",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuantie-necklace",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuantie-accessory",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuantie-artifact",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-biluo-gloves",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-biluo-pants",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-biluo-necklace",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-biluo-accessory",
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -326,13 +382,6 @@
       "mode": "prob",
       "entries": [
         {
-          "item_def_id": "equip-artifact-002",
-          "chance": 0.03,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
           "item_def_id": "box-008",
           "chance": 0.02,
           "qty_min": 1,
@@ -341,21 +390,14 @@
         },
         {
           "item_def_id": "equip-artifact-002",
-          "chance": 0.08,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "equip-clothes-003",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "equip-clothes-003",
           "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "equip-clothes-003",
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -377,21 +419,21 @@
         },
         {
           "item_def_id": "equip-accessory-001",
-          "chance": 0.03,
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "equip-head-002",
-          "chance": 0.03,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "equip-necklace-002",
-          "chance": 0.03,
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -405,7 +447,14 @@
         },
         {
           "item_def_id": "equip-weapon-004",
-          "chance": 0.02,
+          "chance": 0.04,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "equip-artifact-001",
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -434,27 +483,6 @@
         },
         {
           "item_def_id": "set-chiyan-head",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-chiyan-head",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-chiyan-weapon",
-          "chance": 0.07,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-chiyan-weapon",
           "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
@@ -462,21 +490,7 @@
         },
         {
           "item_def_id": "set-chiyan-weapon",
-          "chance": 0.08,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-chiyan-weapon",
-          "chance": 0.07,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-qinglian-artifact",
-          "chance": 0.06,
+          "chance": 0.04,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -490,21 +504,7 @@
         },
         {
           "item_def_id": "set-qinglian-head",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-qinglian-head",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-tianxuan-artifact",
-          "chance": 0.06,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
@@ -518,76 +518,34 @@
         },
         {
           "item_def_id": "set-tianxuan-gloves",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-tianxuan-gloves",
-          "chance": 0.05,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-tianxuan-head",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-tianxuan-head",
-          "chance": 0.05,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-tianxuan-weapon",
-          "chance": 0.07,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-tianxuan-weapon",
-          "chance": 0.07,
+          "chance": 0.04,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-xuanwu-gloves",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-xuanwu-gloves",
-          "chance": 0.05,
+          "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
         },
         {
           "item_def_id": "set-xuanwu-head",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-xuanwu-head",
-          "chance": 0.05,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "set-xuanwu-weapon",
           "chance": 0.08,
           "qty_min": 1,
           "qty_max": 1,
@@ -595,7 +553,154 @@
         },
         {
           "item_def_id": "set-xuanwu-weapon",
+          "chance": 0.04,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-chiyan-clothes",
           "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-chiyan-gloves",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-chiyan-pants",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-chiyan-necklace",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-chiyan-accessory",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-chiyan-artifact",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanwu-clothes",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanwu-pants",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanwu-necklace",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanwu-accessory",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanwu-artifact",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianxuan-clothes",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianxuan-pants",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianxuan-necklace",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianxuan-accessory",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-qinglian-weapon",
+          "chance": 0.04,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-qinglian-clothes",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-qinglian-gloves",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-qinglian-pants",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-qinglian-necklace",
+          "chance": 0.06,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-qinglian-accessory",
+          "chance": 0.06,
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
