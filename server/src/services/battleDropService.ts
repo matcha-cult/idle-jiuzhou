@@ -26,6 +26,10 @@ import {
   normalizeMonsterKind,
   type MonsterKind,
 } from './shared/dropRateMultiplier.js';
+import {
+  applyMonsterRealmDropQtyMultiplier,
+  shouldApplyDropQuantityMultiplier,
+} from './shared/dropQuantityMultiplier.js';
 
 // ============================================
 // 类型定义
@@ -139,47 +143,6 @@ export const getDropPool = async (poolId: string): Promise<DropPool | null> => {
       sourcePoolId: entry.sourcePoolId,
     })),
   };
-};
-
-const dropQtyMultiplierEligibilityCache = new Map<string, boolean>();
-
-const hasLearnTechniqueEffect = (effectDefs: unknown): boolean => {
-  if (!Array.isArray(effectDefs)) return false;
-  return effectDefs.some((raw) => {
-    if (!raw || typeof raw !== 'object') return false;
-    const effectType = (raw as { effect_type?: unknown }).effect_type;
-    return String(effectType || '').trim().toLowerCase() === 'learn_technique';
-  });
-};
-
-/**
- * 掉落数量倍率仅作用于“非装备、非功法类”物品：
- * 1. 排除装备（category=equipment）
- * 2. 排除功法材料/功法书（sub_category=technique / technique_book）
- * 3. 排除带有 learn_technique 效果的道具（防止漏掉特殊功法书）
- */
-const shouldApplyDropQuantityMultiplier = (itemDefId: string): boolean => {
-  const cached = dropQtyMultiplierEligibilityCache.get(itemDefId);
-  if (typeof cached === 'boolean') return cached;
-
-  const def = getItemDefinitionById(itemDefId);
-  const category = String(def?.category || '').trim().toLowerCase();
-  const subCategory = String(def?.sub_category || '').trim().toLowerCase();
-  const isTechniqueLike =
-    subCategory === 'technique' ||
-    subCategory === 'technique_book' ||
-    hasLearnTechniqueEffect(def?.effect_defs);
-  const shouldApply = category !== 'equipment' && !isTechniqueLike;
-
-  dropQtyMultiplierEligibilityCache.set(itemDefId, shouldApply);
-  return shouldApply;
-};
-
-const applyMonsterRealmDropQtyMultiplier = (baseQuantity: number, multiplierRaw: number): number => {
-  const multiplier = Number(multiplierRaw);
-  if (!Number.isFinite(multiplier) || multiplier <= 0) return baseQuantity;
-  if (multiplier === 1) return baseQuantity;
-  return Math.max(1, Math.floor(baseQuantity * multiplier));
 };
 
 // ============================================

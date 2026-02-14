@@ -30,6 +30,7 @@ import {
   normalizeMonsterKind,
   type DropEntrySourceType,
 } from './shared/dropRateMultiplier.js';
+import { getAdjustedDropQuantityRange } from './shared/dropQuantityMultiplier.js';
 
 export type DungeonType = 'material' | 'equipment' | 'trial' | 'challenge' | 'event';
 
@@ -626,6 +627,7 @@ export const getDungeonPreview = async (
     weight: number;
     qty_min: number;
     qty_max: number;
+    qty_multiply_by_monster_realm: number;
     quality_weights: Record<string, unknown> | null;
     bind_type: string | null;
     sourceType: DropEntrySourceType;
@@ -652,6 +654,7 @@ export const getDungeonPreview = async (
         weight: asNumber(entry.weight, 0),
         qty_min: qtyMin,
         qty_max: qtyMax,
+        qty_multiply_by_monster_realm: asNumber(entry.qty_multiply_by_monster_realm, 1),
         quality_weights: entry.quality_weights,
         bind_type: entry.bind_type,
         sourceType: entry.sourceType,
@@ -691,6 +694,7 @@ export const getDungeonPreview = async (
       weight: number;
       qty_min: number;
       qty_max: number;
+      qty_multiply_by_monster_realm: number;
       quality_weights: Record<string, unknown> | null;
       bind_type: string | null;
       sourceType: DropEntrySourceType;
@@ -711,6 +715,7 @@ export const getDungeonPreview = async (
       weight: mode === 'weight' ? r.weight : 0,
       qty_min: r.qty_min,
       qty_max: r.qty_max,
+      qty_multiply_by_monster_realm: r.qty_multiply_by_monster_realm,
       quality_weights: r.quality_weights,
       bind_type: r.bind_type,
       sourceType: r.sourceType,
@@ -728,6 +733,7 @@ export const getDungeonPreview = async (
       weight: number;
       qty_min: number;
       qty_max: number;
+      qty_multiply_by_monster_realm: number;
       quality_weights: Record<string, unknown> | null;
       bind_type: string | null;
       sourceType: DropEntrySourceType;
@@ -750,6 +756,15 @@ export const getDungeonPreview = async (
     return rows
       .map((r) => {
         const itemMeta = dropPreviewItemMap.get(r.item_def_id);
+        const quantityRange = getAdjustedDropQuantityRange({
+          itemDefId: r.item_def_id,
+          qtyMin: r.qty_min,
+          qtyMax: r.qty_max,
+          sourceType: r.sourceType,
+          sourcePoolId: r.sourcePoolId,
+          dropMultiplierOptions: options,
+          qtyMultiplyByMonsterRealm: r.qty_multiply_by_monster_realm,
+        });
         return {
           item: {
             id: r.item_def_id,
@@ -760,8 +775,8 @@ export const getDungeonPreview = async (
           mode: r.mode,
           chance: r.mode === 'prob' ? getAdjustedChance(r.chance, r.sourceType, r.sourcePoolId, options) : null,
           weight: r.mode === 'weight' ? getAdjustedWeight(r.weight, r.sourceType, r.sourcePoolId, options) : null,
-          qty_min: r.qty_min,
-          qty_max: r.qty_max,
+          qty_min: quantityRange.qtyMin,
+          qty_max: quantityRange.qtyMax,
           quality_weights: r.quality_weights,
           bind_type: r.bind_type,
         };

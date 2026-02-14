@@ -15,6 +15,7 @@ import {
   type DropEntrySourceType,
   type MonsterKind,
 } from './shared/dropRateMultiplier.js';
+import { getAdjustedDropQuantityRange } from './shared/dropQuantityMultiplier.js';
 
 type InfoTargetType = 'npc' | 'monster' | 'item' | 'player';
 
@@ -25,6 +26,7 @@ type DropEntryRow = {
   weight: number;
   qty_min: number;
   qty_max: number;
+  qty_multiply_by_monster_realm: number;
   sort_order: number;
   bind_type: string | null;
   sourceType: DropEntrySourceType;
@@ -301,6 +303,10 @@ const getDropsByPoolId = async (
 ): Promise<Array<{ name: string; quality: string; chance: string }>> => {
   const pool = resolveDropPoolById(dropPoolId);
   if (!pool) return [];
+  const multiplierOptions = {
+    isDungeonBattle: options.isDungeonBattle === true,
+    monsterKind: normalizeMonsterKind(options.monsterKind),
+  };
 
   const mode: 'prob' | 'weight' = pool.mode;
   const entries = pool.entries
@@ -316,6 +322,7 @@ const getDropsByPoolId = async (
         weight: Number(entry.weight) || 0,
         qty_min: qtyMin,
         qty_max: qtyMax,
+        qty_multiply_by_monster_realm: Number(entry.qty_multiply_by_monster_realm) || 1,
         sort_order: Math.max(0, Math.floor(Number(entry.sort_order) || 0)),
         bind_type: entry.bind_type,
         sourceType: entry.sourceType,
@@ -344,10 +351,7 @@ const getDropsByPoolId = async (
   const totalWeight = mode === 'weight'
     ? rows.reduce(
       (sum, r) =>
-        sum + getAdjustedWeight(r.weight, r.sourceType, r.sourcePoolId, {
-          isDungeonBattle: options.isDungeonBattle === true,
-          monsterKind: normalizeMonsterKind(options.monsterKind),
-        }),
+        sum + getAdjustedWeight(r.weight, r.sourceType, r.sourcePoolId, multiplierOptions),
       0,
     )
     : 0;
@@ -355,8 +359,17 @@ const getDropsByPoolId = async (
   return rows.map((r) => {
     const itemDef = itemDefMap.get(r.item_def_id);
     const baseName = (itemDef?.name ?? r.item_def_id ?? '未知').trim() || '未知';
-    const qtyMin = Number(r.qty_min ?? 1);
-    const qtyMax = Number(r.qty_max ?? 1);
+    const quantityRange = getAdjustedDropQuantityRange({
+      itemDefId: r.item_def_id,
+      qtyMin: r.qty_min,
+      qtyMax: r.qty_max,
+      sourceType: r.sourceType,
+      sourcePoolId: r.sourcePoolId,
+      dropMultiplierOptions: multiplierOptions,
+      qtyMultiplyByMonsterRealm: r.qty_multiply_by_monster_realm,
+    });
+    const qtyMin = quantityRange.qtyMin;
+    const qtyMax = quantityRange.qtyMax;
     const qtyText =
       qtyMin === qtyMax ? (qtyMin > 1 ? `×${qtyMin}` : '') : `×${Math.max(1, qtyMin)}-${Math.max(qtyMin, qtyMax)}`;
     const name = `${baseName}${qtyText}`;
@@ -366,14 +379,8 @@ const getDropsByPoolId = async (
     const weightVal = Number(r.weight ?? 0);
     const chance = formatChance(
       mode,
-      getAdjustedChance(chanceVal, r.sourceType, r.sourcePoolId, {
-        isDungeonBattle: options.isDungeonBattle === true,
-        monsterKind: normalizeMonsterKind(options.monsterKind),
-      }),
-      getAdjustedWeight(weightVal, r.sourceType, r.sourcePoolId, {
-        isDungeonBattle: options.isDungeonBattle === true,
-        monsterKind: normalizeMonsterKind(options.monsterKind),
-      }),
+      getAdjustedChance(chanceVal, r.sourceType, r.sourcePoolId, multiplierOptions),
+      getAdjustedWeight(weightVal, r.sourceType, r.sourcePoolId, multiplierOptions),
       totalWeight,
     );
 
