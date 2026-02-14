@@ -53,7 +53,7 @@ import DisassembleModal from './DisassembleModal';
 import CraftModal from './CraftModal';
 import GemSynthesisModal from './GemSynthesisModal';
 import { formatPercent, formatSignedNumber, formatSignedPercent } from '../../shared/formatAttr';
-import { buildAutoDisassembleSubCategoryOptions } from '../../shared/autoDisassembleFilters';
+import { buildAutoDisassembleSubCategoryOptionsByCategory } from '../../shared/autoDisassembleFilters';
 import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
@@ -88,7 +88,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const [gemSynthesisOpen, setGemSynthesisOpen] = useState(false);
   const [batchMode, setBatchMode] = useState<BatchMode>('disassemble');
   const [batchQualities, setBatchQualities] = useState<BagQuality[]>(qualityLabels);
-  const [batchCategory, setBatchCategory] = useState<BagCategory>('all');
+  const [batchCategory, setBatchCategory] = useState<BagCategory>('equipment');
   const [batchSubCategory, setBatchSubCategory] = useState<string>('all');
   const [batchKeyword, setBatchKeyword] = useState('');
   const [batchIncludeKeywordsText, setBatchIncludeKeywordsText] = useState('');
@@ -305,13 +305,10 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
       setBatchIncludeKeywordsText('');
       setBatchExcludeKeywordsText('');
       setBatchQualities(quality === 'all' ? qualityLabels : [quality]);
-      if (mode === 'remove') {
-        setBatchCategory(category === 'all' ? 'all' : category);
-      } else {
-        setBatchCategory('all');
-      }
+      // 默认主分类固定为“装备”，避免每次打开都落到“全部类型”。
+      setBatchCategory('equipment');
     },
-    [category, quality]
+    [quality]
   );
 
   const actionDisabled = (a: BagAction) => {
@@ -709,12 +706,21 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const bagOnlyItems = useMemo(() => items.filter((i) => i.location === 'bag'), [items]);
 
   const batchSubCategoryOptions = useMemo(() => {
-    const set = new Set<string>();
+    const dynamicSubCategories: string[] = [];
     for (const it of bagOnlyItems) {
-      if (it.subCategory) set.add(it.subCategory);
+      if (batchCategory !== 'all' && it.category !== batchCategory) continue;
+      if (!it.subCategory) continue;
+      dynamicSubCategories.push(it.subCategory);
     }
-    return buildAutoDisassembleSubCategoryOptions([...set]);
-  }, [bagOnlyItems]);
+    return buildAutoDisassembleSubCategoryOptionsByCategory(batchCategory, dynamicSubCategories);
+  }, [bagOnlyItems, batchCategory]);
+
+  useEffect(() => {
+    if (batchSubCategory === 'all') return;
+    const matched = batchSubCategoryOptions.some((option) => option.value === batchSubCategory);
+    if (matched) return;
+    setBatchSubCategory('all');
+  }, [batchSubCategory, batchSubCategoryOptions]);
 
   const batchCandidates = useMemo(() => {
     const kw = batchKeyword.trim().toLowerCase();
@@ -1599,6 +1605,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
         footer={null}
         centered
         destroyOnHidden
+        width={640}
         title={batchMode === 'disassemble' ? '一键分解' : '一键丢弃'}
         maskClosable={!batchSubmitting}
       >
@@ -1614,7 +1621,10 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
             <Input value={batchKeyword} onChange={(e) => setBatchKeyword(e.target.value)} placeholder="搜索名称/标签" allowClear />
             <Select
               value={batchCategory}
-              onChange={(v) => setBatchCategory(v as BagCategory)}
+              onChange={(v) => {
+                setBatchCategory(v as BagCategory);
+                setBatchSubCategory('all');
+              }}
               placeholder="类型"
               options={[
                 { value: 'all', label: '全部类型' },

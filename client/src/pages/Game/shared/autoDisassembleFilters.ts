@@ -18,6 +18,22 @@ export interface LabeledOption {
   value: string;
 }
 
+/**
+ * BagModal 使用的“主分类”枚举（与 bagShared 的分类保持一致）
+ *
+ * 说明：
+ * - 这里不直接引用 bagShared，避免共享筛选工具与页面模块互相耦合。
+ * - 用字面量联合类型保证调用方传参受控，避免出现拼写错误导致筛选失效。
+ */
+export type AutoDisassembleBagCategory =
+  | 'all'
+  | 'consumable'
+  | 'material'
+  | 'gem'
+  | 'equipment'
+  | 'skill'
+  | 'quest';
+
 export const AUTO_DISASSEMBLE_CATEGORY_OPTIONS: LabeledOption[] = [
   { label: '装备', value: 'equipment' },
   { label: '消耗品', value: 'consumable' },
@@ -76,6 +92,57 @@ export const AUTO_DISASSEMBLE_SUB_CATEGORY_OPTIONS: LabeledOption[] = [
   { label: '木材', value: 'wood' },
 ];
 
+/**
+ * 主分类 -> 子类型白名单（完整字典）
+ *
+ * 设计目标：
+ * - 不依赖“当前背包里是否有该子类型物品”，避免筛选项缺失；
+ * - 同时保留跨分类复用的子类型（如 token / armor / accessory）；
+ * - 允许调用方再附加一批动态值，覆盖未来新增子类型场景。
+ */
+const AUTO_DISASSEMBLE_SUB_CATEGORY_VALUES_BY_BAG_CATEGORY: Record<AutoDisassembleBagCategory, string[]> = {
+  all: AUTO_DISASSEMBLE_SUB_CATEGORY_OPTIONS.map((option) => option.value),
+  consumable: ['pill', 'box', 'function', 'enhance', 'scroll', 'month_card', 'battle_pass', 'token'],
+  material: [
+    'herb',
+    'ore',
+    'wood',
+    'leather',
+    'essence',
+    'bone',
+    'relic',
+    'forge',
+    'breakthrough',
+    'egg',
+    'accessory',
+    'armor',
+    'object',
+  ],
+  gem: ['gem', 'gem_attack', 'gem_defense', 'gem_survival', 'gem_all'],
+  equipment: [
+    'sword',
+    'blade',
+    'staff',
+    'shield',
+    'helmet',
+    'hat',
+    'robe',
+    'gloves',
+    'gauntlets',
+    'pants',
+    'legguards',
+    'ring',
+    'necklace',
+    'talisman',
+    'mirror',
+    'accessory',
+    'armor',
+    'token',
+  ],
+  skill: ['technique', 'technique_book'],
+  quest: ['key', 'collect'],
+};
+
 const AUTO_DISASSEMBLE_CATEGORY_VALUE_SET = new Set(
   AUTO_DISASSEMBLE_CATEGORY_OPTIONS.map((option) => option.value)
 );
@@ -123,4 +190,23 @@ export const buildAutoDisassembleSubCategoryOptions = (rawValues: string[]): Lab
   }));
   options.sort((a, b) => a.label.localeCompare(b.label, 'zh-Hans-CN') || a.value.localeCompare(b.value));
   return options;
+};
+
+/**
+ * 按主分类构建“完整子类型”选项（可附加动态子类型）
+ *
+ * 输入：
+ * - category：当前主分类
+ * - extraRawValues：额外子类型（通常来自背包实时数据，用于兜住未来新增值）
+ *
+ * 输出：
+ * - 适配 Select 的 options（value 稳定英文编码，label 中文）
+ */
+export const buildAutoDisassembleSubCategoryOptionsByCategory = (
+  category: AutoDisassembleBagCategory,
+  extraRawValues: string[] = [],
+): LabeledOption[] => {
+  const defaults = AUTO_DISASSEMBLE_SUB_CATEGORY_VALUES_BY_BAG_CATEGORY[category] ??
+    AUTO_DISASSEMBLE_SUB_CATEGORY_VALUES_BY_BAG_CATEGORY.all;
+  return buildAutoDisassembleSubCategoryOptions([...defaults, ...extraRawValues]);
 };

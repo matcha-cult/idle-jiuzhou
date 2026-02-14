@@ -31,8 +31,8 @@ import {
   attrOrder,
   buildAffixRerollCostPlan,
   buildBagItem,
-  buildEnhanceCostPlan,
   buildBatchDisassemblePayloadItems,
+  buildEnhanceCostPlan,
   buildEquipmentLines,
   buildGrowthPreviewAttrs,
   buildRefineCostPlan,
@@ -49,9 +49,11 @@ import {
   qualityClass,
   qualityColor,
   qualityLabelText,
+  qualityLabels,
   qualityRank,
 } from './bagShared';
-import type { BagAction, BagCategory, BagItem, BagSort } from './bagShared';
+import type { BagAction, BagCategory, BagItem, BagQuality, BagSort, BatchMode } from './bagShared';
+import { buildAutoDisassembleSubCategoryOptionsByCategory } from '../../shared/autoDisassembleFilters';
 import { formatPercent, formatSignedNumber, formatSignedPercent } from '../../shared/formatAttr';
 import DisassembleModal from './DisassembleModal';
 import CraftModal from './CraftModal';
@@ -89,6 +91,180 @@ const SortPanel: React.FC<SortPanelProps> = ({ value, onChange, onClose }) => (
             {opt.label}
           </button>
         ))}
+      </div>
+    </div>
+  </>
+);
+
+/* ─── 批量分解 / 丢弃面板 ─── */
+
+interface BatchPanelProps {
+  mode: BatchMode;
+  submitting: boolean;
+  qualities: BagQuality[];
+  category: BagCategory;
+  subCategory: string;
+  keyword: string;
+  includeKeywordsText: string;
+  excludeKeywordsText: string;
+  subCategoryOptions: Array<{ label: string; value: string }>;
+  candidateCount: number;
+  summaryText: string;
+  onClose: () => void;
+  onSubmit: () => void;
+  onToggleQuality: (quality: BagQuality) => void;
+  onCategoryChange: (value: BagCategory) => void;
+  onSubCategoryChange: (value: string) => void;
+  onKeywordChange: (value: string) => void;
+  onIncludeKeywordsChange: (value: string) => void;
+  onExcludeKeywordsChange: (value: string) => void;
+}
+
+const BatchPanel: React.FC<BatchPanelProps> = ({
+  mode,
+  submitting,
+  qualities,
+  category,
+  subCategory,
+  keyword,
+  includeKeywordsText,
+  excludeKeywordsText,
+  subCategoryOptions,
+  candidateCount,
+  summaryText,
+  onClose,
+  onSubmit,
+  onToggleQuality,
+  onCategoryChange,
+  onSubCategoryChange,
+  onKeywordChange,
+  onIncludeKeywordsChange,
+  onExcludeKeywordsChange,
+}) => (
+  <>
+    <div
+      className="mbag-sort-mask"
+      onClick={() => {
+        if (submitting) return;
+        onClose();
+      }}
+    />
+    <div className="mbag-batch-panel">
+      <div className="mbag-batch-title">{mode === 'disassemble' ? '一键分解' : '一键丢弃'}</div>
+
+      <div className="mbag-batch-section">
+        <div className="mbag-batch-label">品质（多选）</div>
+        <div className="mbag-batch-quality-list">
+          {qualityLabels.map((quality) => {
+            const active = qualities.includes(quality);
+            return (
+              <button
+                key={quality}
+                className={`mbag-batch-quality-chip${active ? ' is-active' : ''}`}
+                type="button"
+                disabled={submitting}
+                onClick={() => onToggleQuality(quality)}
+              >
+                {qualityLabelText[quality]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mbag-batch-grid">
+        <div className="mbag-batch-field">
+          <div className="mbag-batch-label">主分类</div>
+          <select
+            className="mbag-batch-select"
+            value={category}
+            disabled={submitting}
+            onChange={(event) => onCategoryChange(event.target.value as BagCategory)}
+          >
+            <option value="all">全部类型</option>
+            <option value="consumable">{categoryLabels.consumable}</option>
+            <option value="material">{categoryLabels.material}</option>
+            <option value="gem">{categoryLabels.gem}</option>
+            <option value="equipment">{categoryLabels.equipment}</option>
+            <option value="skill">{categoryLabels.skill}</option>
+            <option value="quest">{categoryLabels.quest}</option>
+          </select>
+        </div>
+
+        <div className="mbag-batch-field">
+          <div className="mbag-batch-label">子类型</div>
+          <select
+            className="mbag-batch-select"
+            value={subCategory}
+            disabled={submitting}
+            onChange={(event) => onSubCategoryChange(event.target.value)}
+          >
+            <option value="all">全部子类型</option>
+            {subCategoryOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="mbag-batch-field">
+        <div className="mbag-batch-label">关键词</div>
+        <input
+          className="mbag-batch-input"
+          value={keyword}
+          disabled={submitting}
+          onChange={(event) => onKeywordChange(event.target.value)}
+          placeholder="搜索名称/标签"
+        />
+      </div>
+
+      {mode === 'disassemble' ? (
+        <div className="mbag-batch-grid mbag-batch-grid--stackable">
+          <div className="mbag-batch-field">
+            <div className="mbag-batch-label">包含关键词</div>
+            <input
+              className="mbag-batch-input"
+              value={includeKeywordsText}
+              disabled={submitting}
+              onChange={(event) => onIncludeKeywordsChange(event.target.value)}
+              placeholder="逗号分隔，如：丹,灵气"
+            />
+          </div>
+          <div className="mbag-batch-field">
+            <div className="mbag-batch-label">排除关键词</div>
+            <input
+              className="mbag-batch-input"
+              value={excludeKeywordsText}
+              disabled={submitting}
+              onChange={(event) => onExcludeKeywordsChange(event.target.value)}
+              placeholder="逗号分隔，如：绑定,任务"
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mbag-batch-summary">将处理 {candidateCount} 个物品{summaryText ? `（${summaryText}）` : ''}</div>
+      <div className="mbag-batch-tip">已自动排除：已穿戴、已锁定</div>
+
+      <div className="mbag-batch-actions">
+        <button
+          className="mbag-sheet-act-btn"
+          type="button"
+          disabled={submitting}
+          onClick={onClose}
+        >
+          取消
+        </button>
+        <button
+          className={mode === 'remove' ? 'mbag-sheet-act-btn is-danger' : 'mbag-sheet-act-btn is-primary'}
+          type="button"
+          disabled={submitting || candidateCount <= 0}
+          onClick={onSubmit}
+        >
+          {submitting ? '处理中...' : mode === 'disassemble' ? '确认分解' : '确认丢弃'}
+        </button>
       </div>
     </div>
   </>
@@ -776,6 +952,15 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
   const [activeId, setActiveId] = useState<number | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [growthOpen, setGrowthOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchMode, setBatchMode] = useState<BatchMode>('disassemble');
+  const [batchQualities, setBatchQualities] = useState<BagQuality[]>(qualityLabels);
+  const [batchCategory, setBatchCategory] = useState<BagCategory>('equipment');
+  const [batchSubCategory, setBatchSubCategory] = useState<string>('all');
+  const [batchKeyword, setBatchKeyword] = useState('');
+  const [batchIncludeKeywordsText, setBatchIncludeKeywordsText] = useState('');
+  const [batchExcludeKeywordsText, setBatchExcludeKeywordsText] = useState('');
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [disassembleOpen, setDisassembleOpen] = useState(false);
   const [craftOpen, setCraftOpen] = useState(false);
   const [gemSynthesisOpen, setGemSynthesisOpen] = useState(false);
@@ -876,6 +1061,96 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
 
   const usedSlots = info?.bag_used ?? items.filter((i) => i.location === 'bag').length;
   const totalSlots = info?.bag_capacity ?? 100;
+  const bagOnlyItems = useMemo(() => items.filter((i) => i.location === 'bag'), [items]);
+
+  const openBatch = useCallback(
+    (mode: BatchMode) => {
+      setBatchMode(mode);
+      setBatchOpen(true);
+      setBatchSubmitting(false);
+      setBatchKeyword('');
+      setBatchSubCategory('all');
+      setBatchIncludeKeywordsText('');
+      setBatchExcludeKeywordsText('');
+      setBatchQualities(qualityLabels);
+      // 默认主分类固定为“装备”，避免每次打开都落到“全部类型”。
+      setBatchCategory('equipment');
+    },
+    [],
+  );
+
+  const batchSubCategoryOptions = useMemo(() => {
+    const dynamicSubCategories: string[] = [];
+    for (const item of bagOnlyItems) {
+      if (batchCategory !== 'all' && item.category !== batchCategory) continue;
+      if (!item.subCategory) continue;
+      dynamicSubCategories.push(item.subCategory);
+    }
+    return buildAutoDisassembleSubCategoryOptionsByCategory(batchCategory, dynamicSubCategories);
+  }, [bagOnlyItems, batchCategory]);
+
+  useEffect(() => {
+    if (batchSubCategory === 'all') return;
+    const matched = batchSubCategoryOptions.some((option) => option.value === batchSubCategory);
+    if (matched) return;
+    setBatchSubCategory('all');
+  }, [batchSubCategory, batchSubCategoryOptions]);
+
+  const batchCandidates = useMemo(() => {
+    const kw = batchKeyword.trim().toLowerCase();
+    const includeKeywords = batchIncludeKeywordsText
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.length > 0);
+    const excludeKeywords = batchExcludeKeywordsText
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.length > 0);
+
+    let list = bagOnlyItems.filter((item) => !item.locked);
+    if (batchMode === 'disassemble') {
+      list = collectBatchDisassembleCandidates(list, {
+        ...(batchCategory !== 'all' ? { categories: [batchCategory] } : {}),
+        ...(batchSubCategory !== 'all' ? { subCategories: [batchSubCategory] } : {}),
+        ...(batchQualities.length > 0 ? { qualities: batchQualities } : {}),
+        ...(kw ? { keyword: kw } : {}),
+        ...(includeKeywords.length > 0 ? { includeKeywords } : {}),
+        ...(excludeKeywords.length > 0 ? { excludeKeywords } : {}),
+      });
+    } else {
+      if (batchCategory !== 'all') {
+        list = list.filter((item) => item.category === batchCategory);
+      }
+      if (batchSubCategory !== 'all') {
+        list = list.filter((item) => (item.subCategory ?? '') === batchSubCategory);
+      }
+    }
+
+    if (batchQualities.length > 0) {
+      const allowed = new Set(batchQualities);
+      list = list.filter((item) => allowed.has(item.quality));
+    }
+
+    if (kw) {
+      list = list.filter((item) => `${item.name}${item.tags.join('')}`.toLowerCase().includes(kw));
+    }
+
+    return list;
+  }, [
+    bagOnlyItems,
+    batchCategory,
+    batchExcludeKeywordsText,
+    batchIncludeKeywordsText,
+    batchKeyword,
+    batchMode,
+    batchQualities,
+    batchSubCategory,
+  ]);
+
+  const batchSummary = useMemo(() => {
+    const qty = batchCandidates.reduce((sum, item) => sum + Math.max(0, item.qty || 0), 0);
+    return `共${qty}件`;
+  }, [batchCandidates]);
 
   /* 操作回调 */
   const handleEquipToggle = useCallback(async () => {
@@ -957,49 +1232,43 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
     }
   }, [activeItem, clampUseQty, refresh, useQty]);
 
-  const handleBatchDisassemble = useCallback(async () => {
-    const candidates = collectBatchDisassembleCandidates(items, {
-      ...(category !== 'all' ? { categories: [category] } : {}),
-      ...(query.trim().length > 0 ? { keyword: query.trim().toLowerCase() } : {}),
+  const handleToggleBatchQuality = useCallback((quality: BagQuality) => {
+    setBatchQualities((prev) => {
+      if (prev.includes(quality)) {
+        return prev.filter((value) => value !== quality);
+      }
+      return [...prev, quality];
     });
-    if (candidates.length === 0) { message.info('没有可分解的物品'); return; }
+  }, []);
 
-    const payloadItems = buildBatchDisassemblePayloadItems(candidates);
-    if (payloadItems.length === 0) {
-      message.info('没有可分解的物品');
-      return;
-    }
-
-    setLoading(true);
+  const handleSubmitBatch = useCallback(async () => {
+    if (batchCandidates.length === 0) return;
+    setBatchSubmitting(true);
     try {
-      const res = await disassembleInventoryEquipmentBatch(payloadItems);
-      if (!res.success) throw new Error(res.message || '分解失败');
-      message.success(res.message || `分解了${candidates.length}个物品`);
-      await refresh();
-    } catch (e) {
-      message.error((e as { message?: string }).message || '分解失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [category, items, message, query, refresh]);
+      if (batchMode === 'disassemble') {
+        const payloadItems = buildBatchDisassemblePayloadItems(batchCandidates);
+        if (payloadItems.length === 0) {
+          message.info('没有可分解的物品');
+          return;
+        }
 
-  const handleBatchRemove = useCallback(async () => {
-    const candidates = items.filter(
-      (i) => i.location === 'bag' && !i.locked && i.quality === '黄',
-    );
-    if (candidates.length === 0) { message.info('没有可丢弃的物品'); return; }
-    setLoading(true);
-    try {
-      const res = await removeInventoryItemsBatch(candidates.map((x) => x.id));
-      if (!res.success) throw new Error(res.message || '丢弃失败');
-      message.success(res.message || `丢弃了${candidates.length}件物品`);
+        const res = await disassembleInventoryEquipmentBatch(payloadItems);
+        if (!res.success) throw new Error(res.message || '分解失败');
+        message.success(res.message || '分解成功');
+      } else {
+        const ids = batchCandidates.map((item) => item.id);
+        const res = await removeInventoryItemsBatch(ids);
+        if (!res.success) throw new Error(res.message || '丢弃失败');
+        message.success(res.message || '丢弃成功');
+      }
       await refresh();
+      setBatchOpen(false);
     } catch (e) {
-      message.error((e as { message?: string }).message || '丢弃失败');
+      message.error((e as { message?: string }).message || '操作失败');
     } finally {
-      setLoading(false);
+      setBatchSubmitting(false);
     }
-  }, [items, message, refresh]);
+  }, [batchCandidates, batchMode, message, refresh]);
 
   const handleSort = useCallback(async () => {
     setLoading(true);
@@ -1079,20 +1348,20 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
       {/* ── 底部操作栏 ── */}
       <div className="mbag-footer">
         <div className="mbag-footer-actions">
-          <button className="mbag-footer-btn" disabled={loading} onClick={() => setCraftOpen(true)}>
+          <button className="mbag-footer-btn" disabled={loading || batchSubmitting} onClick={() => setCraftOpen(true)}>
             炼制
           </button>
-          <button className="mbag-footer-btn" disabled={loading} onClick={() => setGemSynthesisOpen(true)}>
+          <button className="mbag-footer-btn" disabled={loading || batchSubmitting} onClick={() => setGemSynthesisOpen(true)}>
             宝石合成
           </button>
-          <button className="mbag-footer-btn" disabled={loading} onClick={() => void handleBatchDisassemble()}>
+          <button className="mbag-footer-btn" disabled={loading || batchSubmitting} onClick={() => openBatch('disassemble')}>
             分解
           </button>
-          <button className="mbag-footer-btn is-danger" disabled={loading} onClick={() => void handleBatchRemove()}>
+          <button className="mbag-footer-btn is-danger" disabled={loading || batchSubmitting} onClick={() => openBatch('remove')}>
             丢弃
           </button>
         </div>
-        <button className="mbag-footer-btn is-primary" disabled={loading} onClick={() => void handleSort()}>
+        <button className="mbag-footer-btn is-primary" disabled={loading || batchSubmitting} onClick={() => void handleSort()}>
           {loading ? '整理中...' : '整理'}
         </button>
       </div>
@@ -1169,6 +1438,37 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
           value={sort}
           onChange={setSort}
           onClose={() => setSortOpen(false)}
+        />
+      )}
+
+      {/* ── 批量操作面板 ── */}
+      {batchOpen && (
+        <BatchPanel
+          mode={batchMode}
+          submitting={batchSubmitting}
+          qualities={batchQualities}
+          category={batchCategory}
+          subCategory={batchSubCategory}
+          keyword={batchKeyword}
+          includeKeywordsText={batchIncludeKeywordsText}
+          excludeKeywordsText={batchExcludeKeywordsText}
+          subCategoryOptions={batchSubCategoryOptions}
+          candidateCount={batchCandidates.length}
+          summaryText={batchSummary}
+          onClose={() => {
+            if (batchSubmitting) return;
+            setBatchOpen(false);
+          }}
+          onSubmit={() => void handleSubmitBatch()}
+          onToggleQuality={handleToggleBatchQuality}
+          onCategoryChange={(value) => {
+            setBatchCategory(value);
+            setBatchSubCategory('all');
+          }}
+          onSubCategoryChange={setBatchSubCategory}
+          onKeywordChange={setBatchKeyword}
+          onIncludeKeywordsChange={setBatchIncludeKeywordsText}
+          onExcludeKeywordsChange={setBatchExcludeKeywordsText}
         />
       )}
     </div>
