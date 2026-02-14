@@ -222,14 +222,53 @@ export type SectApplicationDto = {
   createdAt: string;
 };
 
+export type SectMyApplicationDto = {
+  id: number;
+  sectId: string;
+  sectName: string;
+  sectLevel: number;
+  memberCount: number;
+  maxMembers: number;
+  joinType: 'open' | 'apply' | 'invite';
+  createdAt: string;
+  message: string | null;
+};
+
+export type SectLogDto = {
+  id: number;
+  logType: string;
+  content: string;
+  createdAt: string;
+  operatorId: number | null;
+  operatorName: string | null;
+  targetId: number | null;
+  targetName: string | null;
+};
+
 export interface SectApplicationsResponse {
   success: boolean;
   message: string;
   data?: SectApplicationDto[];
 }
 
+export interface MySectApplicationsResponse {
+  success: boolean;
+  message: string;
+  data?: SectMyApplicationDto[];
+}
+
+export interface SectLogsResponse {
+  success: boolean;
+  message: string;
+  data?: SectLogDto[];
+}
+
 export const getSectApplications = (): Promise<SectApplicationsResponse> => {
   return api.get('/sect/applications/list');
+};
+
+export const getMySectApplications = (): Promise<MySectApplicationsResponse> => {
+  return api.get('/sect/applications/mine');
 };
 
 export const handleSectApplication = (
@@ -243,6 +282,35 @@ export const cancelSectApplication = (applicationId: number): Promise<{ success:
   return api.post('/sect/applications/cancel', { applicationId });
 };
 
+export const updateSectAnnouncement = (announcement: string): Promise<{ success: boolean; message: string }> => {
+  return api.post('/sect/announcement/update', { announcement });
+};
+
+export type AppointableSectPositionDto = Exclude<SectPositionDto, 'leader'>;
+
+export const appointSectPosition = (
+  targetId: number,
+  position: AppointableSectPositionDto
+): Promise<{ success: boolean; message: string }> => {
+  return api.post('/sect/appoint', { targetId, position });
+};
+
+export const kickSectMember = (targetId: number): Promise<{ success: boolean; message: string }> => {
+  return api.post('/sect/kick', { targetId });
+};
+
+export const transferSectLeader = (newLeaderId: number): Promise<{ success: boolean; message: string }> => {
+  return api.post('/sect/transfer', { newLeaderId });
+};
+
+export const disbandSect = (): Promise<{ success: boolean; message: string }> => {
+  return api.post('/sect/disband');
+};
+
+export const getSectLogs = (limit: number = 50): Promise<SectLogsResponse> => {
+  return api.get('/sect/logs', { params: { limit } });
+};
+
 export type SectShopItemDto = {
   id: string;
   name: string;
@@ -250,6 +318,7 @@ export type SectShopItemDto = {
   itemDefId: string;
   qty: number;
   limitDaily?: number;
+  itemIcon?: string | null;
 };
 
 export interface SectShopResponse {

@@ -8,13 +8,15 @@ import {
   leaveSect,
   searchSects,
   transferLeader,
+  updateSectAnnouncement,
 } from './sect/core.js';
-import { applyToSect, cancelMyApplication, handleApplication, listApplications } from './sect/applications.js';
+import { applyToSect, cancelMyApplication, handleApplication, listApplications, listMyApplications } from './sect/applications.js';
 import { donate } from './sect/economy.js';
 import { getBuildings, upgradeBuilding } from './sect/buildings.js';
 import { getSectBonuses } from './sect/bonuses.js';
 import { acceptSectQuest, claimSectQuest, getSectQuests, submitSectQuest } from './sect/quests.js';
 import { buyFromSectShop, getSectShop } from './sect/shop.js';
+import { getSectLogs } from './sect/logs.js';
 
 export {
   createSect,
@@ -23,6 +25,7 @@ export {
   searchSects,
   applyToSect,
   listApplications,
+  listMyApplications,
   handleApplication,
   cancelMyApplication,
   leaveSect,
@@ -30,6 +33,7 @@ export {
   appointPosition,
   transferLeader,
   disbandSect,
+  updateSectAnnouncement,
   donate,
   getBuildings,
   upgradeBuilding,
@@ -40,4 +44,5 @@ export {
   claimSectQuest,
   getSectShop,
   buyFromSectShop,
+  getSectLogs,
 };

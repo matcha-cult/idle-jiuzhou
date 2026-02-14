@@ -41,6 +41,7 @@ import {
   getSignInOverview,
   getAchievementList,
   getMySect,
+  getMySectApplications,
   getSectApplications,
   nextDungeonInstance,
   startDungeonInstance,
@@ -661,6 +662,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const [isTeamLeader, setIsTeamLeader] = useState(false);
   const [teamApplicationUnread, setTeamApplicationUnread] = useState(0);
   const [sectPendingApplicationCount, setSectPendingApplicationCount] = useState(0);
+  const [sectMyApplicationCount, setSectMyApplicationCount] = useState(0);
   const [currentMapId, setCurrentMapId] = useState<string>('map-qingyun-village');
   const [currentRoomId, setCurrentRoomId] = useState<string>('room-village-center');
   const [trackedRoomIds, setTrackedRoomIds] = useState<string[]>([]);
@@ -1237,12 +1239,16 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const refreshSectIndicator = useCallback(async () => {
     if (!characterId) {
       setSectPendingApplicationCount(0);
+      setSectMyApplicationCount(0);
       return;
     }
 
     try {
-      const mySectRes = await getMySect();
+      const [mySectRes, myAppsRes] = await Promise.all([getMySect(), getMySectApplications()]);
       const mySectInfo = mySectRes.success ? (mySectRes.data ?? null) : null;
+      const myPendingApplications = myAppsRes.success && myAppsRes.data ? Math.max(0, Math.floor(myAppsRes.data.length)) : 0;
+      setSectMyApplicationCount(myPendingApplications);
+
       if (!mySectInfo) {
         setSectPendingApplicationCount(0);
         return;
@@ -1261,10 +1267,10 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         setSectPendingApplicationCount(0);
         return;
       }
-
       setSectPendingApplicationCount(Math.max(0, Math.floor(appsRes.data.length)));
     } catch {
       setSectPendingApplicationCount(0);
+      setSectMyApplicationCount(0);
     }
   }, [characterId]);
 
@@ -1285,6 +1291,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   useEffect(() => {
     if (!characterId) {
       setSectPendingApplicationCount(0);
+      setSectMyApplicationCount(0);
       return;
     }
 
@@ -1527,10 +1534,18 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         tooltip: `有${teamApplicationUnread}个入队申请待处理`,
       };
     }
-    if (sectPendingApplicationCount > 0) {
+    const sectPendingTotal = sectPendingApplicationCount + sectMyApplicationCount;
+    if (sectPendingTotal > 0) {
+      const tooltipParts: string[] = [];
+      if (sectPendingApplicationCount > 0) {
+        tooltipParts.push(`有${sectPendingApplicationCount}个入门申请待处理`);
+      }
+      if (sectMyApplicationCount > 0) {
+        tooltipParts.push(`你有${sectMyApplicationCount}个入门申请待处理`);
+      }
       out.sect = {
         badgeDot: true,
-        tooltip: `有${sectPendingApplicationCount}个入门申请待处理`,
+        tooltip: tooltipParts.join('；'),
       };
     }
     if (achievementClaimableCount > 0) {
@@ -1540,7 +1555,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       };
     }
     return Object.keys(out).length > 0 ? out : undefined;
-  }, [achievementClaimableCount, isTeamLeader, sectPendingApplicationCount, teamApplicationUnread]);
+  }, [achievementClaimableCount, isTeamLeader, sectMyApplicationCount, sectPendingApplicationCount, teamApplicationUnread]);
 
   const handleInfoAction = (action: string, target: InfoTarget) => {
     if (action === 'attack') {
@@ -2540,6 +2555,9 @@ const Game: FC<GameProps> = ({ onLogout }) => {
           }}
           spiritStones={spiritStones}
           playerName={playerName}
+          onChanged={() => {
+            void refreshSectIndicator();
+          }}
         />
       )}
     </div>

@@ -232,6 +232,37 @@ export const searchSects = async (keyword?: string, page: number = 1, limit: num
   }
 };
 
+export const updateSectAnnouncement = async (operatorId: number, announcement: string): Promise<Result> => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const me = await assertMember(operatorId, client);
+    if (!hasPermission(me.position, 'approve')) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '无权限编辑宗门公告' };
+    }
+
+    const normalized = announcement.trim();
+    await client.query('UPDATE sect_def SET announcement = $2, updated_at = NOW() WHERE id = $1', [
+      me.sectId,
+      normalized || null,
+    ]);
+
+    const logContent = normalized ? `更新宗门公告：${normalized}` : '清空宗门公告';
+    await upsertLogTx(client, me.sectId, 'update_announcement', operatorId, null, logContent);
+
+    await client.query('COMMIT');
+    return { success: true, message: '公告更新成功' };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('更新宗门公告失败:', error);
+    return { success: false, message: '更新宗门公告失败' };
+  } finally {
+    client.release();
+  }
+};
+
 export const transferLeader = async (currentLeaderId: number, newLeaderId: number): Promise<Result> => {
   const client = await pool.connect();
   try {

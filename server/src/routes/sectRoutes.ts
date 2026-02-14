@@ -14,15 +14,18 @@ import {
   getCharacterSect,
   getSectBonuses,
   getSectInfo,
+  getSectLogs,
   getSectQuests,
   getSectShop,
   handleApplication,
   kickMember,
   leaveSect,
   listApplications,
+  listMyApplications,
   searchSects,
   submitSectQuest,
   transferLeader,
+  updateSectAnnouncement,
   upgradeBuilding,
 } from '../services/sectService.js';
 import { query } from '../config/database.js';
@@ -155,6 +158,19 @@ router.get('/applications/list', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/applications/mine', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as AuthedRequest).userId;
+    const characterId = await getCharacterId(userId);
+    if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
+    const result = await listMyApplications(characterId);
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    console.error('我的申请列表接口错误:', error);
+    return res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
 router.post('/applications/handle', async (req: Request, res: Response) => {
   try {
     const userId = (req as AuthedRequest).userId;
@@ -277,6 +293,27 @@ router.post('/disband', async (req: Request, res: Response) => {
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
     console.error('解散宗门接口错误:', error);
+    return res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.post('/announcement/update', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as AuthedRequest).userId;
+    const characterId = await getCharacterId(userId);
+    if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
+    const body = req.body as { announcement?: unknown };
+    const announcement = typeof body?.announcement === 'string' ? body.announcement : '';
+    const result = await updateSectAnnouncement(characterId, announcement);
+    if (result.success) {
+      try {
+        const gameServer = getGameServer();
+        await gameServer.pushCharacterUpdate(userId);
+      } catch {}
+    }
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    console.error('更新宗门公告接口错误:', error);
     return res.status(500).json({ success: false, message: '服务器错误' });
   }
 });
@@ -452,6 +489,20 @@ router.post('/shop/buy', async (req: Request, res: Response) => {
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
     console.error('商店购买接口错误:', error);
+    return res.status(500).json({ success: false, message: '服务器错误' });
+  }
+});
+
+router.get('/logs', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as AuthedRequest).userId;
+    const characterId = await getCharacterId(userId);
+    if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    const result = await getSectLogs(characterId, limit);
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    console.error('宗门日志接口错误:', error);
     return res.status(500).json({ success: false, message: '服务器错误' });
   }
 });

@@ -18,6 +18,23 @@ const addLogTx = async (
   );
 };
 
+interface SectApplicationWithCharacterRow extends SectApplicationRow {
+  nickname: string;
+  realm: string;
+}
+
+interface MySectApplicationRow {
+  id: number;
+  sect_id: string;
+  message: string | null;
+  created_at: string;
+  sect_name: string;
+  sect_level: number | string;
+  member_count: number | string;
+  max_members: number | string;
+  join_type: 'open' | 'apply' | 'invite';
+}
+
 export const applyToSect = async (characterId: number, sectId: string, message?: string): Promise<Result> => {
   const client = await pool.connect();
   try {
@@ -115,7 +132,7 @@ export const listApplications = async (
       return { success: false, message: '无权限查看申请' };
     }
 
-    const res = await pool.query(
+    const res = await pool.query<SectApplicationWithCharacterRow>(
       `
         SELECT a.*, c.nickname, c.realm
         FROM sect_application a
@@ -125,10 +142,69 @@ export const listApplications = async (
       `,
       [member.sectId]
     );
-    return { success: true, message: 'ok', data: res.rows as any };
+    return { success: true, message: 'ok', data: res.rows };
   } catch (error) {
     console.error('获取申请列表失败:', error);
     return { success: false, message: '获取申请列表失败' };
+  }
+};
+
+export const listMyApplications = async (
+  characterId: number
+): Promise<{
+  success: boolean;
+  message: string;
+  data?: Array<{
+    id: number;
+    sectId: string;
+    sectName: string;
+    sectLevel: number;
+    memberCount: number;
+    maxMembers: number;
+    joinType: 'open' | 'apply' | 'invite';
+    createdAt: string;
+    message: string | null;
+  }>;
+}> => {
+  try {
+    const res = await pool.query<MySectApplicationRow>(
+      `
+        SELECT
+          a.id,
+          a.sect_id,
+          a.message,
+          a.created_at,
+          sd.name AS sect_name,
+          sd.level AS sect_level,
+          sd.member_count,
+          sd.max_members,
+          sd.join_type
+        FROM sect_application a
+        JOIN sect_def sd ON sd.id = a.sect_id
+        WHERE a.character_id = $1 AND a.status = 'pending'
+        ORDER BY a.created_at DESC
+      `,
+      [characterId]
+    );
+
+    return {
+      success: true,
+      message: 'ok',
+      data: res.rows.map((row) => ({
+        id: Number(row.id),
+        sectId: row.sect_id,
+        sectName: row.sect_name,
+        sectLevel: toNumber(row.sect_level),
+        memberCount: toNumber(row.member_count),
+        maxMembers: toNumber(row.max_members),
+        joinType: row.join_type,
+        createdAt: row.created_at,
+        message: row.message,
+      })),
+    };
+  } catch (error) {
+    console.error('获取我的宗门申请失败:', error);
+    return { success: false, message: '获取我的宗门申请失败' };
   }
 };
 
