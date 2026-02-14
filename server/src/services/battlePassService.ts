@@ -125,7 +125,7 @@ export const getBattlePassTasksOverview = async (userId: number, seasonId?: stri
 
   const progressRes = await query(
     `
-      SELECT task_id, progress_value, completed, completed_at, claimed, claimed_at
+      SELECT task_id, progress_value, completed, completed_at, claimed, claimed_at, updated_at
       FROM battle_pass_task_progress
       WHERE season_id = $1 AND character_id = $2
     `,
@@ -144,10 +144,12 @@ export const getBattlePassTasksOverview = async (userId: number, seasonId?: stri
     const progress = progressByTaskId.get(task.id);
     const completedAt = toDate(progress?.completed_at);
     const claimedAt = toDate(progress?.claimed_at);
+    const updatedAt = toDate(progress?.updated_at);
     const completed = progress?.completed === true && isInCurrentCycle(task.task_type, completedAt, now);
     const claimed = progress?.claimed === true && isInCurrentCycle(task.task_type, claimedAt, now);
     const rawProgressValue = Number(progress?.progress_value ?? 0);
-    const progressValue = completedAt && isInCurrentCycle(task.task_type, completedAt, now) ? rawProgressValue : 0;
+    const normalizedRawProgress = Number.isFinite(rawProgressValue) ? Math.max(0, rawProgressValue) : 0;
+    const progressValue = updatedAt && isInCurrentCycle(task.task_type, updatedAt, now) ? normalizedRawProgress : 0;
     return {
       id: task.id,
       code: task.code,
@@ -228,7 +230,7 @@ export const completeBattlePassTask = async (userId: number, taskId: string): Pr
 
     const taskProgressRes = await client.query(
       `
-        SELECT completed, completed_at
+        SELECT progress_value, completed, completed_at, updated_at
         FROM battle_pass_task_progress
         WHERE character_id = $1
           AND season_id = $2
@@ -237,10 +239,21 @@ export const completeBattlePassTask = async (userId: number, taskId: string): Pr
       `,
       [characterId, seasonId, normalizedTaskId],
     );
-    const completedInCycle = taskProgressRes.rows[0]?.completed === true && isInCurrentCycle(taskType, toDate(taskProgressRes.rows[0]?.completed_at), new Date());
+    const now = new Date();
+    const progressRow = taskProgressRes.rows[0] as
+      | { progress_value?: unknown; completed?: unknown; completed_at?: unknown; updated_at?: unknown }
+      | undefined;
+    const completedInCycle = progressRow?.completed === true && isInCurrentCycle(taskType, toDate(progressRow?.completed_at), now);
     if (completedInCycle) {
       await client.query('ROLLBACK');
       return { success: false, message: '任务已完成' };
+    }
+    const progressInCycle = progressRow?.updated_at ? isInCurrentCycle(taskType, toDate(progressRow.updated_at), now) : false;
+    const rawProgressValue = progressInCycle ? Number(progressRow?.progress_value ?? 0) : 0;
+    const currentProgressValue = Number.isFinite(rawProgressValue) ? Math.max(0, rawProgressValue) : 0;
+    if (currentProgressValue < targetValue) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务目标未达成，无法完成' };
     }
 
     await client.query(

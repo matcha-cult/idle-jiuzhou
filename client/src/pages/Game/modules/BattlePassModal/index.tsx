@@ -34,6 +34,23 @@ type BattlePassTask = {
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
+/**
+ * 统一战令任务的进度展示与达标判定。
+ * 输入：任务原始 progress/target。
+ * 输出：用于 UI 展示的 progressText 与可完成状态。
+ */
+const resolveTaskProgressMeta = (task: Pick<BattlePassTask, 'progressValue' | 'targetValue'>) => {
+  const target = Number.isFinite(task.targetValue) ? Math.max(1, Math.floor(task.targetValue)) : 1;
+  const rawProgress = Number.isFinite(task.progressValue) ? Math.max(0, Math.floor(task.progressValue)) : 0;
+  const progress = Math.min(rawProgress, target);
+  const reachedTarget = rawProgress >= target;
+  return {
+    progress,
+    target,
+    reachedTarget,
+  };
+};
+
 const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
   const { message } = App.useApp();
 
@@ -91,7 +108,7 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
         exp: Number.isFinite(Number(t.rewardExp)) ? Number(t.rewardExp) : 0,
         completed: t.completed === true,
         progressValue: Number.isFinite(Number(t.progressValue)) ? Number(t.progressValue) : 0,
-        targetValue: Number.isFinite(Number(t.targetValue)) ? Number(t.targetValue) : 1,
+        targetValue: Number.isFinite(Number(t.targetValue)) ? Math.max(1, Number(t.targetValue)) : 1,
       });
       setDailyTasks((res.data.daily ?? []).map(toTask));
       setWeeklyTasks((res.data.weekly ?? []).map(toTask));
@@ -153,6 +170,11 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
   const completeTask = async (task: BattlePassTask) => {
     if (task.completed) return;
     if (completingTaskId) return;
+    const { reachedTarget } = resolveTaskProgressMeta(task);
+    if (!reachedTarget) {
+      message.warning('任务目标未达成，无法完成');
+      return;
+    }
 
     setCompletingTaskId(task.id);
     try {
@@ -289,7 +311,9 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
           <div className="bp-task-list">
             {tasks.map((t) => {
               const done = t.completed;
-              const progressText = `${Math.min(Math.max(0, t.progressValue), t.targetValue)}/${t.targetValue}`;
+              const { progress, target, reachedTarget } = resolveTaskProgressMeta(t);
+              const progressText = `${progress}/${target}`;
+              const canComplete = !done && reachedTarget;
               return (
                 <div key={t.id} className="bp-task">
                   <div className="bp-task-main">
@@ -303,7 +327,7 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
                     <Button
                       size="small"
                       type="primary"
-                      disabled={done || completingTaskId === t.id}
+                      disabled={!canComplete || completingTaskId === t.id}
                       loading={completingTaskId === t.id}
                       onClick={() => {
                         void completeTask(t);
