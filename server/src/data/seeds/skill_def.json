@@ -1434,7 +1434,7 @@
     {
       "id": "skill-hanbing-qun",
       "code": "hanbing_qun",
-      "name": "寒冰群攻",
+      "name": "玄霜风暴",
       "description": "寒冰风暴，攻击全体敌人并减速",
       "icon": "/assets/skills/icon_skill_26.png",
       "source_type": "technique",

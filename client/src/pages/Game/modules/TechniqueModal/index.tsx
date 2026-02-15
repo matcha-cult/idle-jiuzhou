@@ -204,13 +204,11 @@ const normalizePassiveKey = (raw: string): string =>
 const targetTypeLabel: Record<string, string> = {
   self: '自身',
   single_enemy: '单体敌人',
-  all_enemies: '全体敌人',
+  all_enemy: '全体敌人',
   single_ally: '单体友方',
-  all_allies: '全体友方',
+  all_ally: '全体友方',
   random_enemy: '随机敌人',
   random_ally: '随机友方',
-  lowest_hp_ally: '血量最低友方',
-  lowest_hp_enemy: '血量最低敌人',
 };
 
 const getSkillDetailItems = (skill: TechniqueSkill): SkillDetailItem[] => {
