@@ -164,8 +164,6 @@ const main = async () => {
   if (!refineMats.success) throw new Error(`create refine material failed: ${refineMats.message}`);
   const enhTool = await createItem(userId, characterId, 'enhance-003', 1, { location: 'bag' });
   if (!enhTool.success) throw new Error(`create enhance tool failed: ${enhTool.message}`);
-  const protectTool = await createItem(userId, characterId, 'enhance-005', 20, { location: 'bag' });
-  if (!protectTool.success) throw new Error(`create protect tool failed: ${protectTool.message}`);
   const gemAtkDefId = 'gem-atk-wg-1';
   const gemDefDefId = 'gem-def-wf-1';
   const gemHpDefId = 'gem-sur-hp-1';
@@ -177,7 +175,6 @@ const main = async () => {
   if (!gemHp.success || !gemHp.itemIds?.[0]) throw new Error(`create ${gemHpDefId} failed: ${gemHp.message}`);
 
   const enhanceToolItemId = Number(enhTool.itemIds?.[0]);
-  const protectToolItemId = Number(protectTool.itemIds?.[0]);
   const gemAtkItemId = Number(gemAtk.itemIds?.[0]);
   const gemDefItemId = Number(gemDef.itemIds?.[0]);
   const gemHpItemId = Number(gemHp.itemIds?.[0]);
@@ -243,29 +240,6 @@ const main = async () => {
      WHERE id = $1 AND owner_character_id = $2`,
     [equipId, characterId],
   );
-
-  const protectLogs: E2eLog[] = [];
-  for (let i = 1; i <= 50; i += 1) {
-    const r = await postJson(
-      `${base}/api/inventory/enhance`,
-      { itemId: equipId, protectToolItemId },
-      token,
-    );
-    protectLogs.push({
-      i,
-      success: Boolean(r?.success),
-      msg: String(r?.message ?? ''),
-      level: pickNum(r?.data?.strengthenLevel),
-      target: pickNum(r?.data?.targetLevel),
-      protectedDowngrade: Boolean(r?.data?.protectedDowngrade),
-      usedProtectToolItemDefId: r?.data?.usedProtectToolItemDefId ?? null,
-    });
-    if (!r?.success) {
-      must(Boolean(r?.data?.protectedDowngrade), 'expected protectedDowngrade on failed protect enhance');
-      must(pickNum(r?.data?.strengthenLevel) >= 8, 'protect should prevent downgrade');
-      break;
-    }
-  }
 
   const refineLogs: E2eLog[] = [];
   let refineSeenSuccess = false;
@@ -393,7 +367,6 @@ const main = async () => {
   const matAfter = await findInBag(token, (x) => String(x?.item_def_id) === 'enhance-001');
   const refineMatAfter = await findInBag(token, (x) => String(x?.item_def_id) === 'enhance-002');
   const enhanceToolAfter = await findInBag(token, (x) => Number(x?.id) === enhanceToolItemId);
-  const protectToolAfter = await findInBag(token, (x) => Number(x?.id) === protectToolItemId);
   const gemDefAfter = await findInBag(token, (x) => String(x?.item_def_id) === gemDefDefId);
   const gemHpAfter = await findInBag(token, (x) => String(x?.item_def_id) === gemHpDefId);
   const after = {
@@ -404,7 +377,6 @@ const main = async () => {
     refineMatQty: Number(refineMatAfter?.qty ?? 0),
     socketed: normalizeSocketedGems(equipAfter?.socketed_gems),
     enhanceToolLeft: Number(enhanceToolAfter?.qty ?? 0),
-    protectToolLeft: Number(protectToolAfter?.qty ?? 0),
     gemDefenseQty: Number(gemDefAfter?.qty ?? 0),
     gemSurvivalQty: Number(gemHpAfter?.qty ?? 0),
   };
@@ -541,7 +513,6 @@ const main = async () => {
       msg: String(toolEnhance?.message ?? ''),
       usedEnhanceToolItemDefId: toolEnhance?.data?.usedEnhanceToolItemDefId ?? null,
     },
-    protectLogs,
     refineLogs,
     refineDowngradeLogs,
     socket: {

@@ -766,85 +766,6 @@ const getEnhanceToolBonusPercent = async (
   };
 };
 
-const consumeEnhanceProtectToolTx = async (
-  client: PoolClient,
-  characterId: number,
-  toolItemInstanceId?: number
-): Promise<{ success: boolean; message: string; protectDowngrade: boolean; consumedToolItemDefId?: string }> => {
-  if (!toolItemInstanceId) {
-    return { success: true, message: '未使用保护符', protectDowngrade: false };
-  }
-
-  const itemResult = await client.query(
-    `
-      SELECT id, item_def_id, qty, locked, location
-      FROM item_instance
-      WHERE id = $1 AND owner_character_id = $2
-      FOR UPDATE
-      LIMIT 1
-    `,
-    [toolItemInstanceId, characterId]
-  );
-  if (itemResult.rows.length === 0) {
-    return { success: false, message: '保护符不存在', protectDowngrade: false };
-  }
-
-  const item = itemResult.rows[0] as {
-    id: number;
-    item_def_id: string;
-    qty: number;
-    locked: boolean;
-    location: string;
-  };
-  if (item.locked) return { success: false, message: '保护符已锁定', protectDowngrade: false };
-  if (!['bag', 'warehouse'].includes(String(item.location))) {
-    return { success: false, message: '保护符当前位置不可消耗', protectDowngrade: false };
-  }
-  if ((Number(item.qty) || 0) < 1) {
-    return { success: false, message: '保护符数量不足', protectDowngrade: false };
-  }
-
-  const toolDefId = String(item.item_def_id || '');
-  if (!toolDefId) return { success: false, message: '保护符数据异常', protectDowngrade: false };
-
-  const toolDef = getEnabledStaticItemDef(toolDefId);
-  if (!toolDef) return { success: false, message: '保护符不存在', protectDowngrade: false };
-  const defs: unknown[] = Array.isArray(toolDef.effect_defs) ? toolDef.effect_defs : [];
-  let protect = false;
-  for (const raw of defs) {
-    if (!raw || typeof raw !== 'object') continue;
-    const effect = raw as {
-      trigger?: unknown;
-      effect_type?: unknown;
-      params?: unknown;
-    };
-    if (String(effect.trigger || '') !== 'enhance') continue;
-    if (String(effect.effect_type || '') !== 'protect') continue;
-    const params = effect.params && typeof effect.params === 'object' ? (effect.params as Record<string, unknown>) : {};
-    if (Boolean(params.protect_downgrade)) {
-      protect = true;
-      break;
-    }
-  }
-
-  if (!protect) {
-    return { success: false, message: '该道具不是保护符', protectDowngrade: false };
-  }
-
-  if ((Number(item.qty) || 0) === 1) {
-    await client.query('DELETE FROM item_instance WHERE id = $1', [item.id]);
-  } else {
-    await client.query('UPDATE item_instance SET qty = qty - 1, updated_at = NOW() WHERE id = $1', [item.id]);
-  }
-
-  return {
-    success: true,
-    message: 'ok',
-    protectDowngrade: protect,
-    consumedToolItemDefId: toolDefId,
-  };
-};
-
 const loadGemItemForSocketTx = async (
   client: PoolClient,
   characterId: number,
@@ -2064,7 +1985,7 @@ export const enhanceEquipment = async (
   characterId: number,
   userId: number,
   itemInstanceId: number,
-  options: { enhanceToolItemId?: number; protectToolItemId?: number } = {}
+  options: { enhanceToolItemId?: number } = {}
 ): Promise<{
   success: boolean;
   message: string;
@@ -2076,8 +1997,6 @@ export const enhanceEquipment = async (
     usedMaterial?: { itemDefId: string; qty: number };
     costs?: { silver: number; spiritStones: number };
     usedEnhanceToolItemDefId?: string;
-    usedProtectToolItemDefId?: string;
-    protectedDowngrade?: boolean;
     character?: unknown;
   };
 }> => {
@@ -2143,24 +2062,12 @@ export const enhanceEquipment = async (
       return { success: false, message: enhanceToolRes.message };
     }
 
-    const protectToolRes = await consumeEnhanceProtectToolTx(
-      client,
-      characterId,
-      options.protectToolItemId
-    );
-    if (!protectToolRes.success) {
-      await client.query('ROLLBACK');
-      return { success: false, message: protectToolRes.message };
-    }
-
     const baseRate = getEnhanceSuccessRatePercent(targetLv);
     const finalRate = Math.max(0, Math.min(1, baseRate + enhanceToolRes.bonusPercent));
     const roll = randomInt(0, 10_000) / 10_000;
     const success = roll < finalRate;
 
-    const resultLevel = success
-      ? targetLv
-      : getEnhanceFailResultLevel(curLv, targetLv, protectToolRes.protectDowngrade);
+    const resultLevel = success ? targetLv : getEnhanceFailResultLevel(curLv, targetLv);
 
     if (resultLevel !== curLv) {
       await client.query(
@@ -2198,8 +2105,6 @@ export const enhanceEquipment = async (
           spiritStones: costPlan.spiritStoneCost,
         },
         usedEnhanceToolItemDefId: enhanceToolRes.consumedToolItemDefId,
-        usedProtectToolItemDefId: protectToolRes.consumedToolItemDefId,
-        protectedDowngrade: !success && protectToolRes.protectDowngrade,
         character: character ?? null,
       },
     };

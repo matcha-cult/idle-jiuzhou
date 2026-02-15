@@ -224,12 +224,10 @@ export const getRefineSuccessRatePercent = (targetLevel: number): number => {
 
 export const getEnhanceFailResultLevel = (
   currentLevel: number,
-  targetLevel: number,
-  protectedFromDowngrade: boolean
+  targetLevel: number
 ): number => {
   const current = clampInt(currentLevel, 0, ENHANCE_MAX_LEVEL);
   const target = clampInt(targetLevel, 1, ENHANCE_MAX_LEVEL);
-  if (protectedFromDowngrade) return current;
   if (target >= 8) return Math.max(0, current - 1);
   return current;
 };
