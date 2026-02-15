@@ -1,4 +1,5 @@
 import { QUALITY_MULTIPLIER_BY_RANK } from './shared/itemQuality.js';
+import { getItemDefinitionById } from './staticConfigLoader.js';
 
 export type CharacterAttrRecord = Record<string, number>;
 
@@ -83,6 +84,13 @@ const GEM_TYPE_SYNONYMS: Record<string, string> = {
   util: 'utility',
   utility: 'utility',
   support: 'utility',
+};
+
+const GEM_SUB_CATEGORY_TO_TYPE: Record<string, string> = {
+  gem_attack: 'attack',
+  gem_defense: 'defense',
+  gem_survival: 'survival',
+  gem_all: 'all',
 };
 
 const ATTACK_ATTR_KEYS = new Set([
@@ -325,16 +333,26 @@ export const inferGemTypeFromEffects = (effects: SocketEffect[]): string => {
   return 'survival';
 };
 
-const parseSocketEffect = (raw: unknown): SocketEffect | null => {
-  const src = toObject(raw);
-  const attrKey = String(src.attrKey || src.attr_key || '').trim();
-  const value = toNumber(src.value);
-  const applyTypeRaw = String(src.applyType || src.apply_type || 'flat').trim().toLowerCase();
-  if (!attrKey) return null;
-  if (!Number.isFinite(value) || value === 0) return null;
-  const applyType: SocketApplyType =
-    applyTypeRaw === 'percent' ? 'percent' : applyTypeRaw === 'special' ? 'special' : 'flat';
-  return { attrKey, value, applyType };
+interface DynamicSocketGemMeta {
+  effects: SocketEffect[];
+  gemType: string;
+  name?: string;
+  icon?: string;
+}
+
+const resolveSocketGemMetaFromItemDef = (itemDefId: string): DynamicSocketGemMeta | null => {
+  const itemDef = getItemDefinitionById(itemDefId);
+  if (!itemDef) return null;
+  if (String(itemDef.category || '').trim().toLowerCase() !== 'gem') return null;
+
+  const effects = parseSocketEffectsFromItemEffectDefs(itemDef.effect_defs);
+  const subCategory = String(itemDef.sub_category || '').trim().toLowerCase();
+  const gemTypeBySubCategory = GEM_SUB_CATEGORY_TO_TYPE[subCategory];
+  const inferredGemType = effects.length > 0 ? inferGemTypeFromEffects(effects) : 'all';
+  const gemType = normalizeGemType(gemTypeBySubCategory || inferredGemType || 'all');
+  const name = typeof itemDef.name === 'string' && itemDef.name.trim() ? itemDef.name.trim() : undefined;
+  const icon = typeof itemDef.icon === 'string' && itemDef.icon.trim() ? itemDef.icon.trim() : undefined;
+  return { effects, gemType, name, icon };
 };
 
 const parseSocketEntry = (raw: unknown): SocketedGemEntry | null => {
@@ -342,15 +360,15 @@ const parseSocketEntry = (raw: unknown): SocketedGemEntry | null => {
   const slot = clampInt(toNumber(src.slot), 0, 999);
   const itemDefId = String(src.itemDefId || src.item_def_id || '').trim();
   if (!itemDefId) return null;
-  const effectsRaw = toArray(src.effects);
-  const effects: SocketEffect[] = effectsRaw
-    .map((it) => parseSocketEffect(it))
-    .filter((it): it is SocketEffect => !!it);
-  const gemType = normalizeGemType(src.gemType || src.gem_type || inferGemTypeFromEffects(effects));
-  const name = typeof src.name === 'string' && src.name.trim() ? src.name.trim() : undefined;
-  const icon = typeof src.icon === 'string' && src.icon.trim() ? src.icon.trim() : undefined;
 
-  if (effects.length === 0) return null;
+  // 只按静态定义动态解析宝石效果，不回退历史快照 effects。
+  const dynamicMeta = resolveSocketGemMetaFromItemDef(itemDefId);
+  if (!dynamicMeta || dynamicMeta.effects.length === 0) return null;
+  const effects: SocketEffect[] = dynamicMeta.effects.map((effect) => ({ ...effect }));
+  const gemType = normalizeGemType(dynamicMeta.gemType);
+  const name = dynamicMeta.name;
+  const icon = dynamicMeta.icon;
+
   return { slot, itemDefId, gemType, effects, name, icon };
 };
 
