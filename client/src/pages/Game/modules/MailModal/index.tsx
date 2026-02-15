@@ -12,23 +12,13 @@ import {
 } from '../../../../services/api';
 import type { MailDto } from '../../../../services/api';
 import { useIsMobile } from '../../shared/responsive';
+import { formatDateTimeToMinute } from '../../shared/time';
 import './index.scss';
 
 interface MailModalProps {
   open: boolean;
   onClose: () => void;
 }
-
-const formatTime = (iso: string) => {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${y}-${m}-${day} ${hh}:${mm}`;
-};
 
 const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
   const { message, modal } = App.useApp();
@@ -351,7 +341,7 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
                         {isUnread ? <span className="mail-dot" /> : null}
                         <span className="mail-title-text">{m.title}</span>
                       </div>
-                      <div className="mail-item-time">{formatTime(m.createdAt)}</div>
+                      <div className="mail-item-time">{formatDateTimeToMinute(m.createdAt)}</div>
                     </div>
                     <div className="mail-item-meta">
                       <span className="mail-from">{m.senderName}</span>
@@ -402,9 +392,9 @@ const MailModal: React.FC<MailModalProps> = ({ open, onClose }) => {
                 <div className="mail-detail-meta">
                   <Tag color={activeMail.readAt ? 'default' : 'blue'}>{activeMail.readAt ? '已读' : '未读'}</Tag>
                   <Tag color="default">发件人：{activeMail.senderName}</Tag>
-                  <Tag color="default">时间：{formatTime(activeMail.createdAt)}</Tag>
+                  <Tag color="default">时间：{formatDateTimeToMinute(activeMail.createdAt)}</Tag>
                   {activeMail.expireAt && (
-                    <Tag color="orange">过期：{formatTime(activeMail.expireAt)}</Tag>
+                    <Tag color="orange">过期：{formatDateTimeToMinute(activeMail.expireAt)}</Tag>
                   )}
                 </div>
 

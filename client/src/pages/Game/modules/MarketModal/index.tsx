@@ -3,6 +3,7 @@ import { SearchOutlined } from '@ant-design/icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import coin01 from '../../../../assets/images/ui/sh_icon_0006_jinbi_02.png';
 import { formatSignedNumber, formatSignedPercent } from '../../shared/formatAttr';
+import { PERCENT_ATTR_KEYS, coerceAffixes, formatScalar, limitLines, normalizeText } from '../../shared/itemMetaFormat';
 import {
   buyMarketListing,
   cancelMarketListing,
@@ -16,7 +17,7 @@ import {
 import type { InventoryItemDto, ItemDefLite, MarketListingDto, MarketTradeRecordDto } from '../../../../services/api';
 import { gameSocket, type CharacterData } from '../../../../services/gameSocket';
 import { useIsMobile } from '../../shared/responsive';
-import { buildEquipmentAffixDisplayText, type EquipmentAffixTextInput } from '../../shared/equipmentAffixText';
+import { buildEquipmentAffixDisplayText } from '../../shared/equipmentAffixText';
 import './index.scss';
 
 type MarketPanel = 'market' | 'my' | 'list' | 'records';
@@ -119,11 +120,6 @@ const resolveIcon = (icon: string | null | undefined): string => {
 
 const hasLatin = (value: string): boolean => /[A-Za-z]/.test(value);
 
-const normalizeText = (value: unknown): string => {
-  if (typeof value !== 'string') return '';
-  return value.trim();
-};
-
 const translateKey = (key: string): string | null => {
   const k = key.trim();
   const m: Record<string, string> = {
@@ -174,91 +170,6 @@ const translateKey = (key: string): string | null => {
   };
   if (m[k]) return m[k];
   return null;
-};
-
-const PERCENT_ATTR_KEYS = new Set<string>([
-  'shuxing_shuzhi',
-  'mingzhong',
-  'shanbi',
-  'zhaojia',
-  'baoji',
-  'baoshang',
-  'kangbao',
-  'zengshang',
-  'zhiliao',
-  'jianliao',
-  'xixue',
-  'lengque',
-  'kongzhi_kangxing',
-  'jin_kangxing',
-  'mu_kangxing',
-  'shui_kangxing',
-  'huo_kangxing',
-  'tu_kangxing',
-]);
-
-type EquipmentAffix = EquipmentAffixTextInput;
-
-const coerceAffixes = (value: unknown): EquipmentAffix[] => {
-  if (!value) return [];
-  let arr: unknown = value;
-  if (typeof arr === 'string') {
-    try {
-      arr = JSON.parse(arr) as unknown;
-    } catch {
-      return [];
-    }
-  }
-  if (!Array.isArray(arr)) return [];
-  return arr
-    .map<EquipmentAffix | null>((x) => {
-      if (!x || typeof x !== 'object') return null;
-      const a = x as Record<string, unknown>;
-      const tierNum = typeof a.tier === 'number' ? a.tier : typeof a.tier === 'string' ? Number(a.tier) : undefined;
-      const valueNum = typeof a.value === 'number' ? a.value : typeof a.value === 'string' ? Number(a.value) : undefined;
-      const modifiersRaw = Array.isArray(a.modifiers) ? a.modifiers : [];
-      const modifiers: Array<{ attr_key: string; value: number }> = [];
-      const seenModifierKeys = new Set<string>();
-      for (const row of modifiersRaw) {
-        if (!row || typeof row !== 'object') continue;
-        const modifier = row as Record<string, unknown>;
-        const attrKey = typeof modifier.attr_key === 'string' ? modifier.attr_key.trim() : '';
-        const modifierValue =
-          typeof modifier.value === 'number'
-            ? modifier.value
-            : typeof modifier.value === 'string'
-              ? Number(modifier.value)
-              : NaN;
-        if (!attrKey || seenModifierKeys.has(attrKey) || !Number.isFinite(modifierValue)) continue;
-        seenModifierKeys.add(attrKey);
-        modifiers.push({ attr_key: attrKey, value: modifierValue });
-      }
-
-      const out: EquipmentAffix = {
-        key: typeof a.key === 'string' ? a.key : undefined,
-        name: typeof a.name === 'string' ? a.name : undefined,
-        modifiers: modifiers.length > 0 ? modifiers : undefined,
-        apply_type: typeof a.apply_type === 'string' ? a.apply_type : undefined,
-        tier: Number.isFinite(tierNum ?? NaN) ? tierNum : undefined,
-        value: Number.isFinite(valueNum ?? NaN) ? valueNum : undefined,
-        is_legendary: typeof a.is_legendary === 'boolean' ? a.is_legendary : undefined,
-        description: typeof a.description === 'string' ? a.description : undefined,
-      };
-      return out;
-    })
-    .filter((v): v is EquipmentAffix => !!v);
-};
-
-const formatScalar = (value: unknown): string => {
-  if (value === null || value === undefined) return '-';
-  if (typeof value === 'string') {
-    const s = value.trim();
-    if (!s) return '';
-    if (hasLatin(s)) return '';
-    return s;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
-  return '';
 };
 
 const formatLines = (value: unknown, depth: number = 0): string[] => {
@@ -320,13 +231,6 @@ const formatLines = (value: unknown, depth: number = 0): string[] => {
   }
 
   return [];
-};
-
-const limitLines = (lines: string[], maxLines: number): string[] => {
-  const max = Math.max(0, Math.floor(maxLines || 0));
-  if (max <= 0) return [];
-  if (lines.length <= max) return lines;
-  return [...lines.slice(0, max), '…'];
 };
 
 const translateEquipSlot = (value?: string | null): string => {

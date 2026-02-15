@@ -10,6 +10,7 @@
 import { ReloadOutlined } from '@ant-design/icons';
 import { Button, Tag } from 'antd';
 import type { SectLogDto } from '../../../../../services/api';
+import { formatDateTimeToMinute } from '../../../shared/time';
 
 interface LogsPanelProps {
   loading: boolean;
@@ -80,18 +81,6 @@ const formatLogContent = (logType: string, content: string): string => {
   return raw;
 };
 
-const formatTime = (dateString: string): string => {
-  const date = new Date(dateString);
-  if (!Number.isFinite(date.getTime())) return dateString;
-  const pad = (value: number) => String(value).padStart(2, '0');
-  const y = date.getFullYear();
-  const m = pad(date.getMonth() + 1);
-  const d = pad(date.getDate());
-  const hh = pad(date.getHours());
-  const mm = pad(date.getMinutes());
-  return `${y}-${m}-${d} ${hh}:${mm}`;
-};
-
 const LogsList: React.FC<{ loading: boolean; logs: SectLogDto[] }> = ({ loading, logs }) => {
   return (
     <>
@@ -102,7 +91,7 @@ const LogsList: React.FC<{ loading: boolean; logs: SectLogDto[] }> = ({ loading,
           <div key={row.id} className="sect-log-card">
             <div className="sect-log-head">
               <Tag color="default">{formatLogType(row.logType)}</Tag>
-              <span className="sect-log-time">{formatTime(row.createdAt)}</span>
+              <span className="sect-log-time">{formatDateTimeToMinute(row.createdAt)}</span>
             </div>
             <div className="sect-log-content">{formatLogContent(row.logType, row.content) || '（无内容）'}</div>
             <div className="sect-log-meta">

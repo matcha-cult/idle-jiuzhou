@@ -7,6 +7,7 @@
 import { Button, Tag } from 'antd';
 import { JOIN_TYPE_LABEL_MAP } from '../constants';
 import type { SectMyApplicationDto } from '../../../../../services/api';
+import { formatRelativeTimeFromNow } from '../../../shared/time';
 
 interface MyApplicationsPanelProps {
   loading: boolean;
@@ -15,20 +16,6 @@ interface MyApplicationsPanelProps {
   onRefresh: () => void;
   onCancel: (applicationId: number) => void;
 }
-
-const formatRelativeTime = (dateString: string): string => {
-  const now = Date.now();
-  const past = new Date(dateString).getTime();
-  if (!Number.isFinite(past)) return '刚刚';
-  const diff = now - past;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes}分钟前`;
-  const hours = Math.floor(diff / 3600000);
-  if (hours < 24) return `${hours}小时前`;
-  const days = Math.floor(diff / 86400000);
-  return `${days}天前`;
-};
 
 const MyApplicationsPanel: React.FC<MyApplicationsPanelProps> = ({ loading, applications, actionLoadingKey, onRefresh, onCancel }) => {
   return (
@@ -66,7 +53,7 @@ const MyApplicationsPanel: React.FC<MyApplicationsPanelProps> = ({ loading, appl
                 </span>
                 <span className="sect-mobile-meta-item">
                   <span className="sect-mobile-meta-k">申请时间</span>
-                  <span className="sect-mobile-meta-v">{formatRelativeTime(item.createdAt)}</span>
+                  <span className="sect-mobile-meta-v">{formatRelativeTimeFromNow(item.createdAt)}</span>
                 </span>
               </div>
               {item.message ? <div className="sect-mobile-message">留言：{item.message}</div> : null}

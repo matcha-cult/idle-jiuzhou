@@ -12,6 +12,7 @@ import type {
 import { getEquipRealmRankForReroll as getEquipRealmRankForRerollShared } from "../../shared/realm";
 import { buildEquipmentAffixDisplayText } from "../../shared/equipmentAffixText";
 import { formatSignedNumber, formatSignedPercent, formatPercent } from "../../shared/formatAttr";
+import { coerceAffixes as coerceItemMetaAffixes } from "../../shared/itemMetaFormat";
 
 /* ───────── 类型 ───────── */
 
@@ -321,88 +322,34 @@ export const coerceAttrRecord = (value: unknown): Record<string, number> => {
 };
 
 export const coerceAffixes = (value: unknown): EquipmentAffix[] => {
-  if (!value) return [];
-  let arr: unknown = value;
-  if (typeof arr === "string") {
-    try {
-      arr = JSON.parse(arr) as unknown;
-    } catch {
-      return [];
-    }
-  }
-  if (!Array.isArray(arr)) return [];
-  return arr
-    .map<EquipmentAffix | null>((x) => {
-      if (!x || typeof x !== "object") return null;
-      const a = x as Record<string, unknown>;
-      const tierNum =
-        typeof a.tier === "number"
-          ? a.tier
-          : typeof a.tier === "string"
-            ? Number(a.tier)
-            : undefined;
-      const valueNum =
-        typeof a.value === "number"
-          ? a.value
-          : typeof a.value === "string"
-            ? Number(a.value)
-            : undefined;
-      const durationNum =
-        typeof a.duration_round === "number"
-          ? a.duration_round
-          : typeof a.duration_round === "string"
-            ? Number(a.duration_round)
-            : undefined;
-      const paramsRaw =
-        a.params && typeof a.params === "object" && !Array.isArray(a.params)
-          ? (a.params as Record<string, unknown>)
-          : null;
-      const params: Record<string, string | number | boolean> = {};
-      if (paramsRaw) {
-        for (const [k, v] of Object.entries(paramsRaw)) {
-          if (typeof v === "string" || typeof v === "boolean") params[k] = v;
-          else if (typeof v === "number" && Number.isFinite(v)) params[k] = v;
-        }
-      }
-      const modifiersRaw = Array.isArray(a.modifiers) ? a.modifiers : [];
-      const modifiers: Array<{ attr_key: string; value: number }> = [];
-      const seenModifierKeys = new Set<string>();
-      for (const row of modifiersRaw) {
-        if (!row || typeof row !== "object") continue;
-        const modifier = row as Record<string, unknown>;
-        const attrKey = typeof modifier.attr_key === "string" ? modifier.attr_key.trim() : "";
+  const rows = coerceItemMetaAffixes(value);
+  return rows.map<EquipmentAffix>((row) => {
+    const modifiersRaw = Array.isArray(row.modifiers) ? row.modifiers : [];
+    const modifiers = modifiersRaw
+      .map<{ attr_key: string; value: number } | null>((modifier) => {
+        const attrKey =
+          typeof modifier.attr_key === "string" ? modifier.attr_key.trim() : "";
         const modifierValue =
-          typeof modifier.value === "number"
-            ? modifier.value
-            : typeof modifier.value === "string"
-              ? Number(modifier.value)
-              : NaN;
-        if (!attrKey || seenModifierKeys.has(attrKey) || !Number.isFinite(modifierValue)) continue;
-        seenModifierKeys.add(attrKey);
-        modifiers.push({ attr_key: attrKey, value: modifierValue });
-      }
-      return {
-        key: typeof a.key === "string" ? a.key : undefined,
-        name: typeof a.name === "string" ? a.name : undefined,
-        modifiers: modifiers.length > 0 ? modifiers : undefined,
-        apply_type: typeof a.apply_type === "string" ? a.apply_type : undefined,
-        trigger: typeof a.trigger === "string" ? a.trigger : undefined,
-        target: typeof a.target === "string" ? a.target : undefined,
-        effect_type:
-          typeof a.effect_type === "string" ? a.effect_type : undefined,
-        duration_round: Number.isFinite(durationNum ?? NaN)
-          ? durationNum
-          : undefined,
-        params: Object.keys(params).length > 0 ? params : undefined,
-        tier: Number.isFinite(tierNum ?? NaN) ? tierNum : undefined,
-        value: Number.isFinite(valueNum ?? NaN) ? valueNum : undefined,
-        is_legendary:
-          typeof a.is_legendary === "boolean" ? a.is_legendary : undefined,
-        description:
-          typeof a.description === "string" ? a.description : undefined,
-      };
-    })
-    .filter((v): v is EquipmentAffix => !!v);
+          typeof modifier.value === "number" ? modifier.value : NaN;
+        if (!attrKey || !Number.isFinite(modifierValue)) return null;
+        return { attr_key: attrKey, value: modifierValue };
+      })
+      .filter(
+        (modifier): modifier is { attr_key: string; value: number } =>
+          Boolean(modifier),
+      );
+
+    return {
+      key: row.key,
+      name: row.name,
+      modifiers: modifiers.length > 0 ? modifiers : undefined,
+      apply_type: row.apply_type,
+      tier: row.tier,
+      value: row.value,
+      is_legendary: row.is_legendary,
+      description: row.description,
+    };
+  });
 };
 
 /* ───────── 格式化（统一从 shared/formatAttr 导入，见文件顶部 import + re-export）───────── */
