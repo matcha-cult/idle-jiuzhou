@@ -272,6 +272,28 @@
   flex: 0 0 auto;
 }
 
+.base-actions .ant-btn {
+  /* 统一加减按钮为固定方形，避免 + / - 因字形宽度导致视觉尺寸不一致 */
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.base-actions .ant-btn > span {
+  line-height: 1;
+}
+
+.base-actions .ant-btn .anticon {
+  font-size: 12px;
+}
+
 .player-attrs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -395,10 +417,17 @@
   }
 
   .base-actions .ant-btn {
-    height: 26px;
-    min-width: 28px;
-    padding: 0 8px;
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    padding: 0;
     border-radius: 8px;
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  .base-actions .ant-btn .anticon {
+    font-size: 11px;
   }
 
   .player-attrs {

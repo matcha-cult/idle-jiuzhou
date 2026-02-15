@@ -1,6 +1,6 @@
 import { App, Button, Progress, Upload } from 'antd';
 import type { UploadProps } from 'antd';
-import { UserOutlined, LoadingOutlined } from '@ant-design/icons';
+import { UserOutlined, LoadingOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { gameSocket, type CharacterData } from '../../../../services/gameSocket';
 import { SERVER_BASE, getRealmOverview, uploadAvatar, addAttributePoint, removeAttributePoint, type RealmOverviewDto } from '../../../../services/api';
@@ -356,20 +356,20 @@ const PlayerInfo: React.FC = () => {
               <div className="base-actions">
                 <Button
                   size="small"
+                  aria-label={`减少${row.label}`}
+                  icon={<MinusOutlined />}
                   onClick={() => handleRemovePoint(row.key)}
                   disabled={character[row.key] <= 0 || processingPoint === `remove-${row.key}`}
                   loading={processingPoint === `remove-${row.key}`}
-                >
-                  -
-                </Button>
+                />
                 <Button
                   size="small"
+                  aria-label={`增加${row.label}`}
+                  icon={<PlusOutlined />}
                   onClick={() => handleAddPoint(row.key)}
                   disabled={character.attributePoints <= 0 || processingPoint === `add-${row.key}`}
                   loading={processingPoint === `add-${row.key}`}
-                >
-                  +
-                </Button>
+                />
               </div>
             </div>
           ))}
