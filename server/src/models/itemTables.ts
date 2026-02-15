@@ -10,6 +10,7 @@ import { runDbMigrationOnce } from './migrationHistoryTable.js';
 import {
   normalizeGeneratedAffixModifiers,
 } from '../services/shared/affixModifier.js';
+import { getItemDefinitions } from '../services/staticConfigLoader.js';
 
 // ============================================
 // 1. 物品实例表（动态）
@@ -271,6 +272,34 @@ const migrateItemInstanceAffixesToModifiers = async (): Promise<void> => {
   console.log(`  → 词条复合结构迁移完成：扫描装备=${scannedCount}，更新装备=${updatedCount}`);
 };
 
+const migrateTechniqueBookBindTypeForMarket = async (): Promise<void> => {
+  const techniqueBookDefIds = getItemDefinitions()
+    .filter((itemDef) => itemDef.enabled !== false && String(itemDef.sub_category || '').trim() === 'technique_book')
+    .map((itemDef) => String(itemDef.id || '').trim())
+    .filter((itemDefId): itemDefId is string => itemDefId.length > 0);
+
+  if (techniqueBookDefIds.length <= 0) {
+    console.log('  → 功法书可交易迁移跳过：未找到功法书定义');
+    return;
+  }
+
+  const result = await query(
+    `
+      UPDATE item_instance
+      SET bind_type = 'none',
+          bind_owner_user_id = NULL,
+          bind_owner_character_id = NULL,
+          updated_at = NOW()
+      WHERE item_def_id = ANY($1::varchar[])
+        AND bind_type <> 'none'
+    `,
+    [techniqueBookDefIds],
+  );
+
+  const updated = Number(result.rowCount || 0);
+  console.log(`  → 功法书可交易迁移完成：更新实例=${updated}`);
+};
+
 // ============================================
 // 初始化物品系统表
 // ============================================
@@ -289,6 +318,12 @@ export const initItemTables = async (): Promise<void> => {
       migrationKey: 'item_instance_affixes_modifiers_v1',
       description: '将装备词条实例统一迁移为支持modifiers复合结构',
       execute: migrateItemInstanceAffixesToModifiers,
+    });
+
+    await runDbMigrationOnce({
+      migrationKey: 'item_instance_technique_book_tradeable_v1',
+      description: '将历史功法书实例解绑为none以支持坊市交易',
+      execute: migrateTechniqueBookBindTypeForMarket,
     });
 
     await query("COMMENT ON COLUMN item_instance.identified IS '是否已鉴定';");
