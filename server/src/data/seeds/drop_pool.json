@@ -1236,6 +1236,67 @@
       ]
     },
     {
+      "id": "dp-caiyao-boss-fetus-beast-high",
+      "name": "胎元魇兽掉落池（高难）",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "mat-taiyuan-jingpo",
+          "chance": 1,
+          "qty_min": 5,
+          "qty_max": 9,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-jiutai-jinghua",
+          "chance": 1,
+          "qty_min": 4,
+          "qty_max": 7,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "mat-jietai-dan",
+          "chance": 0.7,
+          "qty_min": 1,
+          "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-pojun-weapon",
+          "chance": 0.12,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-cangyue-weapon",
+          "chance": 0.12,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-xuanjia-fanzhen-jue",
+          "chance": 0.12,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-jiuyu-fuling-yin",
+          "chance": 0.12,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "common_pool_ids": [
+        "dp-common-monster-global",
+        "dp-common-monster-caiyao",
+        "dp-common-monster-boss"
+      ]
+    },
+    {
       "id": "dp-jietai-xuanmu-puppet",
       "name": "玄木傀儡掉落池",
       "mode": "prob",
@@ -1361,20 +1422,6 @@
           "chance": 0.9,
           "qty_min": 1,
           "qty_max": 2,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "book-xuanjia-fanzhen-jue",
-          "chance": 0.12,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
-        },
-        {
-          "item_def_id": "book-jiuyu-fuling-yin",
-          "chance": 0.12,
-          "qty_min": 1,
-          "qty_max": 1,
           "show_in_ui": true
         },
         {
