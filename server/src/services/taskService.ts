@@ -17,6 +17,7 @@ import {
   getTaskDefinitionsByIds,
   getTaskDefinitionsByNpcIds,
 } from './taskDefinitionService.js';
+import { getCharacterIdByUserId as getCharacterIdByUserIdShared } from './shared/characterId.js';
 
 export type TaskCategory = 'main' | 'side' | 'daily' | 'event';
 
@@ -105,11 +106,7 @@ const rollRangeIntInclusive = (min: number, max: number): number => {
 };
 
 export const getCharacterIdByUserId = async (userId: number): Promise<number | null> => {
-  const uid = Number(userId);
-  if (!Number.isFinite(uid) || uid <= 0) return null;
-  const res = await query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1', [uid]);
-  const characterId = Number(res.rows?.[0]?.id);
-  return Number.isFinite(characterId) && characterId > 0 ? characterId : null;
+  return getCharacterIdByUserIdShared(userId);
 };
 
 const normalizeTaskCategory = (v: unknown): TaskCategory | null => {

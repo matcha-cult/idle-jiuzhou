@@ -13,6 +13,7 @@ import {
   getSpawnRuleDefinitions,
 } from './staticConfigLoader.js';
 import { getTaskDefinitionsByIds, getTaskDefinitionsByNpcIds } from './taskDefinitionService.js';
+import { getCharacterIdByUserId } from './shared/characterId.js';
 
 export type MapObjectDto =
   | {
@@ -228,14 +229,6 @@ const normalizeRoomMonsterIds = (room: MapRoom | null): string[] => {
     .map((m) => m?.monster_def_id)
     .filter((x): x is string => typeof x === 'string' && x.length > 0);
   return [...new Set(ids)];
-};
-
-const getCharacterIdByUserId = async (userId: number): Promise<number | null> => {
-  const uid = Number(userId);
-  if (!Number.isFinite(uid) || uid <= 0) return null;
-  const result = await query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1', [uid]);
-  const id = Number(result.rows?.[0]?.id);
-  return Number.isFinite(id) && id > 0 ? id : null;
 };
 
 type TaskMarker = '!' | '?';

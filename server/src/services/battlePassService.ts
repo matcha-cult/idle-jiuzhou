@@ -2,6 +2,7 @@ import { query, pool } from '../config/database.js';
 import { addItemToInventoryTx } from './inventoryService.js';
 import { lockCharacterInventoryMutexTx } from './inventoryMutex.js';
 import { getBattlePassStaticConfig } from './staticConfigLoader.js';
+import { getCharacterIdByUserId as getCharacterIdByUserIdShared } from './shared/characterId.js';
 
 export type BattlePassTaskDto = {
   id: string;
@@ -79,14 +80,7 @@ const getResolvedSeasonFromStaticConfig = (seasonId?: string, now: Date = new Da
 };
 
 export const getCharacterIdByUserId = async (userId: number): Promise<number | null> => {
-  try {
-    const res = await query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1', [userId]);
-    const characterId = Number(res.rows?.[0]?.id);
-    if (!Number.isFinite(characterId) || characterId <= 0) return null;
-    return characterId;
-  } catch {
-    return null;
-  }
+  return getCharacterIdByUserIdShared(userId);
 };
 
 export const getActiveBattlePassSeasonId = async (now: Date = new Date()): Promise<string | null> => {

@@ -1,5 +1,6 @@
-import { Router, type Request, type Response } from 'express';
-import { verifyToken } from '../services/authService.js';
+import { Router, Request, Response } from 'express';
+import { withRouteError } from '../middleware/routeError.js';
+import { requireAuth } from '../middleware/auth.js';
 import { getCharacterIdByUserId } from '../services/taskService.js';
 import {
   claimAchievement,
@@ -13,29 +14,10 @@ import { getGameServer } from '../game/GameServer.js';
 
 const router = Router();
 
-type AuthedRequest = Request & { userId: number };
 
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: '未登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { valid, decoded } = verifyToken(token);
-  if (!valid || !decoded) {
-    res.status(401).json({ success: false, message: '登录已过期' });
-    return;
-  }
-
-  (req as AuthedRequest).userId = decoded.id as number;
-  next();
-};
-
-router.get('/list', authMiddleware, async (req: Request, res: Response) => {
+router.get('/list', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -47,14 +29,13 @@ router.get('/list', authMiddleware, async (req: Request, res: Response) => {
     const data = await getAchievementList(characterId, { category, status, page, limit });
     return res.json({ success: true, message: 'ok', data });
   } catch (error) {
-    console.error('获取成就列表失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'achievementRoutes 路由异常', error);
   }
 });
 
-router.get('/:achievementId', authMiddleware, async (req: Request, res: Response) => {
+router.get('/:achievementId', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -64,14 +45,13 @@ router.get('/:achievementId', authMiddleware, async (req: Request, res: Response
 
     return res.json({ success: true, message: 'ok', data: { achievement, progress: achievement.progress } });
   } catch (error) {
-    console.error('获取成就详情失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'achievementRoutes 路由异常', error);
   }
 });
 
-router.post('/claim', authMiddleware, async (req: Request, res: Response) => {
+router.post('/claim', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -93,28 +73,26 @@ router.post('/claim', authMiddleware, async (req: Request, res: Response) => {
 
     return res.json(result);
   } catch (error) {
-    console.error('领取成就奖励失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'achievementRoutes 路由异常', error);
   }
 });
 
-router.get('/points/rewards', authMiddleware, async (req: Request, res: Response) => {
+router.get('/points/rewards', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
     const data = await getAchievementPointsRewards(characterId);
     return res.json({ success: true, message: 'ok', data });
   } catch (error) {
-    console.error('获取成就点奖励失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'achievementRoutes 路由异常', error);
   }
 });
 
-router.post('/points/claim', authMiddleware, async (req: Request, res: Response) => {
+router.post('/points/claim', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -140,8 +118,7 @@ router.post('/points/claim', authMiddleware, async (req: Request, res: Response)
 
     return res.json(result);
   } catch (error) {
-    console.error('领取成就点奖励失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'achievementRoutes 路由异常', error);
   }
 });
 

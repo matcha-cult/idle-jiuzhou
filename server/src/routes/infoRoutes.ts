@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { withRouteError } from '../middleware/routeError.js';
 import { getInfoTargetDetail } from '../services/infoModalService.js';
 
 const router = Router();
@@ -27,8 +28,7 @@ router.get('/:type/:id', async (req: Request, res: Response) => {
 
     res.json({ success: true, data: { target } });
   } catch (error) {
-    console.error('获取对象详情失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'infoRoutes 路由异常', error);
   }
 });
 

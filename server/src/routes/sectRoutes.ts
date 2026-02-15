@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { verifyToken } from '../services/authService.js';
+import { withRouteError } from '../middleware/routeError.js';
+import { requireAuth } from '../middleware/auth.js';
 import {
   acceptSectQuest,
   applyToSect,
@@ -28,36 +29,12 @@ import {
   updateSectAnnouncement,
   upgradeBuilding,
 } from '../services/sectService.js';
-import { query } from '../config/database.js';
+import { getCharacterIdByUserId } from '../services/shared/characterId.js';
 import { getGameServer } from '../game/GameServer.js';
 
 const router = Router();
 
-type AuthedRequest = Request & { userId: number };
 
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: '未登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { valid, decoded } = verifyToken(token);
-
-  if (!valid || !decoded) {
-    res.status(401).json({ success: false, message: '登录已过期' });
-    return;
-  }
-
-  (req as AuthedRequest).userId = decoded.id;
-  next();
-};
-
-const getCharacterId = async (userId: number): Promise<number | null> => {
-  const result = await query('SELECT id FROM characters WHERE user_id = $1', [userId]);
-  return result.rows.length > 0 ? Number(result.rows[0].id) : null;
-};
 
 const parseBodyNumber = (v: unknown): number | undefined => {
   if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
@@ -68,18 +45,17 @@ const parseBodyNumber = (v: unknown): number | undefined => {
   return undefined;
 };
 
-router.use(authMiddleware);
+router.use(requireAuth);
 
 router.get('/me', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const result = await getCharacterSect(characterId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('获取我的宗门接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
@@ -91,15 +67,14 @@ router.get('/search', async (req: Request, res: Response) => {
     const result = await searchSects(keyword, page, limit);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('搜索宗门接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/create', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
     const body = req.body as { name?: unknown; description?: unknown };
@@ -118,15 +93,14 @@ router.post('/create', async (req: Request, res: Response) => {
     }
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('创建宗门接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/apply', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { sectId?: unknown; message?: unknown };
     const sectId = typeof body?.sectId === 'string' ? body.sectId : '';
@@ -140,41 +114,38 @@ router.post('/apply', async (req: Request, res: Response) => {
     }
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('申请加入接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.get('/applications/list', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const result = await listApplications(characterId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('申请列表接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.get('/applications/mine', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const result = await listMyApplications(characterId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('我的申请列表接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/applications/handle', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { applicationId?: unknown; approve?: unknown };
     const applicationId = parseBodyNumber(body?.applicationId);
@@ -189,15 +160,14 @@ router.post('/applications/handle', async (req: Request, res: Response) => {
     }
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('处理申请接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/applications/cancel', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { applicationId?: unknown };
     const applicationId = parseBodyNumber(body?.applicationId);
@@ -205,15 +175,14 @@ router.post('/applications/cancel', async (req: Request, res: Response) => {
     const result = await cancelMyApplication(characterId, applicationId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('取消申请接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/leave', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const result = await leaveSect(characterId);
     if (result.success) {
@@ -224,15 +193,14 @@ router.post('/leave', async (req: Request, res: Response) => {
     }
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('退出宗门接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/kick', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { targetId?: unknown };
     const targetId = parseBodyNumber(body?.targetId);
@@ -246,15 +214,14 @@ router.post('/kick', async (req: Request, res: Response) => {
     }
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('踢人接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/appoint', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { targetId?: unknown; position?: unknown };
     const targetId = parseBodyNumber(body?.targetId);
@@ -263,15 +230,14 @@ router.post('/appoint', async (req: Request, res: Response) => {
     const result = await appointPosition(characterId, targetId, position);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('任命接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/transfer', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { newLeaderId?: unknown };
     const newLeaderId = parseBodyNumber(body?.newLeaderId);
@@ -279,28 +245,26 @@ router.post('/transfer', async (req: Request, res: Response) => {
     const result = await transferLeader(characterId, newLeaderId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('转让宗主接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/disband', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const result = await disbandSect(characterId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('解散宗门接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/announcement/update', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { announcement?: unknown };
     const announcement = typeof body?.announcement === 'string' ? body.announcement : '';
@@ -313,15 +277,14 @@ router.post('/announcement/update', async (req: Request, res: Response) => {
     }
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('更新宗门公告接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/donate', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { spiritStones?: unknown };
     const result = await donate(characterId, parseBodyNumber(body?.spiritStones));
@@ -333,28 +296,26 @@ router.post('/donate', async (req: Request, res: Response) => {
     }
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('捐献接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.get('/buildings/list', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const result = await getBuildings(characterId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('建筑列表接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/buildings/upgrade', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { buildingType?: unknown };
     const buildingType = typeof body?.buildingType === 'string' ? body.buildingType.trim() : '';
@@ -365,41 +326,38 @@ router.post('/buildings/upgrade', async (req: Request, res: Response) => {
     const result = await upgradeBuilding(characterId, buildingType);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('升级建筑接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.get('/bonuses', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const result = await getSectBonuses(characterId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('福利接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.get('/quests', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const result = await getSectQuests(characterId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('任务列表接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/quests/accept', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { questId?: unknown };
     const questId = typeof body?.questId === 'string' ? body.questId : '';
@@ -407,15 +365,14 @@ router.post('/quests/accept', async (req: Request, res: Response) => {
     const result = await acceptSectQuest(characterId, questId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('接取任务接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/quests/claim', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { questId?: unknown };
     const questId = typeof body?.questId === 'string' ? body.questId : '';
@@ -429,15 +386,14 @@ router.post('/quests/claim', async (req: Request, res: Response) => {
     }
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('领取任务奖励接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/quests/submit', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { questId?: unknown; quantity?: unknown };
     const questId = typeof body?.questId === 'string' ? body.questId : '';
@@ -452,28 +408,26 @@ router.post('/quests/submit', async (req: Request, res: Response) => {
     }
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('提交任务物品接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.get('/shop', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const result = await getSectShop(characterId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('商店接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.post('/shop/buy', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const body = req.body as { itemId?: unknown; quantity?: unknown };
     const itemId = typeof body?.itemId === 'string' ? body.itemId : '';
@@ -488,22 +442,20 @@ router.post('/shop/buy', async (req: Request, res: Response) => {
     }
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('商店购买接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
 router.get('/logs', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
     const result = await getSectLogs(characterId, limit);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('宗门日志接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 
@@ -515,8 +467,7 @@ router.get('/:sectId', async (req: Request, res: Response) => {
     const result = await getSectInfo(sectId);
     return res.status(result.success ? 200 : 404).json(result);
   } catch (error) {
-    console.error('获取宗门信息接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'sectRoutes 路由异常', error);
   }
 });
 

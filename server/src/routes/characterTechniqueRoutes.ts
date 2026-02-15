@@ -1,8 +1,10 @@
+import { Router, Request, Response } from 'express';
+import { withRouteError } from '../middleware/routeError.js';
 /**
  * 九州修仙录 - 角色功法路由
  * 提供功法学习、修炼、装备、技能配置等API
  */
-import { Router, Request, Response } from 'express';
+import { requireAuth } from '../middleware/auth.js';
 import {
   getCharacterTechniques,
   getEquippedTechniques,
@@ -18,7 +20,6 @@ import {
   calculateTechniquePassives,
   getCharacterTechniqueStatus
 } from '../services/characterTechniqueService.js';
-import { verifyToken } from '../services/authService.js';
 import { query } from '../config/database.js';
 import { getGameServer } from '../game/GameServer.js';
 
@@ -35,24 +36,6 @@ const getStringParam = (param: string | string[] | undefined): string => {
   return param || '';
 };
 
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: '未登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { valid, decoded } = verifyToken(token);
-
-  if (!valid || !decoded) {
-    res.status(401).json({ success: false, message: '登录已过期' });
-    return;
-  }
-
-  (req as AuthRequest).userId = decoded.id;
-  next();
-};
 
 const characterOwnershipMiddleware = async (req: Request, res: Response, next: () => void) => {
   const characterId = parseInt(getStringParam(req.params.characterId));
@@ -61,9 +44,9 @@ const characterOwnershipMiddleware = async (req: Request, res: Response, next: (
     return;
   }
 
-  const userId = (req as AuthRequest).userId;
+  const userId = req.userId!;
   if (!userId) {
-    res.status(401).json({ success: false, message: '未登录' });
+    res.status(401).json({ success: false, message: '登录状态无效，请重新登录' });
     return;
   }
 
@@ -76,7 +59,7 @@ const characterOwnershipMiddleware = async (req: Request, res: Response, next: (
   next();
 };
 
-router.use('/:characterId', authMiddleware, characterOwnershipMiddleware);
+router.use('/:characterId', requireAuth, characterOwnershipMiddleware);
 
 
 // ============================================
@@ -94,8 +77,7 @@ router.get('/:characterId/technique/status', async (req: Request, res: Response)
     const result = await getCharacterTechniqueStatus(characterId);
     res.json(result);
   } catch (error) {
-    console.error('获取功法状态失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -114,8 +96,7 @@ router.get('/:characterId/techniques', async (req: Request, res: Response) => {
     const result = await getCharacterTechniques(characterId);
     res.json(result);
   } catch (error) {
-    console.error('获取功法列表失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -134,8 +115,7 @@ router.get('/:characterId/techniques/equipped', async (req: Request, res: Respon
     const result = await getEquippedTechniques(characterId);
     res.json(result);
   } catch (error) {
-    console.error('获取装备功法失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -161,7 +141,7 @@ router.post('/:characterId/technique/learn', async (req: AuthRequest, res: Respo
 
     if (result.success) {
       try {
-        const userId = req.userId;
+        const userId = req.userId!;
         if (userId && Number.isFinite(userId)) {
           const gameServer = getGameServer();
           await gameServer.pushCharacterUpdate(userId);
@@ -173,8 +153,7 @@ router.post('/:characterId/technique/learn', async (req: AuthRequest, res: Respo
 
     res.json(result);
   } catch (error) {
-    console.error('学习功法失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -195,8 +174,7 @@ router.get('/:characterId/technique/:techniqueId/upgrade-cost', async (req: Requ
     const result = await getTechniqueUpgradeCost(characterId, techniqueId);
     res.json(result);
   } catch (error) {
-    console.error('获取升级消耗失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -215,9 +193,9 @@ router.post('/:characterId/technique/:techniqueId/upgrade', async (req: AuthRequ
       return;
     }
     
-    const userId = req.userId || 0;
+    const userId = req.userId! || 0;
     if (!userId) {
-      res.status(401).json({ success: false, message: '未登录' });
+      res.status(401).json({ success: false, message: '登录状态无效，请重新登录' });
       return;
     }
     const result = await upgradeTechnique(characterId, techniqueId);
@@ -233,8 +211,7 @@ router.post('/:characterId/technique/:techniqueId/upgrade', async (req: AuthRequ
 
     res.json(result);
   } catch (error) {
-    console.error('修炼功法失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -265,7 +242,7 @@ router.post('/:characterId/technique/equip', async (req: AuthRequest, res: Respo
 
     if (result.success) {
       try {
-        const userId = req.userId;
+        const userId = req.userId!;
         if (userId && Number.isFinite(userId)) {
           const gameServer = getGameServer();
           await gameServer.pushCharacterUpdate(userId);
@@ -277,8 +254,7 @@ router.post('/:characterId/technique/equip', async (req: AuthRequest, res: Respo
 
     res.json(result);
   } catch (error) {
-    console.error('装备功法失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -304,7 +280,7 @@ router.post('/:characterId/technique/unequip', async (req: AuthRequest, res: Res
 
     if (result.success) {
       try {
-        const userId = req.userId;
+        const userId = req.userId!;
         if (userId && Number.isFinite(userId)) {
           const gameServer = getGameServer();
           await gameServer.pushCharacterUpdate(userId);
@@ -316,8 +292,7 @@ router.post('/:characterId/technique/unequip', async (req: AuthRequest, res: Res
 
     res.json(result);
   } catch (error) {
-    console.error('卸下功法失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -336,8 +311,7 @@ router.get('/:characterId/skills/available', async (req: Request, res: Response)
     const result = await getAvailableSkills(characterId);
     res.json(result);
   } catch (error) {
-    console.error('获取可用技能失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -356,8 +330,7 @@ router.get('/:characterId/skills/equipped', async (req: Request, res: Response) 
     const result = await getEquippedSkills(characterId);
     res.json(result);
   } catch (error) {
-    console.error('获取技能槽失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -384,8 +357,7 @@ router.post('/:characterId/skill/equip', async (req: Request, res: Response) => 
     const result = await equipSkill(characterId, skillId, slotIndex);
     res.json(result);
   } catch (error) {
-    console.error('装备技能失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -411,8 +383,7 @@ router.post('/:characterId/skill/unequip', async (req: Request, res: Response) =
     const result = await unequipSkill(characterId, slotIndex);
     res.json(result);
   } catch (error) {
-    console.error('卸下技能失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 
@@ -431,8 +402,7 @@ router.get('/:characterId/technique/passives', async (req: Request, res: Respons
     const result = await calculateTechniquePassives(characterId);
     res.json(result);
   } catch (error) {
-    console.error('获取功法被动失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterTechniqueRoutes 路由异常', error);
   }
 });
 

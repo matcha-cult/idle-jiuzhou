@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import { withRouteError } from '../middleware/routeError.js';
+import { requireAuth } from '../middleware/auth.js';
 import {
   checkCharacter,
   createCharacter,
@@ -7,47 +9,25 @@ import {
   updateCharacterAutoDisassembleSettings,
   updateCharacterPosition,
 } from '../services/characterService.js';
-import { verifyToken } from '../services/authService.js';
 import { getGameServer } from '../game/GameServer.js';
 
 const router = Router();
 
-// 验证token中间件
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: '未登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { valid, decoded } = verifyToken(token);
-  
-  if (!valid || !decoded) {
-    res.status(401).json({ success: false, message: '登录已过期' });
-    return;
-  }
-
-  (req as Request & { userId: number }).userId = decoded.id;
-  next();
-};
-
 // 检查是否有角色
-router.get('/check', authMiddleware, async (req: Request, res: Response) => {
+router.get('/check', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as Request & { userId: number }).userId;
+    const userId = req.userId!;
     const result = await checkCharacter(userId);
     res.json(result);
   } catch (error) {
-    console.error('检查角色接口错误:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterRoutes 路由异常', error);
   }
 });
 
 // 创建角色
-router.post('/create', authMiddleware, async (req: Request, res: Response) => {
+router.post('/create', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as Request & { userId: number }).userId;
+    const userId = req.userId!;
     const { nickname, gender } = req.body;
 
     // 参数验证
@@ -69,27 +49,25 @@ router.post('/create', authMiddleware, async (req: Request, res: Response) => {
     const result = await createCharacter(userId, nickname, gender);
     res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('创建角色接口错误:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterRoutes 路由异常', error);
   }
 });
 
 // 获取角色信息
-router.get('/info', authMiddleware, async (req: Request, res: Response) => {
+router.get('/info', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as Request & { userId: number }).userId;
+    const userId = req.userId!;
     const result = await getCharacter(userId);
     res.json(result);
   } catch (error) {
-    console.error('获取角色接口错误:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterRoutes 路由异常', error);
   }
 });
 
 // 更新玩家位置
-router.post('/updatePosition', authMiddleware, async (req: Request, res: Response) => {
+router.post('/updatePosition', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as Request & { userId: number }).userId;
+    const userId = req.userId!;
     const { currentMapId, currentRoomId } = req.body as { currentMapId?: string; currentRoomId?: string };
 
     const result = await updateCharacterPosition(userId, currentMapId ?? '', currentRoomId ?? '');
@@ -105,14 +83,13 @@ router.post('/updatePosition', authMiddleware, async (req: Request, res: Respons
 
     res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('更新位置接口错误:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterRoutes 路由异常', error);
   }
 });
 
-router.post('/updateAutoCastSkills', authMiddleware, async (req: Request, res: Response) => {
+router.post('/updateAutoCastSkills', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as Request & { userId: number }).userId;
+    const userId = req.userId!;
     const enabled = Boolean((req.body as { enabled?: unknown })?.enabled);
 
     const result = await updateCharacterAutoCastSkills(userId, enabled);
@@ -128,14 +105,13 @@ router.post('/updateAutoCastSkills', authMiddleware, async (req: Request, res: R
 
     res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('更新自动释放技能开关接口错误:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterRoutes 路由异常', error);
   }
 });
 
-router.post('/updateAutoDisassemble', authMiddleware, async (req: Request, res: Response) => {
+router.post('/updateAutoDisassemble', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as Request & { userId: number }).userId;
+    const userId = req.userId!;
     const body = req.body as { enabled?: unknown; maxQualityRank?: unknown; rules?: unknown };
 
     const enabled = Boolean(body?.enabled);
@@ -171,8 +147,7 @@ router.post('/updateAutoDisassemble', authMiddleware, async (req: Request, res: 
 
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('更新自动分解设置接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'characterRoutes 路由异常', error);
   }
 });
 

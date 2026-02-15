@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { getBountyDefinitions, getItemDefinitions, getItemDefinitionsByIds } from './staticConfigLoader.js';
 import { getTaskDefinitionById } from './taskDefinitionService.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
+import { rollbackAndReturn, safeRollback } from './shared/transaction.js';
 
 export type BountySourceType = 'daily' | 'player';
 export type BountyClaimPolicy = 'unique' | 'limited' | 'unlimited';
@@ -183,9 +184,7 @@ export const ensureDailyBountyInstances = async (desiredCount: number = 6): Prom
 
     await client.query('COMMIT');
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {}
+    await safeRollback(client);
     throw error;
   } finally {
     client.release();
@@ -396,9 +395,7 @@ export const claimBounty = async (
     await client.query('COMMIT');
     return { success: true, message: '接取成功', data: { bountyInstanceId: bid, taskId } };
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {}
+    await safeRollback(client);
     console.error('接取悬赏失败:', error);
     return { success: false, message: '接取悬赏失败' };
   } finally {
@@ -592,16 +589,13 @@ export const publishBounty = async (
     );
     const id = asFiniteInt(res.rows?.[0]?.id, 0);
     if (!id) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '发布失败' };
+      return rollbackAndReturn(client, { success: false, message: '发布失败' });
     }
 
     await client.query('COMMIT');
     return { success: true, message: '发布成功', data: { bountyInstanceId: id } };
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {}
+    await safeRollback(client);
     console.error('发布悬赏失败:', error);
     return { success: false, message: '服务器错误' };
   } finally {
@@ -776,9 +770,7 @@ export const submitBountyMaterials = async (
     await client.query('COMMIT');
     return { success: true, message: '提交成功', data: { taskId: tid } };
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {}
+    await safeRollback(client);
     console.error('提交悬赏材料失败:', error);
     return { success: false, message: '服务器错误' };
   } finally {

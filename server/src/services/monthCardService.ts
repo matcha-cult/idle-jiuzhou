@@ -1,6 +1,7 @@
 import { pool, query } from '../config/database.js';
 import { updateAchievementProgress } from './achievementService.js';
 import { getMonthCardDefinitions } from './staticConfigLoader.js';
+import { rollbackAndReturn, safeRollback } from './shared/transaction.js';
 
 export type MonthCardStatusResult = {
   success: boolean;
@@ -149,8 +150,7 @@ export const useMonthCardItem = async (
 
     const charRes = await client.query(`SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE`, [userId]);
     if (charRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '角色不存在' };
+      return rollbackAndReturn(client, { success: false, message: '角色不存在' });
     }
     const characterId = Number(charRes.rows[0].id);
 
@@ -194,8 +194,7 @@ export const useMonthCardItem = async (
     }
 
     if (!itemInstanceRow || !Number.isFinite(itemInstanceRow.qty) || itemInstanceRow.qty <= 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '背包中没有可用的月卡道具' };
+      return rollbackAndReturn(client, { success: false, message: '背包中没有可用的月卡道具' });
     }
 
     if (itemInstanceRow.qty === 1) {
@@ -264,9 +263,7 @@ export const useMonthCardItem = async (
       },
     };
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {}
+    await safeRollback(client);
     console.error('使用月卡道具失败:', error);
     return { success: false, message: '使用月卡道具失败' };
   } finally {
@@ -288,14 +285,12 @@ export const buyMonthCard = async (userId: number, monthCardId: string): Promise
 
     const charRes = await client.query(`SELECT id, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE`, [userId]);
     if (charRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '角色不存在' };
+      return rollbackAndReturn(client, { success: false, message: '角色不存在' });
     }
     const characterId = Number(charRes.rows[0].id);
     const curStones = BigInt(charRes.rows[0]?.spirit_stones ?? 0);
     if (priceSpiritStones > 0n && curStones < priceSpiritStones) {
-      await client.query('ROLLBACK');
-      return { success: false, message: `灵石不足，需要${priceSpiritStones.toString()}` };
+      return rollbackAndReturn(client, { success: false, message: `灵石不足，需要${priceSpiritStones.toString()}` });
     }
 
     let nextStones = curStones;
@@ -356,9 +351,7 @@ export const buyMonthCard = async (userId: number, monthCardId: string): Promise
       },
     };
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {}
+    await safeRollback(client);
     console.error('购买月卡失败:', error);
     return { success: false, message: '购买月卡失败' };
   } finally {
@@ -378,8 +371,7 @@ export const claimMonthCardReward = async (userId: number, monthCardId: string):
 
     const charRes = await client.query(`SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE`, [userId]);
     if (charRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '角色不存在' };
+      return rollbackAndReturn(client, { success: false, message: '角色不存在' });
     }
     const characterId = Number(charRes.rows[0].id);
 
@@ -396,22 +388,19 @@ export const claimMonthCardReward = async (userId: number, monthCardId: string):
       [characterId, monthCardId],
     );
     if (ownRes.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '未激活月卡' };
+      return rollbackAndReturn(client, { success: false, message: '未激活月卡' });
     }
 
     const now = new Date();
     const todayKey = buildDateKey(now);
     const expireAt = ownRes.rows[0]?.expire_at ? new Date(ownRes.rows[0].expire_at) : null;
     if (!expireAt || expireAt.getTime() <= now.getTime()) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '月卡已到期' };
+      return rollbackAndReturn(client, { success: false, message: '月卡已到期' });
     }
 
     const lastClaimDateKey = normalizeDateKey(ownRes.rows[0]?.last_claim_date);
     if (lastClaimDateKey === todayKey) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '今日已领取' };
+      return rollbackAndReturn(client, { success: false, message: '今日已领取' });
     }
 
     await client.query(
@@ -446,13 +435,10 @@ export const claimMonthCardReward = async (userId: number, monthCardId: string):
       },
     };
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {}
+    await safeRollback(client);
     console.error('领取月卡奖励失败:', error);
     return { success: false, message: '领取月卡奖励失败' };
   } finally {
     client.release();
   }
 };
-

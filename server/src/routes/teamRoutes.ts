@@ -2,6 +2,7 @@
  * 九州修仙录 - 组队系统路由
  */
 import { Router, Request, Response } from 'express';
+import { withRouteError } from '../middleware/routeError.js';
 import {
   getCharacterTeam,
   createTeam,
@@ -33,8 +34,7 @@ router.get('/my', async (req: Request, res: Response) => {
     const result = await getCharacterTeam(characterId);
     res.json(result);
   } catch (error) {
-    console.error('获取队伍失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -45,8 +45,7 @@ router.get('/:teamId', async (req: Request, res: Response) => {
     const result = await getTeamById(teamId);
     res.json(result);
   } catch (error) {
-    console.error('获取队伍详情失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -61,8 +60,7 @@ router.post('/create', async (req: Request, res: Response) => {
     const result = await createTeam(characterId, name, goal);
     res.json(result);
   } catch (error) {
-    console.error('创建队伍失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -76,8 +74,7 @@ router.post('/disband', async (req: Request, res: Response) => {
     const result = await disbandTeam(characterId, teamId);
     res.json(result);
   } catch (error) {
-    console.error('解散队伍失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -91,8 +88,7 @@ router.post('/leave', async (req: Request, res: Response) => {
     const result = await leaveTeam(characterId);
     res.json(result);
   } catch (error) {
-    console.error('离开队伍失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -106,8 +102,7 @@ router.post('/apply', async (req: Request, res: Response) => {
     const result = await applyToTeam(characterId, teamId, message);
     res.json(result);
   } catch (error) {
-    console.error('申请加入队伍失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -122,8 +117,7 @@ router.get('/applications/:teamId', async (req: Request, res: Response) => {
     const result = await getTeamApplications(teamId, characterId);
     res.json(result);
   } catch (error) {
-    console.error('获取申请列表失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -137,8 +131,7 @@ router.post('/application/handle', async (req: Request, res: Response) => {
     const result = await handleApplication(characterId, applicationId, approve);
     res.json(result);
   } catch (error) {
-    console.error('处理申请失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -152,8 +145,7 @@ router.post('/kick', async (req: Request, res: Response) => {
     const result = await kickMember(leaderId, targetCharacterId);
     res.json(result);
   } catch (error) {
-    console.error('踢出成员失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -167,8 +159,7 @@ router.post('/transfer', async (req: Request, res: Response) => {
     const result = await transferLeader(currentLeaderId, newLeaderId);
     res.json(result);
   } catch (error) {
-    console.error('转让队长失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -182,8 +173,7 @@ router.post('/settings', async (req: Request, res: Response) => {
     const result = await updateTeamSettings(characterId, teamId, settings);
     res.json(result);
   } catch (error) {
-    console.error('更新设置失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -198,8 +188,7 @@ router.get('/nearby/list', async (req: Request, res: Response) => {
     const result = await getNearbyTeams(characterId, mapId);
     res.json(result);
   } catch (error) {
-    console.error('获取附近队伍失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -215,8 +204,7 @@ router.get('/lobby/list', async (req: Request, res: Response) => {
     const result = await getLobbyTeams(characterId, search, limit);
     res.json(result);
   } catch (error) {
-    console.error('获取队伍大厅失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -230,8 +218,7 @@ router.post('/invite', async (req: Request, res: Response) => {
     const result = await inviteToTeam(inviterId, inviteeId, message);
     res.json(result);
   } catch (error) {
-    console.error('邀请入队失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -245,8 +232,7 @@ router.get('/invitations/received', async (req: Request, res: Response) => {
     const result = await getReceivedInvitations(characterId);
     res.json(result);
   } catch (error) {
-    console.error('获取邀请列表失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 
@@ -260,8 +246,7 @@ router.post('/invitation/handle', async (req: Request, res: Response) => {
     const result = await handleInvitation(characterId, invitationId, accept);
     res.json(result);
   } catch (error) {
-    console.error('处理邀请失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'teamRoutes 路由异常', error);
   }
 });
 

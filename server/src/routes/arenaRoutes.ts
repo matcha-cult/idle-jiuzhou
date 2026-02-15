@@ -1,86 +1,56 @@
 import { Router, Request, Response } from 'express';
+import { withRouteError } from '../middleware/routeError.js';
+import { requireAuth } from '../middleware/auth.js';
 import { query } from '../config/database.js';
-import { verifyToken } from '../services/authService.js';
+import { getCharacterIdByUserId } from '../services/shared/characterId.js';
 import { canChallengeToday, getArenaOpponents, getArenaRecords, getArenaStatus } from '../services/arenaService.js';
 import { startPVPBattle } from '../services/battleService.js';
 
 const router = Router();
 
-type AuthedRequest = Request & { userId: number };
-
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: '未登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { valid, decoded } = verifyToken(token);
-
-  if (!valid || !decoded) {
-    res.status(401).json({ success: false, message: '登录已过期' });
-    return;
-  }
-
-  (req as AuthedRequest).userId = decoded.id;
-  next();
-};
-
-const getCharacterIdByUserId = async (userId: number): Promise<number | null> => {
-  const uid = Number(userId);
-  if (!Number.isFinite(uid) || uid <= 0) return null;
-  const res = await query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1', [uid]);
-  const characterId = Number(res.rows?.[0]?.id);
-  return Number.isFinite(characterId) && characterId > 0 ? characterId : null;
-};
-
-router.use(authMiddleware);
+router.use(requireAuth);
 
 router.get('/status', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const result = await getArenaStatus(characterId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('获取竞技场状态接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'arenaRoutes 路由异常', error);
   }
 });
 
 router.get('/opponents', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
     const result = await getArenaOpponents(characterId, Number.isFinite(limit as number) ? (limit as number) : 10);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('获取竞技场对手接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'arenaRoutes 路由异常', error);
   }
 });
 
 router.get('/records', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
     const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
     const result = await getArenaRecords(characterId, Number.isFinite(limit as number) ? (limit as number) : 50);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('获取竞技场战报接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'arenaRoutes 路由异常', error);
   }
 });
 
 router.post('/challenge', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -117,14 +87,13 @@ router.post('/challenge', async (req: Request, res: Response) => {
 
     return res.json({ success: true, message: 'ok', data: { battleId } });
   } catch (error) {
-    console.error('发起竞技场挑战接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'arenaRoutes 路由异常', error);
   }
 });
 
 router.post('/match', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -163,10 +132,8 @@ router.post('/match', async (req: Request, res: Response) => {
       data: { battleId, opponent: { id: pick.id, name: pick.name, realm: pick.realm, power: pick.power, score: pick.score } },
     });
   } catch (error) {
-    console.error('竞技场匹配接口错误:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'arenaRoutes 路由异常', error);
   }
 });
 
 export default router;
-

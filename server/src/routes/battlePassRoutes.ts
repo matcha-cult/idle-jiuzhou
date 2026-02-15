@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { verifyToken } from '../services/authService.js';
+import { withRouteError } from '../middleware/routeError.js';
+import { requireAuth } from '../middleware/auth.js';
 import {
   getBattlePassTasksOverview,
   getBattlePassStatus,
@@ -11,42 +12,21 @@ import { getGameServer } from '../game/GameServer.js';
 
 const router = Router();
 
-type AuthedRequest = Request & { userId: number };
 
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: '未登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { valid, decoded } = verifyToken(token);
-
-  if (!valid || !decoded) {
-    res.status(401).json({ success: false, message: '登录已过期' });
-    return;
-  }
-
-  (req as AuthedRequest).userId = decoded.id as number;
-  next();
-};
-
-router.get('/tasks', authMiddleware, async (req: Request, res: Response) => {
+router.get('/tasks', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const seasonId = typeof req.query.seasonId === 'string' ? req.query.seasonId : undefined;
     const data = await getBattlePassTasksOverview(userId, seasonId);
     return res.json({ success: true, message: 'ok', data });
   } catch (error) {
-    console.error('获取战令任务失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'battlePassRoutes 路由异常', error);
   }
 });
 
-router.post('/tasks/:taskId/complete', authMiddleware, async (req: Request, res: Response) => {
+router.post('/tasks/:taskId/complete', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const taskId = typeof req.params.taskId === 'string' ? req.params.taskId : '';
     if (!taskId.trim()) {
       return res.status(400).json({ success: false, message: '任务ID无效' });
@@ -57,37 +37,34 @@ router.post('/tasks/:taskId/complete', authMiddleware, async (req: Request, res:
     }
     return res.json(result);
   } catch (error) {
-    console.error('完成战令任务失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'battlePassRoutes 路由异常', error);
   }
 });
 
-router.get('/status', authMiddleware, async (req: Request, res: Response) => {
+router.get('/status', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const data = await getBattlePassStatus(userId);
     if (!data) return res.status(404).json({ success: false, message: '战令数据不存在' });
     return res.json({ success: true, message: 'ok', data });
   } catch (error) {
-    console.error('获取战令状态失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'battlePassRoutes 路由异常', error);
   }
 });
 
-router.get('/rewards', authMiddleware, async (req: Request, res: Response) => {
+router.get('/rewards', requireAuth, async (req: Request, res: Response) => {
   try {
     const seasonId = typeof req.query.seasonId === 'string' ? req.query.seasonId : undefined;
     const data = await getBattlePassRewards(seasonId);
     return res.json({ success: true, message: 'ok', data });
   } catch (error) {
-    console.error('获取战令奖励失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'battlePassRoutes 路由异常', error);
   }
 });
 
-router.post('/claim', authMiddleware, async (req: Request, res: Response) => {
+router.post('/claim', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const { level, track } = req.body as { level?: number; track?: 'free' | 'premium' };
     if (typeof level !== 'number' || !Number.isInteger(level) || level < 1) {
       return res.status(400).json({ success: false, message: '等级参数无效' });
@@ -105,8 +82,7 @@ router.post('/claim', authMiddleware, async (req: Request, res: Response) => {
     } catch {}
     return res.json(result);
   } catch (error) {
-    console.error('领取战令奖励失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'battlePassRoutes 路由异常', error);
   }
 });
 

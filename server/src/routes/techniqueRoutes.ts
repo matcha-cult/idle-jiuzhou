@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { withRouteError } from '../middleware/routeError.js';
 import { getEnabledTechniqueDefs, getTechniqueDetailById } from '../services/techniqueService.js';
 
 const router = Router();
@@ -8,8 +9,7 @@ router.get('/', async (_req: Request, res: Response) => {
     const techniques = await getEnabledTechniqueDefs();
     res.json({ success: true, data: { techniques } });
   } catch (error) {
-    console.error('获取功法列表失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'techniqueRoutes 路由异常', error);
   }
 });
 
@@ -24,8 +24,7 @@ router.get('/:techniqueId', async (req: Request, res: Response) => {
     }
     res.json({ success: true, data: detail });
   } catch (error) {
-    console.error('获取功法详情失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'techniqueRoutes 路由异常', error);
   }
 });
 

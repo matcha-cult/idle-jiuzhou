@@ -1,37 +1,18 @@
+import { Router, Request, Response } from 'express';
 /**
  * 属性加点路由
  */
-import { Router, Request, Response } from 'express';
+import { withRouteError } from '../middleware/routeError.js';
+import { requireAuth } from '../middleware/auth.js';
 import { addAttributePoint, removeAttributePoint, batchAddPoints, resetAttributePoints } from '../services/attributeService.js';
-import { verifyToken } from '../services/authService.js';
 import { getGameServer } from '../game/GameServer.js';
 
 const router = Router();
 
-// 验证token中间件
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: '未登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { valid, decoded } = verifyToken(token);
-
-  if (!valid || !decoded) {
-    res.status(401).json({ success: false, message: '登录已过期' });
-    return;
-  }
-
-  (req as Request & { userId: number }).userId = decoded.id;
-  next();
-};
-
 // 单属性加点
-router.post('/add', authMiddleware, async (req: Request, res: Response) => {
+router.post('/add', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as Request & { userId: number }).userId;
+    const userId = req.userId!;
     const { attribute, amount = 1 } = req.body;
 
     if (!attribute) {
@@ -53,15 +34,14 @@ router.post('/add', authMiddleware, async (req: Request, res: Response) => {
 
     res.json(result);
   } catch (error) {
-    console.error('加点接口错误:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'attributeRoutes 路由异常', error);
   }
 });
 
 // 单属性减点
-router.post('/remove', authMiddleware, async (req: Request, res: Response) => {
+router.post('/remove', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as Request & { userId: number }).userId;
+    const userId = req.userId!;
     const { attribute, amount = 1 } = req.body;
 
     if (!attribute) {
@@ -83,15 +63,14 @@ router.post('/remove', authMiddleware, async (req: Request, res: Response) => {
 
     res.json(result);
   } catch (error) {
-    console.error('减点接口错误:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'attributeRoutes 路由异常', error);
   }
 });
 
 // 批量加点
-router.post('/batch', authMiddleware, async (req: Request, res: Response) => {
+router.post('/batch', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as Request & { userId: number }).userId;
+    const userId = req.userId!;
     const { jing, qi, shen } = req.body;
 
     const result = await batchAddPoints(userId, { jing, qi, shen });
@@ -107,15 +86,14 @@ router.post('/batch', authMiddleware, async (req: Request, res: Response) => {
 
     res.json(result);
   } catch (error) {
-    console.error('批量加点接口错误:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'attributeRoutes 路由异常', error);
   }
 });
 
 // 重置属性点
-router.post('/reset', authMiddleware, async (req: Request, res: Response) => {
+router.post('/reset', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as Request & { userId: number }).userId;
+    const userId = req.userId!;
     const result = await resetAttributePoints(userId);
 
     if (result.success) {
@@ -129,8 +107,7 @@ router.post('/reset', authMiddleware, async (req: Request, res: Response) => {
 
     res.json(result);
   } catch (error) {
-    console.error('重置属性点接口错误:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'attributeRoutes 路由异常', error);
   }
 });
 

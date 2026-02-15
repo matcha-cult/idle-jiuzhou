@@ -1,7 +1,9 @@
+import { Router, Request, Response } from 'express';
 /**
  * 九州修仙录 - 邮件路由
  */
-import { Router, Request, Response } from 'express';
+import { withRouteError } from '../middleware/routeError.js';
+import { requireAuth } from '../middleware/auth.js';
 import {
   getMailList,
   readMail,
@@ -12,12 +14,9 @@ import {
   markAllRead,
   getUnreadCount
 } from '../services/mailService.js';
-import { verifyToken } from '../services/authService.js';
-import { query } from '../config/database.js';
+import { getCharacterIdByUserId } from '../services/shared/characterId.js';
 
 const router = Router();
-
-type AuthedRequest = Request & { userId: number };
 
 // 兼容前端把 BIGINT 主键当成字符串传回来的情况
 const parseMailId = (raw: unknown): number | null => {
@@ -26,44 +25,15 @@ const parseMailId = (raw: unknown): number | null => {
   return n;
 };
 
-// 认证中间件
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: '未登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { valid, decoded } = verifyToken(token);
-
-  if (!valid || !decoded) {
-    res.status(401).json({ success: false, message: '登录已过期' });
-    return;
-  }
-
-  (req as AuthedRequest).userId = decoded.id;
-  next();
-};
-
-// 获取角色ID的辅助函数
-const getCharacterId = async (userId: number): Promise<number | null> => {
-  const result = await query(
-    'SELECT id FROM characters WHERE user_id = $1',
-    [userId]
-  );
-  return result.rows.length > 0 ? result.rows[0].id : null;
-};
-
-router.use(authMiddleware);
+router.use(requireAuth);
 
 // ============================================
 // 获取邮件列表
 // ============================================
 router.get('/list', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -86,8 +56,7 @@ router.get('/list', async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    console.error('获取邮件列表失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'mailRoutes 路由异常', error);
   }
 });
 
@@ -96,8 +65,8 @@ router.get('/list', async (req: Request, res: Response) => {
 // ============================================
 router.get('/unread', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -110,8 +79,7 @@ router.get('/unread', async (req: Request, res: Response) => {
       data: result
     });
   } catch (error) {
-    console.error('获取未读数量失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'mailRoutes 路由异常', error);
   }
 });
 
@@ -120,8 +88,8 @@ router.get('/unread', async (req: Request, res: Response) => {
 // ============================================
 router.post('/read', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -135,8 +103,7 @@ router.post('/read', async (req: Request, res: Response) => {
     const result = await readMail(userId, characterId, parsedMailId);
     return res.json(result);
   } catch (error) {
-    console.error('阅读邮件失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'mailRoutes 路由异常', error);
   }
 });
 
@@ -145,8 +112,8 @@ router.post('/read', async (req: Request, res: Response) => {
 // ============================================
 router.post('/claim', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -160,8 +127,7 @@ router.post('/claim', async (req: Request, res: Response) => {
     const result = await claimAttachments(userId, characterId, parsedMailId);
     return res.json(result);
   } catch (error) {
-    console.error('领取附件失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'mailRoutes 路由异常', error);
   }
 });
 
@@ -170,8 +136,8 @@ router.post('/claim', async (req: Request, res: Response) => {
 // ============================================
 router.post('/claim-all', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -180,8 +146,7 @@ router.post('/claim-all', async (req: Request, res: Response) => {
     const result = await claimAllAttachments(userId, characterId);
     return res.json(result);
   } catch (error) {
-    console.error('一键领取失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'mailRoutes 路由异常', error);
   }
 });
 
@@ -190,8 +155,8 @@ router.post('/claim-all', async (req: Request, res: Response) => {
 // ============================================
 router.post('/delete', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -205,8 +170,7 @@ router.post('/delete', async (req: Request, res: Response) => {
     const result = await deleteMail(userId, characterId, parsedMailId);
     return res.json(result);
   } catch (error) {
-    console.error('删除邮件失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'mailRoutes 路由异常', error);
   }
 });
 
@@ -215,8 +179,8 @@ router.post('/delete', async (req: Request, res: Response) => {
 // ============================================
 router.post('/delete-all', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -226,8 +190,7 @@ router.post('/delete-all', async (req: Request, res: Response) => {
     const result = await deleteAllMails(userId, characterId, !!onlyRead);
     return res.json(result);
   } catch (error) {
-    console.error('一键删除失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'mailRoutes 路由异常', error);
   }
 });
 
@@ -236,8 +199,8 @@ router.post('/delete-all', async (req: Request, res: Response) => {
 // ============================================
 router.post('/read-all', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -246,8 +209,7 @@ router.post('/read-all', async (req: Request, res: Response) => {
     const result = await markAllRead(userId, characterId);
     return res.json(result);
   } catch (error) {
-    console.error('标记已读失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'mailRoutes 路由异常', error);
   }
 });
 

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
+import { withRouteError } from '../middleware/routeError.js';
+import { requireAuth, getOptionalUserId } from '../middleware/auth.js';
 import {
   createDungeonInstance,
   getDungeonCategories,
@@ -15,35 +16,7 @@ import {
 
 const router = Router();
 
-type AuthedRequest = Request & { userId: number };
 
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, message: '未提供认证令牌' });
-  }
-
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'jiuzhou-secret') as { id: number };
-    (req as AuthedRequest).userId = decoded.id;
-    next();
-  } catch {
-    return res.status(401).json({ success: false, message: '无效的认证令牌' });
-  }
-};
-
-const getOptionalUserId = (req: Request): number | undefined => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return undefined;
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'jiuzhou-secret') as { id: number };
-    return decoded?.id;
-  } catch {
-    return undefined;
-  }
-};
 
 const toType = (v: unknown): DungeonType | undefined => {
   if (v === 'material' || v === 'equipment' || v === 'trial' || v === 'challenge' || v === 'event') return v;
@@ -55,8 +28,7 @@ router.get('/categories', async (_req: Request, res: Response) => {
     const categories = await getDungeonCategories();
     res.json({ success: true, data: { categories } });
   } catch (error) {
-    console.error('获取秘境分类失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'dungeonRoutes 路由异常', error);
   }
 });
 
@@ -68,8 +40,7 @@ router.get('/list', async (req: Request, res: Response) => {
     const dungeons = await getDungeonList({ type, q, realm });
     res.json({ success: true, data: { dungeons } });
   } catch (error) {
-    console.error('获取秘境列表失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'dungeonRoutes 路由异常', error);
   }
 });
 
@@ -87,25 +58,23 @@ router.get('/preview/:id', async (req: Request, res: Response) => {
     }
     res.json({ success: true, data: preview });
   } catch (error) {
-    console.error('获取秘境详情失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'dungeonRoutes 路由异常', error);
   }
 });
 
-router.get('/weekly-targets', authMiddleware, async (req: Request, res: Response) => {
+router.get('/weekly-targets', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const result = await getDungeonWeeklyTargets(userId);
     res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('获取秘境周目标失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'dungeonRoutes 路由异常', error);
   }
 });
 
-router.post('/instance/create', authMiddleware, async (req: Request, res: Response) => {
+router.post('/instance/create', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const dungeonId = typeof req.body?.dungeonId === 'string' ? req.body.dungeonId : '';
     const difficultyRankRaw = req.body?.difficultyRank;
     const difficultyRank = typeof difficultyRankRaw === 'number' ? difficultyRankRaw : Number(difficultyRankRaw ?? 1);
@@ -116,14 +85,13 @@ router.post('/instance/create', authMiddleware, async (req: Request, res: Respon
     const result = await createDungeonInstance(userId, dungeonId, Number.isFinite(difficultyRank) ? difficultyRank : 1);
     res.json(result);
   } catch (error) {
-    console.error('创建秘境实例失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'dungeonRoutes 路由异常', error);
   }
 });
 
-router.post('/instance/join', authMiddleware, async (req: Request, res: Response) => {
+router.post('/instance/join', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const instanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId : '';
     if (!instanceId) {
       res.status(400).json({ success: false, message: '缺少实例ID' });
@@ -132,14 +100,13 @@ router.post('/instance/join', authMiddleware, async (req: Request, res: Response
     const result = await joinDungeonInstance(userId, instanceId);
     res.json(result);
   } catch (error) {
-    console.error('加入秘境实例失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'dungeonRoutes 路由异常', error);
   }
 });
 
-router.post('/instance/start', authMiddleware, async (req: Request, res: Response) => {
+router.post('/instance/start', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const instanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId : '';
     if (!instanceId) {
       res.status(400).json({ success: false, message: '缺少实例ID' });
@@ -148,14 +115,13 @@ router.post('/instance/start', authMiddleware, async (req: Request, res: Respons
     const result = await startDungeonInstance(userId, instanceId);
     res.json(result);
   } catch (error) {
-    console.error('开始秘境失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'dungeonRoutes 路由异常', error);
   }
 });
 
-router.post('/instance/next', authMiddleware, async (req: Request, res: Response) => {
+router.post('/instance/next', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const instanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId : '';
     if (!instanceId) {
       res.status(400).json({ success: false, message: '缺少实例ID' });
@@ -164,14 +130,13 @@ router.post('/instance/next', authMiddleware, async (req: Request, res: Response
     const result = await nextDungeonInstance(userId, instanceId);
     res.json(result);
   } catch (error) {
-    console.error('推进秘境失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'dungeonRoutes 路由异常', error);
   }
 });
 
-router.get('/instance/:id', authMiddleware, async (req: Request, res: Response) => {
+router.get('/instance/:id', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const idParam = req.params.id;
     const id = Array.isArray(idParam) ? idParam[0] : idParam;
     if (!id) {
@@ -181,8 +146,7 @@ router.get('/instance/:id', authMiddleware, async (req: Request, res: Response) 
     const result = await getDungeonInstance(userId, id);
     res.json(result);
   } catch (error) {
-    console.error('获取秘境实例失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'dungeonRoutes 路由异常', error);
   }
 });
 

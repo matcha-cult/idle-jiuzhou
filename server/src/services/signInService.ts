@@ -1,5 +1,6 @@
 import { HolidayUtil } from 'lunar-typescript';
 import { pool, query } from '../config/database.js';
+import { rollbackAndReturn, safeRollback } from './shared/transaction.js';
 
 export interface SignInRecordDto {
   date: string;
@@ -169,8 +170,7 @@ export const doSignIn = async (userId: number): Promise<DoSignInResult> => {
 
     const characterCheck = await client.query('SELECT id FROM characters WHERE user_id = $1 FOR UPDATE', [userId]);
     if (characterCheck.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '角色不存在，无法签到' };
+      return rollbackAndReturn(client, { success: false, message: '角色不存在，无法签到' });
     }
 
     const exist = await client.query(
@@ -178,8 +178,7 @@ export const doSignIn = async (userId: number): Promise<DoSignInResult> => {
       [userId, todayKey]
     );
     if (exist.rows.length > 0) {
-      await client.query('ROLLBACK');
-      return { success: false, message: '今日已签到' };
+      return rollbackAndReturn(client, { success: false, message: '今日已签到' });
     }
 
     await client.query(
@@ -209,13 +208,10 @@ export const doSignIn = async (userId: number): Promise<DoSignInResult> => {
       },
     };
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {}
+    await safeRollback(client);
     console.error('签到失败:', error);
     return { success: false, message: '签到失败' };
   } finally {
     client.release();
   }
 };
-

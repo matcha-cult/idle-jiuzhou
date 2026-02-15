@@ -1,32 +1,14 @@
+import { Router, NextFunction, Request, Response } from 'express';
 /**
  * 头像上传路由
  */
-import { Router, NextFunction, Request, Response } from 'express';
+import { requireAuth } from '../middleware/auth.js';
 import { avatarUpload, updateAvatar, deleteAvatar } from '../services/uploadService.js';
-import { verifyToken } from '../services/authService.js';
 import { getGameServer } from '../game/GameServer.js';
 
 const router = Router();
 
 // 验证token中间件
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: '未登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { valid, decoded } = verifyToken(token);
-
-  if (!valid || !decoded) {
-    res.status(401).json({ success: false, message: '登录已过期' });
-    return;
-  }
-
-  (req as Request & { userId: number }).userId = decoded.id;
-  next();
-};
 
 const avatarUploadMiddleware = (req: Request, res: Response, next: NextFunction) => {
   avatarUpload.single('avatar')(req, res, (error?: Error | string | null) => {
@@ -59,11 +41,11 @@ const avatarUploadMiddleware = (req: Request, res: Response, next: NextFunction)
 // 上传头像
 router.post(
   '/avatar',
-  authMiddleware,
+  requireAuth,
   avatarUploadMiddleware,
   async (req: Request, res: Response) => {
     try {
-      const userId = (req as Request & { userId: number }).userId;
+      const userId = req.userId!;
       const file = req.file;
 
       if (!file) {
@@ -96,9 +78,9 @@ router.post(
 );
 
 // 删除头像
-router.delete('/avatar', authMiddleware, async (req: Request, res: Response) => {
+router.delete('/avatar', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as Request & { userId: number }).userId;
+    const userId = req.userId!;
     const result = await deleteAvatar(userId);
 
     if (result.success) {

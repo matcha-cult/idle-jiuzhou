@@ -5,6 +5,7 @@ import path from 'path';
 import { updateSectionProgress } from './mainQuestService.js';
 import { updateAchievementProgress } from './achievementService.js';
 import { invalidateCharacterComputedCache } from './characterComputedService.js';
+import { getCharacterIdByUserId } from './shared/characterId.js';
 import {
   getDungeonDefinitions,
   getDungeonDifficultyById,
@@ -1054,9 +1055,8 @@ export const breakthroughToNextRealm = async (userId: number): Promise<RealmBrea
     });
 
     if (result.success) {
-      const charRes = await query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1', [userId]);
-      const characterId = Number(charRes.rows?.[0]?.id);
-      if (Number.isFinite(characterId) && characterId > 0) {
+      const characterId = await getCharacterIdByUserId(userId);
+      if (characterId) {
         await invalidateCharacterComputedCache(characterId);
       }
     }

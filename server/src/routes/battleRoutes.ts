@@ -1,39 +1,21 @@
+import { Router, Request, Response } from 'express';
 /**
  * 九州修仙录 - 战斗路由
  */
 
-import { Router, Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
+import { withRouteError } from '../middleware/routeError.js';
+import { requireAuth } from '../middleware/auth.js';
 import battleService from '../services/battleService.js';
 
 const router = Router();
-
-type AuthedRequest = Request & { userId: number };
-
-// 认证中间件
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, message: '未提供认证令牌' });
-  }
-
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'jiuzhou-secret') as { id: number };
-    (req as AuthedRequest).userId = decoded.id;
-    next();
-  } catch {
-    return res.status(401).json({ success: false, message: '无效的认证令牌' });
-  }
-};
 
 /**
  * POST /api/battle/start
  * 发起PVE战斗
  */
-router.post('/start', authMiddleware, async (req: Request, res: Response) => {
+router.post('/start', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const { monsterIds } = req.body;
     
     if (!monsterIds || !Array.isArray(monsterIds) || monsterIds.length === 0) {
@@ -48,8 +30,7 @@ router.post('/start', authMiddleware, async (req: Request, res: Response) => {
     
     return res.json(result);
   } catch (error) {
-    console.error('发起战斗失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'battleRoutes 路由异常', error);
   }
 });
 
@@ -57,9 +38,9 @@ router.post('/start', authMiddleware, async (req: Request, res: Response) => {
  * POST /api/battle/action
  * 玩家行动
  */
-router.post('/action', authMiddleware, async (req: Request, res: Response) => {
+router.post('/action', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const { battleId, skillId, targetIds } = req.body;
     
     if (!battleId) {
@@ -79,8 +60,7 @@ router.post('/action', authMiddleware, async (req: Request, res: Response) => {
     
     return res.json(result);
   } catch (error) {
-    console.error('玩家行动失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'battleRoutes 路由异常', error);
   }
 });
 
@@ -88,9 +68,9 @@ router.post('/action', authMiddleware, async (req: Request, res: Response) => {
  * POST /api/battle/auto
  * 自动战斗（快速结算）
  */
-router.post('/auto', authMiddleware, async (req: Request, res: Response) => {
+router.post('/auto', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const { monsterIds } = req.body;
     
     if (!monsterIds || !Array.isArray(monsterIds) || monsterIds.length === 0) {
@@ -105,8 +85,7 @@ router.post('/auto', authMiddleware, async (req: Request, res: Response) => {
     
     return res.json(result);
   } catch (error) {
-    console.error('自动战斗失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'battleRoutes 路由异常', error);
   }
 });
 
@@ -114,7 +93,7 @@ router.post('/auto', authMiddleware, async (req: Request, res: Response) => {
  * GET /api/battle/state/:battleId
  * 获取战斗状态
  */
-router.get('/state/:battleId', authMiddleware, async (req: Request, res: Response) => {
+router.get('/state/:battleId', requireAuth, async (req: Request, res: Response) => {
   try {
     const battleId = String(req.params.battleId || '');
     
@@ -126,8 +105,7 @@ router.get('/state/:battleId', authMiddleware, async (req: Request, res: Respons
     
     return res.json(result);
   } catch (error) {
-    console.error('获取战斗状态失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'battleRoutes 路由异常', error);
   }
 });
 
@@ -135,9 +113,9 @@ router.get('/state/:battleId', authMiddleware, async (req: Request, res: Respons
  * POST /api/battle/abandon
  * 放弃战斗
  */
-router.post('/abandon', authMiddleware, async (req: Request, res: Response) => {
+router.post('/abandon', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const { battleId } = req.body;
     
     if (!battleId) {
@@ -148,8 +126,7 @@ router.post('/abandon', authMiddleware, async (req: Request, res: Response) => {
     
     return res.json(result);
   } catch (error) {
-    console.error('放弃战斗失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'battleRoutes 路由异常', error);
   }
 });
 

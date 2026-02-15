@@ -1,43 +1,25 @@
+import { Router, Request, Response } from 'express';
+import { withRouteError } from '../middleware/routeError.js';
 /**
  * 九州修仙录 - 背包路由
  */
-import { Router, Request, Response } from 'express';
+import { requireAuth } from '../middleware/auth.js';
 import inventoryService, { InventoryLocation } from '../services/inventoryService.js';
 import itemService from '../services/itemService.js';
 import craftService from '../services/craftService.js';
 import gemSynthesisService from '../services/gemSynthesisService.js';
 import { query } from '../config/database.js';
-import { verifyToken } from '../services/authService.js';
 import { getGameServer } from '../game/GameServer.js';
 import {
   buildEquipmentDisplayBaseAttrs,
 } from '../services/equipmentGrowthRules.js';
+import { getCharacterIdByUserId } from '../services/shared/characterId.js';
 import { resolveQualityRankFromName } from '../services/shared/itemQuality.js';
 import { getCharacterComputedByCharacterId } from '../services/characterComputedService.js';
 import { getItemDefinitionById, getItemDefinitionsByIds, getItemSetDefinitions } from '../services/staticConfigLoader.js';
 
 const router = Router();
 
-type AuthedRequest = Request & { userId: number };
-
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: '未登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { valid, decoded } = verifyToken(token);
-
-  if (!valid || !decoded) {
-    res.status(401).json({ success: false, message: '登录已过期' });
-    return;
-  }
-
-  (req as AuthedRequest).userId = decoded.id;
-  next();
-};
 
 const allowedLocations = ['bag', 'warehouse', 'equipped'] as const;
 const allowedSlottedLocations = ['bag', 'warehouse'] as const;
@@ -79,16 +61,8 @@ const parseNonNegativeIntArray = (value: unknown): number[] | null => {
   return out;
 };
 
-// 获取角色ID的辅助函数
-const getCharacterId = async (userId: number): Promise<number | null> => {
-  const result = await query(
-    'SELECT id FROM characters WHERE user_id = $1',
-    [userId]
-  );
-  return result.rows.length > 0 ? result.rows[0].id : null;
-};
 
-router.use(authMiddleware);
+router.use(requireAuth);
 
 // ============================================
 // 获取背包信息
@@ -96,8 +70,8 @@ router.use(authMiddleware);
 // ============================================
 router.get('/info', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -106,8 +80,7 @@ router.get('/info', async (req: Request, res: Response) => {
     const info = await inventoryService.getInventoryInfo(characterId);
     res.json({ success: true, data: info });
   } catch (error) {
-    console.error('获取背包信息失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -117,8 +90,8 @@ router.get('/info', async (req: Request, res: Response) => {
 // ============================================
 router.get('/items', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -245,8 +218,7 @@ router.get('/items', async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    console.error('获取背包物品失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -256,13 +228,12 @@ router.get('/items', async (req: Request, res: Response) => {
 // ============================================
 router.get('/craft/recipes', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const recipeType = typeof req.query.recipeType === 'string' ? req.query.recipeType : undefined;
     const result = await craftService.getCraftRecipeList(userId, { recipeType });
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('获取炼制配方失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -273,7 +244,7 @@ router.get('/craft/recipes', async (req: Request, res: Response) => {
 // ============================================
 router.post('/craft/execute', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const recipeId = typeof req.body?.recipeId === 'string' ? req.body.recipeId : '';
     const timesRaw = req.body?.times;
     const times = timesRaw === undefined || timesRaw === null ? undefined : Number(timesRaw);
@@ -295,8 +266,7 @@ router.post('/craft/execute', async (req: Request, res: Response) => {
     }
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('执行炼制失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -306,8 +276,8 @@ router.post('/craft/execute', async (req: Request, res: Response) => {
 // ============================================
 router.get('/gem/recipes', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
     }
@@ -315,8 +285,7 @@ router.get('/gem/recipes', async (req: Request, res: Response) => {
     const result = await gemSynthesisService.getGemSynthesisRecipeList(characterId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('获取宝石合成配方失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -327,8 +296,8 @@ router.get('/gem/recipes', async (req: Request, res: Response) => {
 // ============================================
 router.post('/gem/synthesize', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
     }
@@ -358,8 +327,7 @@ router.post('/gem/synthesize', async (req: Request, res: Response) => {
 
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('执行宝石合成失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -370,8 +338,8 @@ router.post('/gem/synthesize', async (req: Request, res: Response) => {
 // ============================================
 router.post('/gem/synthesize/batch', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
     }
@@ -412,8 +380,7 @@ router.post('/gem/synthesize/batch', async (req: Request, res: Response) => {
 
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('批量宝石合成失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -423,8 +390,8 @@ router.post('/gem/synthesize/batch', async (req: Request, res: Response) => {
 // ============================================
 router.post('/move', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -463,15 +430,14 @@ router.post('/move', async (req: Request, res: Response) => {
     
     res.json(result);
   } catch (error) {
-    console.error('移动物品失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
 router.post('/use', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -511,8 +477,7 @@ router.post('/use', async (req: Request, res: Response) => {
 
     return res.json({ ...result, data: { character: result.character, lootResults: result.lootResults } });
   } catch (error) {
-    console.error('使用物品失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -523,8 +488,8 @@ router.post('/use', async (req: Request, res: Response) => {
 // ============================================
 router.post('/equip', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -555,8 +520,7 @@ router.post('/equip', async (req: Request, res: Response) => {
 
     return res.json({ ...result, data: { character } });
   } catch (error) {
-    console.error('穿戴装备失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -567,8 +531,8 @@ router.post('/equip', async (req: Request, res: Response) => {
 // ============================================
 router.post('/unequip', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -605,8 +569,7 @@ router.post('/unequip', async (req: Request, res: Response) => {
 
     return res.json({ ...result, data: { character } });
   } catch (error) {
-    console.error('卸下装备失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -617,8 +580,8 @@ router.post('/unequip', async (req: Request, res: Response) => {
 // ============================================
 router.post('/enhance', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -680,8 +643,7 @@ router.post('/enhance', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('强化装备失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -692,8 +654,8 @@ router.post('/enhance', async (req: Request, res: Response) => {
 // ============================================
 router.post('/refine', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -734,8 +696,7 @@ router.post('/refine', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error('精炼装备失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -746,8 +707,8 @@ router.post('/refine', async (req: Request, res: Response) => {
 // ============================================
 router.post('/reroll-affixes', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -796,8 +757,7 @@ router.post('/reroll-affixes', async (req: Request, res: Response) => {
       data: result.data ?? null,
     });
   } catch (error) {
-    console.error('洗炼装备词条失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -808,8 +768,8 @@ router.post('/reroll-affixes', async (req: Request, res: Response) => {
 // ============================================
 router.post('/socket', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -874,8 +834,7 @@ router.post('/socket', async (req: Request, res: Response) => {
       data: result.data ?? null,
     });
   } catch (error) {
-    console.error('镶嵌宝石失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -886,8 +845,8 @@ router.post('/socket', async (req: Request, res: Response) => {
 // ============================================
 router.post('/disassemble', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -918,8 +877,7 @@ router.post('/disassemble', async (req: Request, res: Response) => {
     }
     return res.json(result);
   } catch (error) {
-    console.error('分解物品失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -930,8 +888,8 @@ router.post('/disassemble', async (req: Request, res: Response) => {
 // ============================================
 router.post('/disassemble/batch', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -965,8 +923,7 @@ router.post('/disassemble/batch', async (req: Request, res: Response) => {
     }
     return res.json(result);
   } catch (error) {
-    console.error('批量分解物品失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -976,8 +933,8 @@ router.post('/disassemble/batch', async (req: Request, res: Response) => {
 // ============================================
 router.post('/remove', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -1007,8 +964,7 @@ router.post('/remove', async (req: Request, res: Response) => {
     
     res.json(result);
   } catch (error) {
-    console.error('删除物品失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -1019,8 +975,8 @@ router.post('/remove', async (req: Request, res: Response) => {
 // ============================================
 router.post('/remove/batch', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
 
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -1039,8 +995,7 @@ router.post('/remove/batch', async (req: Request, res: Response) => {
     const result = await inventoryService.removeItemsBatch(characterId, parsedIds);
     return res.json(result);
   } catch (error) {
-    console.error('批量丢弃物品失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -1050,8 +1005,8 @@ router.post('/remove/batch', async (req: Request, res: Response) => {
 // ============================================
 router.post('/sort', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -1066,8 +1021,7 @@ router.post('/sort', async (req: Request, res: Response) => {
     
     res.json(result);
   } catch (error) {
-    console.error('整理背包失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 
@@ -1087,8 +1041,8 @@ router.post('/expand', async (req: Request, res: Response) => {
 // ============================================
 router.post('/lock', async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
-    const characterId = await getCharacterId(userId);
+    const userId = req.userId!;
+    const characterId = await getCharacterIdByUserId(userId);
     
     if (!characterId) {
       return res.status(404).json({ success: false, message: '角色不存在' });
@@ -1122,8 +1076,7 @@ router.post('/lock', async (req: Request, res: Response) => {
     
     res.json({ success: true, message: locked ? '已锁定' : '已解锁' });
   } catch (error) {
-    console.error('锁定物品失败:', error);
-    res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'inventoryRoutes 路由异常', error);
   }
 });
 

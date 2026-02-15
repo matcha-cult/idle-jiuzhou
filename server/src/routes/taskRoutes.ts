@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { verifyToken } from '../services/authService.js';
+import { withRouteError } from '../middleware/routeError.js';
+import { requireAuth } from '../middleware/auth.js';
 import {
   acceptTaskFromNpc,
   claimTaskReward,
@@ -15,30 +16,10 @@ import { getGameServer } from '../game/GameServer.js';
 
 const router = Router();
 
-type AuthedRequest = Request & { userId: number };
 
-const authMiddleware = (req: Request, res: Response, next: () => void) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: '未登录' });
-    return;
-  }
-
-  const token = authHeader.split(' ')[1];
-  const { valid, decoded } = verifyToken(token);
-
-  if (!valid || !decoded) {
-    res.status(401).json({ success: false, message: '登录已过期' });
-    return;
-  }
-
-  (req as AuthedRequest).userId = decoded.id as number;
-  next();
-};
-
-router.get('/overview', authMiddleware, async (req: Request, res: Response) => {
+router.get('/overview', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -46,28 +27,26 @@ router.get('/overview', authMiddleware, async (req: Request, res: Response) => {
     const data = await getTaskOverview(characterId, category);
     return res.json({ success: true, message: 'ok', data });
   } catch (error) {
-    console.error('获取任务概览失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'taskRoutes 路由异常', error);
   }
 });
 
-router.get('/bounty/overview', authMiddleware, async (req: Request, res: Response) => {
+router.get('/bounty/overview', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
     const data = await getBountyTaskOverview(characterId);
     return res.json({ success: true, message: 'ok', data });
   } catch (error) {
-    console.error('获取悬赏任务概览失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'taskRoutes 路由异常', error);
   }
 });
 
-router.post('/track', authMiddleware, async (req: Request, res: Response) => {
+router.post('/track', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -79,14 +58,13 @@ router.post('/track', authMiddleware, async (req: Request, res: Response) => {
     if (!result.success) return res.status(400).json(result);
     return res.json(result);
   } catch (error) {
-    console.error('更新任务追踪失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'taskRoutes 路由异常', error);
   }
 });
 
-router.post('/claim', authMiddleware, async (req: Request, res: Response) => {
+router.post('/claim', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -101,14 +79,13 @@ router.post('/claim', authMiddleware, async (req: Request, res: Response) => {
     } catch {}
     return res.json(result);
   } catch (error) {
-    console.error('领取任务奖励失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'taskRoutes 路由异常', error);
   }
 });
 
-router.post('/npc/talk', authMiddleware, async (req: Request, res: Response) => {
+router.post('/npc/talk', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -117,14 +94,13 @@ router.post('/npc/talk', authMiddleware, async (req: Request, res: Response) => 
     const result = await npcTalk(characterId, npcId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('NPC对话失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'taskRoutes 路由异常', error);
   }
 });
 
-router.post('/npc/accept', authMiddleware, async (req: Request, res: Response) => {
+router.post('/npc/accept', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -134,14 +110,13 @@ router.post('/npc/accept', authMiddleware, async (req: Request, res: Response) =
     const result = await acceptTaskFromNpc(characterId, taskId, npcId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('NPC接取任务失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'taskRoutes 路由异常', error);
   }
 });
 
-router.post('/npc/submit', authMiddleware, async (req: Request, res: Response) => {
+router.post('/npc/submit', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = (req as AuthedRequest).userId;
+    const userId = req.userId!;
     const characterId = await getCharacterIdByUserId(userId);
     if (!characterId) return res.status(404).json({ success: false, message: '角色不存在' });
 
@@ -151,8 +126,7 @@ router.post('/npc/submit', authMiddleware, async (req: Request, res: Response) =
     const result = await submitTask(characterId, taskId, npcId);
     return res.status(result.success ? 200 : 400).json(result);
   } catch (error) {
-    console.error('NPC提交任务失败:', error);
-    return res.status(500).json({ success: false, message: '服务器错误' });
+    return withRouteError(res, 'taskRoutes 路由异常', error);
   }
 });
 

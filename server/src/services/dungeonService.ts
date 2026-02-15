@@ -33,6 +33,8 @@ import {
 import { getAdjustedDropQuantityRange } from './shared/dropQuantityMultiplier.js';
 import { lockCharacterInventoryMutexesTx } from './inventoryMutex.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
+import { getCharacterIdByUserId } from './shared/characterId.js';
+import { safeRollback } from './shared/transaction.js';
 
 export type DungeonType = 'material' | 'equipment' | 'trial' | 'challenge' | 'event';
 
@@ -279,14 +281,6 @@ const getRealmRank = (realm: string): number => {
 
 const isRealmSufficient = (characterRealm: string, minRealm: string): boolean => {
   return getRealmRank(characterRealm) >= getRealmRank(minRealm);
-};
-
-const getCharacterIdByUserId = async (userId: number): Promise<number | null> => {
-  const res = await query(`SELECT id FROM characters WHERE user_id = $1 LIMIT 1`, [userId]);
-  if (res.rows.length === 0) return null;
-  const id = Number(res.rows[0]?.id);
-  if (!Number.isFinite(id) || id <= 0) return null;
-  return id;
 };
 
 const getDungeonEntryRemaining = async (
@@ -1521,9 +1515,7 @@ export const startDungeonInstance = async (
     await client.query('COMMIT');
     return { success: true, data: { instanceId, status: 'running', battleId, state: battleRes.data.state } };
   } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch {}
+    await safeRollback(client);
     console.error('开始秘境失败:', error);
     return { success: false, message: '开始秘境失败' };
   } finally {
@@ -1895,9 +1887,7 @@ export const nextDungeonInstance = async (
 
         return { success: true, data: { instanceId, status: 'cleared', finished: true } };
       } catch (error) {
-        try {
-          await client.query('ROLLBACK');
-        } catch {}
+        await safeRollback(client);
         console.error('秘境结算失败:', error);
         return { success: false, message: '秘境结算失败' };
       } finally {
