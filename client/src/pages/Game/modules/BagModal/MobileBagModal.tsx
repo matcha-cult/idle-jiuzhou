@@ -23,6 +23,7 @@ import {
   rerollInventoryAffixes,
   removeInventoryItemsBatch,
   setInventoryItemLock,
+  socketInventoryGem,
   sortInventory,
   unequipInventoryItem,
 } from '../../../../services/api';
@@ -40,11 +41,14 @@ import {
   calcUseEffectDelta,
   categoryLabels,
   collectBatchDisassembleCandidates,
+  collectGemCandidates,
   formatEquipmentAffixLine,
   getEnhanceSuccessRatePercent,
   getRefineSuccessRatePercent,
   isDisassemblableBagItem,
+  isGemTypeAllowedInSlot,
   normalizeAffixLockIndexes,
+  normalizeGemType,
   percentAttrKeys,
   pickNumber,
   qualityClass,
@@ -286,6 +290,7 @@ interface SheetProps {
   onEquipToggle: () => void;
   onDisassemble: () => void;
   onEnhance: () => void;
+  onSocket: () => void;
   onToggleLock: () => void;
 }
 
@@ -302,6 +307,7 @@ const ItemSheet: React.FC<SheetProps> = ({
   onEquipToggle,
   onDisassemble,
   onEnhance,
+  onSocket,
   onToggleLock,
 }) => {
   const equipLines = useMemo(() => buildEquipmentLines(item), [item]);
@@ -494,6 +500,15 @@ const ItemSheet: React.FC<SheetProps> = ({
               强化
             </button>
           )}
+          {item.category === 'equipment' && item.equip && (
+            <button
+              className="mbag-sheet-act-btn"
+              disabled={loading || actionDisabled('enhance')}
+              onClick={onSocket}
+            >
+              镶嵌
+            </button>
+          )}
           {item.actions.includes('disassemble') && (
             <button
               className="mbag-sheet-act-btn is-danger"
@@ -518,11 +533,14 @@ const ItemSheet: React.FC<SheetProps> = ({
 
 /* ─── 强化 / 精炼 Bottom Sheet ─── */
 
+type GrowthMode = 'enhance' | 'refine' | 'socket' | 'reroll';
+
 interface GrowthSheetProps {
   item: BagItem;
   allItems: BagItem[];
   playerSilver: number;
   playerSpiritStones: number;
+  initialMode: GrowthMode;
   onClose: () => void;
   onDone: () => Promise<void>;
 }
@@ -532,13 +550,16 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
   allItems,
   playerSilver,
   playerSpiritStones,
+  initialMode,
   onClose,
   onDone,
 }) => {
   const { message } = App.useApp();
-  const [mode, setMode] = useState<'enhance' | 'refine' | 'reroll'>('enhance');
+  const [mode, setMode] = useState<GrowthMode>(initialMode);
   const [submitting, setSubmitting] = useState(false);
   const [rerollLockIndexes, setRerollLockIndexes] = useState<number[]>([]);
+  const [socketSlot, setSocketSlot] = useState<number | undefined>(undefined);
+  const [selectedGemItemId, setSelectedGemItemId] = useState<number | undefined>(undefined);
 
   const materialCounts = useMemo(() => {
     const out: Record<string, number> = {};
@@ -563,6 +584,13 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
     const affixCount = item.equip?.affixes.length ?? 0;
     setRerollLockIndexes((prev) => normalizeAffixLockIndexes(prev, affixCount));
   }, [item.id, item.equip?.affixes.length]);
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode, item.id]);
+  useEffect(() => {
+    setSocketSlot(undefined);
+    setSelectedGemItemId(undefined);
+  }, [item.id]);
 
   const enhanceState = useMemo(() => {
     if (!item.equip) return null;
@@ -644,6 +672,44 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
       silverCost: costPlan.silverCost,
     };
   }, [item, bagItemCounts, rerollLockIndexes]);
+
+  const socketState = useMemo(() => {
+    if (!item.equip) return null;
+    const equip = item.equip;
+    const candidates = collectGemCandidates(allItems);
+    const availableSlots = Array.from({ length: Math.max(0, equip.socketMax) }, (_, idx) => idx);
+    const selectedSlot =
+      socketSlot === undefined || socketSlot === null
+        ? availableSlots.find((slot) => !equip.socketedGems.some((gem) => gem.slot === slot))
+        : socketSlot;
+    const selectedGem = candidates.find((gem) => gem.id === selectedGemItemId) ?? null;
+    const selectedGemType = selectedGem ? normalizeGemType(selectedGem.subCategory || selectedGem.name) : 'all';
+    const slotValid = selectedSlot !== undefined && selectedSlot >= 0 && selectedSlot < equip.socketMax;
+    const replacedGem = selectedSlot !== undefined ? equip.socketedGems.find((gem) => gem.slot === selectedSlot) ?? null : null;
+    const duplicateGem =
+      selectedGem && selectedSlot !== undefined
+        ? equip.socketedGems.some((gem) => gem.itemDefId === selectedGem.itemDefId && gem.slot !== selectedSlot)
+        : false;
+    const typeValid =
+      selectedGem && selectedSlot !== undefined
+        ? isGemTypeAllowedInSlot(equip.gemSlotTypes, selectedSlot, selectedGemType)
+        : false;
+
+    return {
+      socketed: equip.socketedGems,
+      socketMax: equip.socketMax,
+      availableSlots,
+      selectedSlot,
+      candidates,
+      selectedGem,
+      selectedGemType,
+      slotValid,
+      typeValid,
+      duplicateGem,
+      replacedGem,
+      silverCost: replacedGem ? 100 : 50,
+    };
+  }, [allItems, item.equip, selectedGemItemId, socketSlot]);
 
   const handleEnhance = useCallback(async () => {
     setSubmitting(true);
@@ -739,6 +805,32 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
     }
   }, [item.id, message, onDone, rerollState]);
 
+  const handleSocket = useCallback(async () => {
+    if (!socketState) return;
+    if (!socketState.selectedGem) return;
+    if (socketState.selectedSlot === undefined) return;
+    if (!socketState.slotValid || !socketState.typeValid || socketState.duplicateGem) return;
+
+    setSubmitting(true);
+    try {
+      const res = await socketInventoryGem({
+        itemId: item.id,
+        gemItemId: socketState.selectedGem.id,
+        slot: socketState.selectedSlot,
+      });
+      if (!res.success) throw new Error(res.message || '镶嵌失败');
+      message.success(res.message || '镶嵌成功');
+      setSocketSlot(undefined);
+      setSelectedGemItemId(undefined);
+      await onDone();
+      window.dispatchEvent(new Event('inventory:changed'));
+    } catch (e) {
+      message.error((e as { message?: string }).message || '镶嵌失败');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [item.id, message, onDone, socketState]);
+
   const st = mode === 'enhance' ? enhanceState : mode === 'refine' ? refineState : null;
   const curAttrs = item.equip?.baseAttrs ?? {};
 
@@ -753,20 +845,20 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
 
         {/* 模式切换 */}
         <div style={{ display: 'flex', gap: 0, padding: '0 16px 8px' }}>
-          {(['enhance', 'refine', 'reroll'] as const).map((m) => (
+          {(['enhance', 'refine', 'socket', 'reroll'] as const).map((m) => (
             <button
               key={m}
               className={`mbag-cat-btn${mode === m ? ' is-active' : ''}`}
-              style={{ padding: '8px 20px' }}
+              style={{ padding: '8px 14px' }}
               onClick={() => setMode(m)}
             >
-              {m === 'enhance' ? '强化' : m === 'refine' ? '精炼' : '洗炼'}
+              {m === 'enhance' ? '强化' : m === 'refine' ? '精炼' : m === 'socket' ? '镶嵌' : '洗炼'}
             </button>
           ))}
         </div>
 
         <div className="mbag-sheet-body">
-          {mode !== 'reroll' && st ? (
+          {(mode === 'enhance' || mode === 'refine') && st ? (
             <>
               {/* 等级预览 */}
               <div className="mbag-sheet-section" style={{ textAlign: 'center' }}>
@@ -824,6 +916,95 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
             </>
           ) : null}
 
+          {mode === 'socket' && socketState ? (
+            <>
+              <div className="mbag-sheet-section">
+                <div className="mbag-sheet-section-title">孔位状态</div>
+                <div className="mbag-sheet-section-text">
+                  已镶嵌 {socketState.socketed.length}/{socketState.socketMax}
+                </div>
+              </div>
+
+              <div className="mbag-sheet-section">
+                <div className="mbag-sheet-section-title">选择镶嵌目标</div>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>孔位</span>
+                    <select
+                      value={socketState.selectedSlot ?? ''}
+                      disabled={submitting}
+                      onChange={(event) => {
+                        const next = Number(event.target.value);
+                        setSocketSlot(Number.isInteger(next) ? next : undefined);
+                      }}
+                      className="mbag-batch-select"
+                    >
+                      <option value="">请选择孔位</option>
+                      {socketState.availableSlots.map((slot) => {
+                        const existed = socketState.socketed.find((gem) => gem.slot === slot);
+                        const displaySlot = slot + 1;
+                        return (
+                          <option key={slot} value={slot}>
+                            {existed
+                              ? `孔位${displaySlot}（已镶嵌：${existed.name ?? existed.itemDefId}）`
+                              : `孔位${displaySlot}（空）`}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </label>
+
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>宝石</span>
+                    <select
+                      value={selectedGemItemId ?? ''}
+                      disabled={submitting}
+                      onChange={(event) => {
+                        const next = Number(event.target.value);
+                        setSelectedGemItemId(Number.isInteger(next) ? next : undefined);
+                      }}
+                      className="mbag-batch-select"
+                    >
+                      <option value="">请选择宝石</option>
+                      {socketState.candidates.map((gem) => (
+                        <option key={gem.id} value={gem.id}>
+                          {gem.name} x{gem.qty}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div className="mbag-sheet-section">
+                <div className="mbag-sheet-section-text">
+                  {socketState.selectedGem
+                    ? `已选宝石：${socketState.selectedGem.name}（类型：${socketState.selectedGemType}）`
+                    : '请选择可镶嵌宝石'}
+                </div>
+                <div className="mbag-sheet-section-text">
+                  {socketState.replacedGem ? `替换镶嵌消耗银两：${socketState.silverCost}` : `首次镶嵌消耗银两：${socketState.silverCost}`}
+                </div>
+                <div className="mbag-sheet-section-text">宝石不可卸下，仅可通过替换镶嵌覆盖原孔位宝石（原宝石销毁）。</div>
+                {socketState.candidates.length <= 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>
+                    当前背包没有可镶嵌的宝石
+                  </div>
+                ) : null}
+                {socketState.selectedGem && socketState.selectedSlot !== undefined && !socketState.typeValid ? (
+                  <div style={{ fontSize: 12, color: 'var(--danger-color)', marginTop: 6 }}>
+                    宝石类型与孔位不匹配
+                  </div>
+                ) : null}
+                {socketState.selectedGem && socketState.selectedSlot !== undefined && socketState.duplicateGem ? (
+                  <div style={{ fontSize: 12, color: 'var(--danger-color)', marginTop: 6 }}>
+                    同一件装备不可镶嵌相同宝石
+                  </div>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+
           {mode === 'reroll' && rerollState && rerollState.affixes.length > 0 ? (
             <>
               <div className="mbag-sheet-section" style={{ textAlign: 'center' }}>
@@ -872,7 +1053,7 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
             </div>
           ) : null}
 
-          {mode !== 'reroll' && !st ? (
+          {(mode === 'enhance' || mode === 'refine') && !st ? (
             <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 20 }}>
               无法{mode === 'enhance' ? '强化' : '精炼'}
             </div>
@@ -898,17 +1079,34 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
                 rerollState.rerollScrollOwned < rerollState.rerollScrollQty ||
                 playerSpiritStones < rerollState.spiritStoneCost ||
                 playerSilver < rerollState.silverCost
-                : mode === 'reroll')
+                : mode === 'reroll') ||
+              (mode === 'socket' && socketState
+                ? !socketState.selectedGem ||
+                socketState.selectedSlot === undefined ||
+                !socketState.slotValid ||
+                !socketState.typeValid ||
+                socketState.duplicateGem
+                : mode === 'socket')
             }
             onClick={() => void (
               mode === 'enhance'
                 ? handleEnhance()
                 : mode === 'refine'
                   ? handleRefine()
-                  : handleReroll()
+                  : mode === 'socket'
+                    ? handleSocket()
+                    : handleReroll()
             )}
           >
-            {submitting ? '处理中...' : mode === 'enhance' ? '强化' : mode === 'refine' ? '精炼' : '洗炼'}
+            {submitting
+              ? '处理中...'
+              : mode === 'enhance'
+                ? '强化'
+                : mode === 'refine'
+                  ? '精炼'
+                  : mode === 'socket'
+                    ? socketState?.replacedGem ? '替换镶嵌' : '镶嵌宝石'
+                    : '洗炼'}
           </button>
         </div>
       </div>
@@ -981,6 +1179,7 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
   const [playerSilver, setPlayerSilver] = useState(0);
   const [playerSpiritStones, setPlayerSpiritStones] = useState(0);
   const [useQty, setUseQty] = useState(1);
+  const [growthMode, setGrowthMode] = useState<GrowthMode>('enhance');
 
   useEffect(() => {
     return gameSocket.onCharacterUpdate((char) => {
@@ -1418,7 +1617,16 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
           onUseQtyMax={handleUseQtyMax}
           onEquipToggle={() => void handleEquipToggle()}
           onDisassemble={() => { setSheetOpen(false); setDisassembleOpen(true); }}
-          onEnhance={() => { setSheetOpen(false); setGrowthOpen(true); }}
+          onEnhance={() => {
+            setGrowthMode('enhance');
+            setSheetOpen(false);
+            setGrowthOpen(true);
+          }}
+          onSocket={() => {
+            setGrowthMode('socket');
+            setSheetOpen(false);
+            setGrowthOpen(true);
+          }}
           onToggleLock={() => void handleToggleItemLock()}
         />
       )}
@@ -1430,6 +1638,7 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
           allItems={items}
           playerSilver={playerSilver}
           playerSpiritStones={playerSpiritStones}
+          initialMode={growthMode}
           onClose={() => setGrowthOpen(false)}
           onDone={refresh}
         />
