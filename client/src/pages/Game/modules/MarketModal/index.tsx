@@ -427,6 +427,26 @@ const normalizeQuality = (value: unknown): ItemQuality => {
   return '黄';
 };
 
+const normalizeMarketCategory = (value: string | null | undefined): Exclude<MarketCategory, 'all'> => {
+  switch (value) {
+    case 'consumable':
+    case 'material':
+    case 'gem':
+    case 'equipment':
+    case 'skillbook':
+    case 'other':
+      return value;
+    default:
+      return 'other';
+  }
+};
+
+const toNonNegativeIntegerOrUndefined = (value: string): number | undefined => {
+  const parsed = parseMaybeNumber(value);
+  if (parsed === null) return undefined;
+  return Math.max(0, Math.floor(parsed));
+};
+
 const buildBagItem = (it: InventoryItemDto): BagItem | null => {
   const def: ItemDefLite | undefined = it.def;
   if (!def) return null;
@@ -440,14 +460,7 @@ const buildBagItem = (it: InventoryItemDto): BagItem | null => {
       ? it.quality.trim()
       : def.quality;
   const quality = normalizeQuality(rawQuality);
-  const category: Exclude<MarketCategory, 'all'> =
-    def.category === 'consumable' ||
-      def.category === 'material' ||
-      def.category === 'gem' ||
-      def.category === 'equipment' ||
-      def.category === 'skillbook'
-      ? def.category
-      : 'other';
+  const category = normalizeMarketCategory(def.category);
   const desc = category === 'equipment' ? '' : String(def.description ?? def.long_desc ?? '').trim();
   const qty = Number(it.qty) || 0;
   const stackMax = Number(def.stack_max) || 1;
@@ -468,14 +481,7 @@ const buildBagItem = (it: InventoryItemDto): BagItem | null => {
 
 const buildListingItem = (dto: MarketListingDto): ListingItem => {
   const quality = normalizeQuality(dto.quality);
-  const category: Exclude<MarketCategory, 'all'> =
-    dto.category === 'consumable' ||
-      dto.category === 'material' ||
-      dto.category === 'gem' ||
-      dto.category === 'equipment' ||
-      dto.category === 'skillbook'
-      ? dto.category
-      : 'other';
+  const category = normalizeMarketCategory(dto.category);
   return {
     id: Number(dto.id),
     itemInstanceId: Number(dto.itemInstanceId) || 0,
@@ -584,6 +590,58 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   const [records, setRecords] = useState<TradeRecord[]>([]);
   const [recordsTotal, setRecordsTotal] = useState(0);
 
+  const resetMarketPage = useCallback(() => {
+    setMarketPage(1);
+  }, []);
+
+  const handleCategoryChange = useCallback(
+    (value: MarketCategory) => {
+      setCategory(value);
+      resetMarketPage();
+    },
+    [resetMarketPage],
+  );
+
+  const handleSortChange = useCallback(
+    (value: MarketSort) => {
+      setSort(value);
+      resetMarketPage();
+    },
+    [resetMarketPage],
+  );
+
+  const handleQualityChange = useCallback(
+    (value: ItemQuality | 'all') => {
+      setQuality(value);
+      resetMarketPage();
+    },
+    [resetMarketPage],
+  );
+
+  const handleQueryChange = useCallback(
+    (value: string) => {
+      setQuery(value);
+      resetMarketPage();
+    },
+    [resetMarketPage],
+  );
+
+  const handleMinPriceChange = useCallback(
+    (value: string) => {
+      setMinPrice(value);
+      resetMarketPage();
+    },
+    [resetMarketPage],
+  );
+
+  const handleMaxPriceChange = useCallback(
+    (value: string) => {
+      setMaxPrice(value);
+      resetMarketPage();
+    },
+    [resetMarketPage],
+  );
+
   const selectedBagItem = useMemo(
     () => (selectedBagId === null ? null : bagItems.find((b) => b.id === selectedBagId) ?? null),
     [bagItems, selectedBagId],
@@ -614,17 +672,13 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     async (page: number) => {
       setMarketLoading(true);
       try {
-        const min = parseMaybeNumber(minPrice);
-        const max = parseMaybeNumber(maxPrice);
-        const minParam = min === null ? undefined : Math.max(0, Math.floor(min));
-        const maxParam = max === null ? undefined : Math.max(0, Math.floor(max));
         const res = await getMarketListings({
           category,
           quality,
           query: query.trim(),
           sort,
-          minPrice: minParam,
-          maxPrice: maxParam,
+          minPrice: toNonNegativeIntegerOrUndefined(minPrice),
+          maxPrice: toNonNegativeIntegerOrUndefined(maxPrice),
           page,
           pageSize,
         });
@@ -843,55 +897,37 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
         <div className="market-filters">
           <Select
             value={category}
-            onChange={(v) => {
-              setCategory(v);
-              setMarketPage(1);
-            }}
+            onChange={handleCategoryChange}
             options={categoryOptions}
           />
           <Input
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setMarketPage(1);
-            }}
+            onChange={(e) => handleQueryChange(e.target.value)}
             placeholder="搜索物品/卖家"
             allowClear
             suffix={<SearchOutlined />}
           />
           <Select
             value={sort}
-            onChange={(v) => {
-              setSort(v);
-              setMarketPage(1);
-            }}
+            onChange={handleSortChange}
             options={sortOptions}
           />
           <Select
             value={quality}
-            onChange={(v) => {
-              setQuality(v);
-              setMarketPage(1);
-            }}
+            onChange={handleQualityChange}
             options={qualityOptions}
           />
           <div className="market-price-range">
             <Input
               value={minPrice}
-              onChange={(e) => {
-                setMinPrice(e.target.value);
-                setMarketPage(1);
-              }}
+              onChange={(e) => handleMinPriceChange(e.target.value)}
               placeholder="最低价"
               inputMode="numeric"
             />
             <span className="market-price-split">~</span>
             <Input
               value={maxPrice}
-              onChange={(e) => {
-                setMaxPrice(e.target.value);
-                setMarketPage(1);
-              }}
+              onChange={(e) => handleMaxPriceChange(e.target.value)}
               placeholder="最高价"
               inputMode="numeric"
             />
@@ -901,10 +937,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
           <div className="market-filters-mobile-search">
             <Input
               value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setMarketPage(1);
-              }}
+              onChange={(e) => handleQueryChange(e.target.value)}
               placeholder="搜索物品/卖家"
               allowClear
               suffix={<SearchOutlined />}
@@ -922,46 +955,31 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
               <div className="market-filters-mobile-grid">
                 <Select
                   value={category}
-                  onChange={(v) => {
-                    setCategory(v);
-                    setMarketPage(1);
-                  }}
+                  onChange={handleCategoryChange}
                   options={categoryOptions}
                 />
                 <Select
                   value={sort}
-                  onChange={(v) => {
-                    setSort(v);
-                    setMarketPage(1);
-                  }}
+                  onChange={handleSortChange}
                   options={sortOptions}
                 />
                 <Select
                   value={quality}
-                  onChange={(v) => {
-                    setQuality(v);
-                    setMarketPage(1);
-                  }}
+                  onChange={handleQualityChange}
                   options={qualityOptions}
                 />
               </div>
               <div className="market-price-range market-price-range-mobile">
                 <Input
                   value={minPrice}
-                  onChange={(e) => {
-                    setMinPrice(e.target.value);
-                    setMarketPage(1);
-                  }}
+                  onChange={(e) => handleMinPriceChange(e.target.value)}
                   placeholder="最低价"
                   inputMode="numeric"
                 />
                 <span className="market-price-split">~</span>
                 <Input
                   value={maxPrice}
-                  onChange={(e) => {
-                    setMaxPrice(e.target.value);
-                    setMarketPage(1);
-                  }}
+                  onChange={(e) => handleMaxPriceChange(e.target.value)}
                   placeholder="最高价"
                   inputMode="numeric"
                 />
