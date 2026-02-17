@@ -22,6 +22,7 @@ const UPGRADE_CLOSED_MESSAGE = '暂未开放';
 const BUILDING_MAX_LEVEL = 10;
 
 const HALL_BUILDING_TYPE = 'hall';
+const HALL_BUILDING_NAME = '宗门大殿';
 const ONLY_HALL_UPGRADE_MESSAGE = '当前仅开放宗门大殿升级';
 
 export const getBuildings = async (
@@ -159,7 +160,7 @@ export const upgradeBuilding = async (characterId: number, buildingType: string)
     );
 
     await applyHallMemberCapTx(client, member.sectId);
-    await addLogTx(client, member.sectId, 'upgrade_building', characterId, null, `升级建筑：${HALL_BUILDING_TYPE}`);
+    await addLogTx(client, member.sectId, 'upgrade_building', characterId, null, `升级建筑：${HALL_BUILDING_NAME}`);
 
     await client.query('COMMIT');
     return { success: true, message: '升级成功' };
