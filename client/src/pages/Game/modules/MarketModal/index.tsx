@@ -583,6 +583,21 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [records, setRecords] = useState<TradeRecord[]>([]);
   const [recordsTotal, setRecordsTotal] = useState(0);
+  const marketItemTooltipClassNames = useMemo(
+    () =>
+      ({
+        root: 'market-tooltip-overlay game-tooltip-surface-root',
+        container: 'market-tooltip-overlay-container game-tooltip-surface-container',
+      }) as const,
+    [],
+  );
+  const getMarketTooltipPopupContainer = useCallback(
+    (triggerNode: HTMLElement): HTMLElement => {
+      const modalRoot = triggerNode.closest('.market-modal');
+      return modalRoot instanceof HTMLElement ? modalRoot : document.body;
+    },
+    [],
+  );
 
   const resetMarketPage = useCallback(() => {
     setMarketPage(1);
@@ -1058,12 +1073,12 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
                   width: 220,
                   render: (_: string, row: ListingItem) => (
                     <Tooltip
-                      overlayClassName="market-tooltip-overlay"
-                      classNames={{ root: 'market-tooltip-overlay' }}
+                      overlayClassName={marketItemTooltipClassNames.root}
+                      classNames={marketItemTooltipClassNames}
                       placement="right"
                       mouseEnterDelay={0.15}
                       title={<MarketItemTooltipContent row={row} />}
-                      getPopupContainer={(triggerNode) => triggerNode.closest('.market-modal') ?? document.body}
+                      getPopupContainer={getMarketTooltipPopupContainer}
                     >
                       <div className="market-item">
                         <img className="market-item-icon" src={row.icon} alt={row.name} />
@@ -1198,12 +1213,12 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
                   key: 'name',
                   render: (_: string, row: ListingItem) => (
                     <Tooltip
-                      overlayClassName="market-tooltip-overlay"
-                      classNames={{ root: 'market-tooltip-overlay' }}
+                      overlayClassName={marketItemTooltipClassNames.root}
+                      classNames={marketItemTooltipClassNames}
                       placement="right"
                       mouseEnterDelay={0.15}
                       title={<MarketItemTooltipContent row={row} />}
-                      getPopupContainer={(triggerNode) => triggerNode.closest('.market-modal') ?? document.body}
+                      getPopupContainer={getMarketTooltipPopupContainer}
                     >
                       <div className="market-item">
                         <img className="market-item-icon" src={row.icon} alt={row.name} />

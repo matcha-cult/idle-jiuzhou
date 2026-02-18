@@ -101,6 +101,11 @@ const formatElement = (e: string): string => {
   return v || '无';
 };
 
+const SKILL_FAB_TOOLTIP_CLASS_NAMES = {
+  root: 'skill-fab-tooltip-overlay game-tooltip-surface-root',
+  container: 'skill-fab-tooltip-container game-tooltip-surface-container',
+} as const;
+
 const SKILL_ICON_GLOB_SKILLS = import.meta.glob('../../../../assets/images/skills/*.{png,jpg,jpeg,webp,gif}', {
   eager: true,
   import: 'default',
@@ -700,25 +705,33 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
             element: s.element,
           });
           const tooltipTitle = (
-            <div style={{ maxWidth: 260 }}>
-              <div style={{ fontWeight: 800, marginBottom: 6 }}>{s.name}</div>
-              <div>消耗：灵气 {s.costLingqi} / 气血 {s.costQixue}</div>
-              <div>冷却：{s.cooldownTurns}（实际 {actualCd}）</div>
-              <div>
+            <div className="skill-fab-tooltip-content">
+              <div className="skill-fab-tooltip-title">{s.name}</div>
+              <div className="skill-fab-tooltip-line">消耗：灵气 {s.costLingqi} / 气血 {s.costQixue}</div>
+              <div className="skill-fab-tooltip-line">冷却：{s.cooldownTurns}（实际 {actualCd}）</div>
+              <div className="skill-fab-tooltip-line">
                 类型：{formatDamageType(s.damageType)} · 目标：{formatTargetType(s.targetType)}
                 {s.targetCount > 1 ? `（${s.targetCount}）` : ''}
               </div>
-              <div>
-                五行：{formatElement(s.element)}
-              </div>
-              {effectLines.length > 0 ? effectLines.map((line, idx) => (
-                <div key={`${s.id}-effect-${idx}`}>{line}</div>
-              )) : <div>无效果</div>}
-              {s.description ? <div style={{ marginTop: 6, opacity: 0.9, whiteSpace: 'pre-wrap' }}>{s.description}</div> : null}
+              <div className="skill-fab-tooltip-line">五行：{formatElement(s.element)}</div>
+              {effectLines.length > 0
+                ? effectLines.map((line, idx) => (
+                    <div key={`${s.id}-effect-${idx}`} className="skill-fab-tooltip-line">
+                      {line}
+                    </div>
+                  ))
+                : <div className="skill-fab-tooltip-line">无效果</div>}
+              {s.description ? <div className="skill-fab-tooltip-desc">{s.description}</div> : null}
             </div>
           );
           return (
-            <Tooltip key={s.id} title={tooltipTitle} placement={expandDirection === 'left' ? 'left' : 'right'}>
+            <Tooltip
+              key={s.id}
+              title={tooltipTitle}
+              placement={expandDirection === 'left' ? 'left' : 'right'}
+              overlayClassName={SKILL_FAB_TOOLTIP_CLASS_NAMES.root}
+              classNames={SKILL_FAB_TOOLTIP_CLASS_NAMES}
+            >
               <span style={{ display: 'inline-block' }}>
                 <button
                   type="button"

@@ -1,0 +1,75 @@
+/**
+ * 作用：
+ * 1) 统一游戏内自定义 Tooltip 外层容器（背景/边框/阴影/箭头）样式，避免各模块重复维护同一套皮肤。
+ * 2) 只负责“外壳皮肤”，不负责业务内容排版（标题、词条行、属性文案由各模块自行定义）。
+ *
+ * 输入/输出：
+ * - 输入：在 Tooltip 的 `classNames.root/container`（或 `overlayClassName`）上挂载
+ *   `game-tooltip-surface-root` / `game-tooltip-surface-container`，并按需覆写 `--game-tooltip-*` 变量。
+ * - 输出：稳定一致的深色 Tooltip 外壳与箭头外观。
+ *
+ * 数据流/状态流：
+ * - 全局默认变量 -> 模块局部变量覆写 -> `game-tooltip-surface-*` 统一消费并渲染到 `.ant-tooltip-inner` 与箭头。
+ *
+ * 关键边界条件与坑点：
+ * 1) Ant Design 6 的语义节点是 `container`，不是 `body`，因此容器类必须命中 `container` 才能稳定生效。
+ * 2) 箭头背景依赖 `--antd-arrow-background-color`，若不设置会回退为组件默认灰色（常见为 rgb(66,66,66)）。
+ */
+
+:root {
+  --game-tooltip-surface-bg: #f8f9fc;
+  --game-tooltip-surface-border: rgba(28, 30, 38, 0.16);
+  --game-tooltip-surface-shadow: 0 14px 40px rgba(0, 0, 0, 0.14);
+  --game-tooltip-surface-text: #2a2d36;
+  --game-tooltip-surface-muted: rgba(42, 45, 54, 0.8);
+  --game-tooltip-surface-chip-bg: rgba(28, 30, 38, 0.06);
+  --game-tooltip-surface-chip-border: rgba(28, 30, 38, 0.14);
+  --game-tooltip-surface-section-bg: rgba(28, 30, 38, 0.045);
+  --game-tooltip-surface-section-border: rgba(28, 30, 38, 0.1);
+  --game-tooltip-surface-divider: rgba(28, 30, 38, 0.12);
+  --game-tooltip-surface-min-width: min(460px, calc(100vw - 32px));
+  --game-tooltip-surface-max-width: min(500px, calc(100vw - 24px));
+}
+
+body.theme-dark {
+  --game-tooltip-surface-bg: #101216;
+  --game-tooltip-surface-border: rgba(255, 255, 255, 0.14);
+  --game-tooltip-surface-shadow: 0 20px 56px rgba(0, 0, 0, 0.62);
+  --game-tooltip-surface-text: rgba(255, 255, 255, 0.94);
+  --game-tooltip-surface-muted: rgba(255, 255, 255, 0.78);
+  --game-tooltip-surface-chip-bg: rgba(255, 255, 255, 0.06);
+  --game-tooltip-surface-chip-border: rgba(255, 255, 255, 0.14);
+  --game-tooltip-surface-section-bg: rgba(255, 255, 255, 0.045);
+  --game-tooltip-surface-section-border: rgba(255, 255, 255, 0.11);
+  --game-tooltip-surface-divider: rgba(255, 255, 255, 0.1);
+  --game-tooltip-surface-min-width: min(460px, calc(100vw - 32px));
+  --game-tooltip-surface-max-width: min(500px, calc(100vw - 24px));
+}
+
+.game-tooltip-surface-root,
+.game-tooltip-surface-root.ant-tooltip,
+.game-tooltip-surface-container,
+.game-tooltip-surface-container.ant-tooltip-inner {
+  --antd-arrow-background-color: var(--game-tooltip-bg, var(--game-tooltip-surface-bg)) !important;
+}
+
+.game-tooltip-surface-root .ant-tooltip-inner,
+.game-tooltip-surface-container,
+.game-tooltip-surface-container.ant-tooltip-inner {
+  background: var(--game-tooltip-bg, var(--game-tooltip-surface-bg)) !important;
+  color: var(--game-tooltip-text, var(--game-tooltip-surface-text)) !important;
+  border: 1px solid var(--game-tooltip-border, var(--game-tooltip-surface-border)) !important;
+  border-radius: var(--game-tooltip-radius, 12px) !important;
+  padding: var(--game-tooltip-padding, 0px) !important;
+  min-width: var(--game-tooltip-min-width, var(--game-tooltip-surface-min-width));
+  max-width: var(--game-tooltip-max-width, var(--game-tooltip-surface-max-width));
+  max-height: var(--game-tooltip-max-height, none);
+  overflow: auto;
+  box-shadow: var(--game-tooltip-shadow, var(--game-tooltip-surface-shadow)) !important;
+}
+
+.game-tooltip-surface-root .ant-tooltip-arrow::before,
+.game-tooltip-surface-root.ant-tooltip .ant-tooltip-arrow::before {
+  background: var(--game-tooltip-bg, var(--game-tooltip-surface-bg)) !important;
+  border: 1px solid var(--game-tooltip-border, var(--game-tooltip-surface-border)) !important;
+}

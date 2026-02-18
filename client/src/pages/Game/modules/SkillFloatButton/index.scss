@@ -1,3 +1,48 @@
+@use '../../shared/tooltipSurfaceShared';
+
+.skill-fab-tooltip-overlay,
+.skill-fab-tooltip-container {
+  --game-tooltip-bg: var(--game-tooltip-surface-bg);
+  --game-tooltip-border: var(--game-tooltip-surface-border);
+  --game-tooltip-shadow: var(--game-tooltip-surface-shadow);
+  --game-tooltip-text: var(--game-tooltip-surface-text);
+  --game-tooltip-muted: var(--game-tooltip-surface-muted);
+  --game-tooltip-divider: var(--game-tooltip-surface-divider);
+  --game-tooltip-radius: 14px;
+  --game-tooltip-padding: 12px;
+  --game-tooltip-max-height: min(62vh, 560px);
+}
+
+.skill-fab-tooltip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.skill-fab-tooltip-title {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--game-tooltip-text);
+  margin-bottom: 2px;
+}
+
+.skill-fab-tooltip-line {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--game-tooltip-muted);
+  white-space: pre-wrap;
+}
+
+.skill-fab-tooltip-desc {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--game-tooltip-divider);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--game-tooltip-muted);
+  white-space: pre-wrap;
+}
+
 .skill-fab {
   position: fixed;
   z-index: 30;

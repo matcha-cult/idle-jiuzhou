@@ -1,3 +1,5 @@
+@use '../../shared/tooltipSurfaceShared';
+
 .warehouse-modal {
   .ant-modal-content {
     padding: 0;
@@ -243,37 +245,27 @@
   line-height: 18px;
 }
 
-.warehouse-item-tooltip {
-  max-width: 460px;
+.warehouse-item-tooltip,
+.warehouse-item-tooltip-container {
+  --game-tooltip-bg: var(--game-tooltip-surface-bg);
+  --game-tooltip-border: var(--game-tooltip-surface-border);
+  --game-tooltip-shadow: var(--game-tooltip-surface-shadow);
+  --game-tooltip-text: var(--game-tooltip-surface-text);
+  --game-tooltip-muted: var(--game-tooltip-surface-muted);
+  --game-tooltip-chip-bg: var(--game-tooltip-surface-chip-bg);
+  --game-tooltip-chip-border: var(--game-tooltip-surface-chip-border);
+  --game-tooltip-section-bg: var(--game-tooltip-surface-section-bg);
+  --game-tooltip-section-border: var(--game-tooltip-surface-section-border);
+  --game-tooltip-divider: var(--game-tooltip-surface-divider);
+  --game-tooltip-radius: 14px;
+  --game-tooltip-padding: 12px;
+  --game-tooltip-max-height: 560px;
 }
 
-.warehouse-item-tooltip .ant-tooltip-inner {
-  background: #111111;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 14px;
-  padding: 12px 12px;
-  max-width: 460px;
-  max-height: 560px;
-  overflow: auto;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
-}
-
-.warehouse-item-tooltip .ant-tooltip-arrow::before {
-  background: #111111;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-}
-
-body.theme-dark .warehouse-item-tooltip .ant-tooltip-inner {
-  background: #d5d5d5;
-  color: #111111;
-  border: 1px solid rgba(0, 0, 0, 0.18);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
-}
-
-body.theme-dark .warehouse-item-tooltip .ant-tooltip-arrow::before {
-  background: #d5d5d5;
-  border: 1px solid rgba(0, 0, 0, 0.18);
+@media screen and (min-width: 769px) {
+  .warehouse-tooltip .affix-tooltip-text {
+    white-space: nowrap;
+  }
 }
 
 .warehouse-tooltip {
@@ -315,13 +307,8 @@ body.theme-dark .warehouse-item-tooltip .ant-tooltip-arrow::before {
   font-weight: 900;
   display: inline-flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-body.theme-dark .warehouse-tooltip-count {
-  background: rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(0, 0, 0, 0.16);
+  background: var(--game-tooltip-chip-bg);
+  border: 1px solid var(--game-tooltip-chip-border);
 }
 
 .warehouse-tooltip-tags {
@@ -338,13 +325,8 @@ body.theme-dark .warehouse-tooltip-count {
   font-weight: 800;
   display: inline-flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-}
-
-body.theme-dark .warehouse-tooltip-tag {
-  background: rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(0, 0, 0, 0.16);
+  background: var(--game-tooltip-chip-bg);
+  border: 1px solid var(--game-tooltip-chip-border);
 }
 
 .warehouse-tooltip-grid {
@@ -389,18 +371,13 @@ body.theme-dark .warehouse-tooltip-tag {
 .warehouse-tooltip-lines {
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--game-tooltip-section-bg);
+  border: 1px solid var(--game-tooltip-section-border);
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 11px;
   line-height: 16px;
-}
-
-body.theme-dark .warehouse-tooltip-lines {
-  background: rgba(0, 0, 0, 0.06);
-  border: 1px solid rgba(0, 0, 0, 0.12);
 }
 
 .warehouse-tooltip-line {

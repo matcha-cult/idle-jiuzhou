@@ -1,3 +1,5 @@
+@use '../../shared/tooltipSurfaceShared';
+
 .market-modal {
   .ant-modal-content {
     padding: 0;
@@ -280,18 +282,27 @@
   border-style: dotted;
 }
 
-.market-tooltip-overlay .ant-tooltip-inner {
-  background: var(--panel-bg);
-  color: var(--text-color);
-  border: 1px solid var(--text-color);
-  border-radius: 12px;
-  padding: 10px 12px;
-  max-width: 360px;
-  box-shadow: var(--shadow-elevate-top);
-}
+.market-tooltip-overlay,
+.market-tooltip-overlay-container {
+  --market-tooltip-bg: var(--game-tooltip-surface-bg);
+  --market-tooltip-border: var(--game-tooltip-surface-border);
+  --market-tooltip-shadow: var(--game-tooltip-surface-shadow);
+  --market-tooltip-chip-bg: var(--game-tooltip-surface-chip-bg);
+  --market-tooltip-chip-border: var(--game-tooltip-surface-chip-border);
+  --market-tooltip-section-bg: var(--game-tooltip-surface-section-bg);
+  --market-tooltip-section-border: var(--game-tooltip-surface-section-border);
+  --market-tooltip-title: var(--game-tooltip-surface-text);
+  --market-tooltip-text: var(--game-tooltip-surface-text);
+  --market-tooltip-muted: var(--game-tooltip-surface-muted);
+  --market-tooltip-divider: var(--game-tooltip-surface-divider);
 
-.market-tooltip-overlay .ant-tooltip-arrow::before {
-  background: var(--panel-bg);
+  --game-tooltip-bg: var(--market-tooltip-bg);
+  --game-tooltip-border: var(--market-tooltip-border);
+  --game-tooltip-shadow: var(--market-tooltip-shadow);
+  --game-tooltip-text: var(--market-tooltip-text);
+  --game-tooltip-radius: 14px;
+  --game-tooltip-padding: 12px;
+  --game-tooltip-max-height: min(62vh, 560px);
 }
 
 .market-tooltip {
@@ -311,8 +322,8 @@
   height: 34px;
   object-fit: contain;
   border-radius: 10px;
-  border: 1px solid var(--border-color-soft);
-  background: var(--panel-bg-soft);
+  border: 1px solid var(--market-tooltip-chip-border);
+  background: var(--market-tooltip-chip-bg);
   padding: 4px;
   display: block;
 }
@@ -320,7 +331,7 @@
 .market-tooltip-title {
   font-weight: 900;
   font-size: 13px;
-  color: inherit;
+  color: var(--market-tooltip-title);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -329,9 +340,16 @@
 
 .market-tooltip-count {
   margin-left: auto;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--market-tooltip-chip-border);
+  background: var(--market-tooltip-chip-bg);
+  display: inline-flex;
+  align-items: center;
   font-weight: 900;
-  color: inherit;
-  opacity: 0.75;
+  color: var(--market-tooltip-title);
+  font-size: 12px;
 }
 
 .market-tooltip-tags {
@@ -341,21 +359,24 @@
 }
 
 .market-tooltip-tag {
-  padding: 2px 8px;
+  height: 22px;
+  padding: 0 10px;
   border-radius: 999px;
-  border: 1px solid currentColor;
-  background: transparent;
-  color: inherit;
-  opacity: 0.9;
+  border: 1px solid var(--market-tooltip-chip-border);
+  background: var(--market-tooltip-chip-bg);
+  color: var(--market-tooltip-title);
   font-weight: 800;
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .market-tooltip-desc {
-  color: inherit;
-  opacity: 0.85;
+  color: var(--market-tooltip-text);
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.5;
+  padding-top: 8px;
+  border-top: 1px solid var(--market-tooltip-divider);
   white-space: pre-wrap;
 }
 
@@ -368,10 +389,15 @@
 .market-tooltip-section-title {
   font-size: 12px;
   font-weight: 900;
-  color: inherit;
+  color: var(--market-tooltip-title);
 }
 
 .market-tooltip-lines {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--market-tooltip-section-bg);
+  border: 1px solid var(--market-tooltip-section-border);
+  color: var(--market-tooltip-text);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -380,8 +406,7 @@
 .market-tooltip-line {
   font-size: 12px;
   font-weight: 700;
-  color: inherit;
-  opacity: 0.85;
+  color: var(--market-tooltip-text);
   line-height: 1.35;
 }
 

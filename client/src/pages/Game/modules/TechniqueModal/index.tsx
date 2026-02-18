@@ -110,6 +110,16 @@ const qualityText: Record<TechQuality, string> = {
   黄: '黄品',
 };
 
+const TECHNIQUE_TOOLTIP_CLASS_NAMES = {
+  root: 'technique-tooltip-overlay game-tooltip-surface-root',
+  container: 'technique-tooltip-overlay-container game-tooltip-surface-container',
+} as const;
+
+const SKILL_TOOLTIP_CLASS_NAMES = {
+  root: 'skill-tooltip-overlay game-tooltip-surface-root',
+  container: 'skill-tooltip-overlay-container game-tooltip-surface-container',
+} as const;
+
 const iconByFilename: Record<string, string> = {
   'qing_ling_dan.png': dan01,
   'pei_yuan_dan.png': dan02,
@@ -853,7 +863,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
     if (isMobile || !t) return content;
 
     return (
-      <Tooltip key={k} title={renderTechniqueTooltip(t)} placement="right" classNames={{ root: 'technique-tooltip-overlay' }}>
+      <Tooltip key={k} title={renderTechniqueTooltip(t)} placement="right" classNames={TECHNIQUE_TOOLTIP_CLASS_NAMES}>
         {content}
       </Tooltip>
     );
@@ -897,7 +907,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
         if (isMobile) return <div key={t.id}>{content}</div>;
 
         return (
-          <Tooltip key={t.id} title={renderTechniqueTooltip(t)} placement="right" classNames={{ root: 'technique-tooltip-overlay' }}>
+          <Tooltip key={t.id} title={renderTechniqueTooltip(t)} placement="right" classNames={TECHNIQUE_TOOLTIP_CLASS_NAMES}>
             {content}
           </Tooltip>
         );
@@ -993,7 +1003,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
             if (isMobile) return <div key={t.id}>{content}</div>;
 
             return (
-              <Tooltip key={t.id} title={renderTechniqueTooltip(t)} placement="right" classNames={{ root: 'technique-tooltip-overlay' }}>
+              <Tooltip key={t.id} title={renderTechniqueTooltip(t)} placement="right" classNames={TECHNIQUE_TOOLTIP_CLASS_NAMES}>
                 {content}
               </Tooltip>
             );
@@ -1393,7 +1403,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
                         <div className="tech-layer-skill-cell">
                           {list.length ? (
                             list.map((s) => (
-                              <Tooltip key={s.id} title={renderSkillTooltip(s)} placement="top" classNames={{ root: 'skill-tooltip-overlay' }}>
+                              <Tooltip key={s.id} title={renderSkillTooltip(s)} placement="top" classNames={SKILL_TOOLTIP_CLASS_NAMES}>
                                 <div className="tech-layer-skill-pill">
                                   <img className="tech-layer-skill-pill-icon" src={s.icon} alt={s.name} />
                                   <span className="tech-layer-skill-pill-name">{s.name}</span>
@@ -1516,7 +1526,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose }) => {
                     <div className="tech-cultivate-unlock-title">技能（第 {nextLayer} 层）</div>
                     <div className="tech-layer-skills">
                       {unlockSkills.map((s) => (
-                        <Tooltip key={`${t.id}-unlock-s-${s.id}`} title={renderSkillTooltip(s)} placement="top" classNames={{ root: 'skill-tooltip-overlay' }}>
+                        <Tooltip key={`${t.id}-unlock-s-${s.id}`} title={renderSkillTooltip(s)} placement="top" classNames={SKILL_TOOLTIP_CLASS_NAMES}>
                           <div className="tech-layer-skill">
                             <img className="tech-layer-skill-icon" src={s.icon} alt={s.name} />
                             <div className="tech-layer-skill-name">{s.name}</div>

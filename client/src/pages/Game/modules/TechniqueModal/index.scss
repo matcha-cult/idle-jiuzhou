@@ -1,3 +1,5 @@
+@use '../../shared/tooltipSurfaceShared';
+
 .tech-modal {
   .ant-modal-content {
     padding: 0;
@@ -1556,23 +1558,16 @@
 }
 
 // 技能Tooltip样式
-.skill-tooltip-overlay {
-  .ant-tooltip-inner {
-    padding: 0;
-    background: var(--panel-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-    min-width: 200px;
-    max-width: 280px;
-  }
-
-  .ant-tooltip-arrow {
-    &::before {
-      background: var(--panel-bg);
-      border: 1px solid var(--border-color);
-    }
-  }
+.skill-tooltip-overlay,
+.skill-tooltip-overlay-container {
+  --game-tooltip-bg: var(--game-tooltip-surface-bg);
+  --game-tooltip-border: var(--game-tooltip-surface-border);
+  --game-tooltip-shadow: var(--game-tooltip-surface-shadow);
+  --game-tooltip-text: var(--game-tooltip-surface-text);
+  --game-tooltip-muted: var(--game-tooltip-surface-muted);
+  --game-tooltip-divider: var(--game-tooltip-surface-divider);
+  --game-tooltip-radius: 12px;
+  --game-tooltip-padding: 0px;
 }
 
 .skill-tooltip {
@@ -1582,10 +1577,10 @@
 .skill-tooltip-title {
   font-size: 14px;
   font-weight: 900;
-  color: #fff;
+  color: var(--game-tooltip-text);
   margin-bottom: 10px;
   padding-bottom: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 1px solid var(--game-tooltip-divider);
 }
 
 .skill-tooltip-content {
@@ -1607,13 +1602,13 @@
 }
 
 .skill-tooltip-label {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--game-tooltip-muted);
   flex: 0 0 auto;
   white-space: nowrap;
 }
 
 .skill-tooltip-value {
-  color: #fff;
+  color: var(--game-tooltip-text);
   flex: 1;
   min-width: 0;
   word-break: break-word;
@@ -1621,7 +1616,7 @@
 
 .skill-tooltip-empty {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--game-tooltip-muted);
   text-align: center;
   padding: 8px 0;
 }
@@ -1650,23 +1645,16 @@
 }
 
 // 功法Tooltip样式
-.technique-tooltip-overlay {
-  .ant-tooltip-inner {
-    padding: 0;
-    background: rgba(0, 0, 0, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    min-width: 240px;
-    max-width: 320px;
-  }
-
-  .ant-tooltip-arrow {
-    &::before {
-      background: rgba(0, 0, 0, 0.9);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-    }
-  }
+.technique-tooltip-overlay,
+.technique-tooltip-overlay-container {
+  --game-tooltip-bg: var(--game-tooltip-surface-bg);
+  --game-tooltip-border: var(--game-tooltip-surface-border);
+  --game-tooltip-shadow: var(--game-tooltip-surface-shadow);
+  --game-tooltip-text: var(--game-tooltip-surface-text);
+  --game-tooltip-muted: var(--game-tooltip-surface-muted);
+  --game-tooltip-divider: var(--game-tooltip-surface-divider);
+  --game-tooltip-radius: 12px;
+  --game-tooltip-padding: 0px;
 }
 
 .technique-tooltip {
@@ -1684,7 +1672,7 @@
 .technique-tooltip-name {
   font-size: 15px;
   font-weight: 900;
-  color: #fff;
+  color: var(--game-tooltip-text);
 }
 
 .technique-tooltip-quality {
@@ -1694,15 +1682,15 @@
 
 .technique-tooltip-layer {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--game-tooltip-muted);
   margin-bottom: 10px;
   padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--game-tooltip-divider);
 }
 
 .technique-tooltip-desc {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--game-tooltip-muted);
   line-height: 1.6;
   margin-bottom: 12px;
 }
@@ -1718,7 +1706,7 @@
 .technique-tooltip-section-title {
   font-size: 11px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--game-tooltip-muted);
   margin-bottom: 8px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1736,13 +1724,13 @@
   justify-content: space-between;
   gap: 10px;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--game-tooltip-surface-section-bg);
   border-radius: 6px;
 }
 
 .technique-tooltip-bonus-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--game-tooltip-muted);
 }
 
 .technique-tooltip-bonus-value {
@@ -1762,7 +1750,7 @@
   align-items: center;
   gap: 6px;
   padding: 4px 8px 4px 4px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--game-tooltip-surface-section-bg);
   border-radius: 6px;
 }
 
@@ -1775,13 +1763,13 @@
 
 .technique-tooltip-skill-name {
   font-size: 11px;
-  color: #fff;
+  color: var(--game-tooltip-text);
   white-space: nowrap;
 }
 
 .technique-tooltip-empty {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--game-tooltip-muted);
   text-align: center;
   padding: 8px 0;
 }

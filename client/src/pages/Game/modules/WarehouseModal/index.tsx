@@ -735,11 +735,18 @@ const WarehouseModal: React.FC<WarehouseModalProps> = ({ open, onClose }) => {
 
     return (
       <Tooltip
-        overlayClassName="warehouse-item-tooltip"
+        overlayClassName="warehouse-item-tooltip game-tooltip-surface-root"
+        classNames={{
+          root: 'warehouse-item-tooltip game-tooltip-surface-root',
+          container: 'warehouse-item-tooltip-container game-tooltip-surface-container',
+        }}
         title={<WarehouseItemTooltip it={it} />}
         mouseEnterDelay={0.12}
         placement="right"
-        getPopupContainer={(triggerNode) => triggerNode.closest('.warehouse-modal') ?? document.body}
+        getPopupContainer={(triggerNode) => {
+          const modalRoot = triggerNode.closest('.warehouse-modal');
+          return modalRoot instanceof HTMLElement ? modalRoot : document.body;
+        }}
       >
         {node}
       </Tooltip>

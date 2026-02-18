@@ -124,6 +124,11 @@ const EQUIP_QUALITY_TEXT: Record<string, string> = {
   黄: '黄品',
 };
 
+const EQUIPMENT_TOOLTIP_CLASS_NAMES = {
+  root: 'equipment-tooltip-overlay game-tooltip-surface-root',
+  container: 'equipment-tooltip-overlay-container game-tooltip-surface-container',
+} as const;
+
 const RATING_SUFFIX = '_rating';
 
 const RATING_BASE_ATTR_KEYS = [
@@ -1859,7 +1864,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                           key={slot}
                           title={equipped ? renderEquipTooltip(slot, equipped.item) : null}
                           placement="right"
-                          classNames={{ root: 'equipment-tooltip-overlay' }}
+                          classNames={EQUIPMENT_TOOLTIP_CLASS_NAMES}
                         >
                           <div
                             className={`equip-slot ${equipped ? 'has-item' : ''} ${
@@ -1890,7 +1895,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                           key={slot}
                           title={equipped ? renderEquipTooltip(slot, equipped.item) : null}
                           placement="left"
-                          classNames={{ root: 'equipment-tooltip-overlay' }}
+                          classNames={EQUIPMENT_TOOLTIP_CLASS_NAMES}
                         >
                           <div
                             className={`equip-slot ${equipped ? 'has-item' : ''} ${
