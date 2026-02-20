@@ -2402,36 +2402,32 @@ const Game: FC<GameProps> = ({ onLogout }) => {
           }
 
           setTopTab('map');
-          setBattleEnemies([]);
-          setBattleAllies(buildAllyGroup(character));
           setArenaBattleId(null);
           setDungeonBattleId(null);
           setDungeonInstanceId(null);
-          setViewMode('battle');
 
           try {
             const createRes = await createDungeonInstance(dungeonId, rank);
             if (!createRes?.success || !createRes.data?.instanceId) {
               messageRef.current.error(createRes?.message || '创建秘境失败');
-              setViewMode('map');
               return;
             }
 
             const instanceId = String(createRes.data.instanceId);
-            setDungeonInstanceId(instanceId);
             const startRes = await startDungeonInstance(instanceId);
             if (!startRes?.success || !startRes.data?.battleId) {
               messageRef.current.error(startRes?.message || '开始秘境失败');
-              setViewMode('map');
-              setDungeonInstanceId(null);
               return;
             }
 
+            setBattleEnemies([]);
+            setBattleAllies(buildAllyGroup(character));
+            setDungeonInstanceId(instanceId);
             setDungeonBattleId(String(startRes.data.battleId));
+            setViewMode('battle');
             gameSocket.refreshCharacter();
           } catch (e) {
             messageRef.current.error((e as { message?: string })?.message || '进入秘境失败');
-            setViewMode('map');
             setDungeonBattleId(null);
             setDungeonInstanceId(null);
           }

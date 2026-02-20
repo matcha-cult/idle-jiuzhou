@@ -70,6 +70,7 @@ const toPercent = (value: number, total: number) => {
 };
 
 type BattleResult = 'idle' | 'running' | 'win' | 'lose' | 'draw';
+type BattleStartupStatus = 'none' | 'preparing' | 'cooldown';
 type FloatText = { id: string; unitId: string; value: number; dx: number; createdAt: number };
 
 let floatIdSeed = 0;
@@ -234,6 +235,7 @@ const isTransientBattleActionError = (msg: unknown): boolean => {
 
 const BattleArea: React.FC<BattleAreaProps> = ({
   enemies,
+  allies,
   onEscape,
   onTurnChange,
   onBindSkillCaster,
@@ -252,6 +254,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   const [selectedAllyId, setSelectedAllyId] = useState<string | null>(null);
   const [floats, setFloats] = useState<FloatText[]>([]);
   const [result, setResult] = useState<BattleResult>('idle');
+  const [startupStatus, setStartupStatus] = useState<BattleStartupStatus>('none');
   const [isTeamBattle, setIsTeamBattle] = useState(false);
   const [teamMemberCount, setTeamMemberCount] = useState(1);
   const [nexting, setNexting] = useState(false);
@@ -450,12 +453,15 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       announcedAutoNextBattleIdRef.current = null;
       setIsTeamBattle(false);
       setTeamMemberCount(1);
+      setStartupStatus('preparing');
 
       if (monsterIds.length === 0) {
         setBattleId(null);
         setBattleState(null);
         setResult('idle');
+        setStartupStatus('none');
         pushBattleLines([FAST_BATTLE_LOG_SYSTEM_LINES.cancelled]);
+        onEscape?.();
         startingBattleRef.current = false;
         return;
       }
@@ -470,6 +476,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           autoNextTimerRef.current = window.setTimeout(() => {
             void startBattle(monsterIds, { retryOnCooldown: true, silentCooldown: true });
           }, Math.max(0, retryAfterMs));
+          setStartupStatus('cooldown');
           if (!isSilentCooldown) {
             message.info(`冷却中，${(retryAfterMs / 1000).toFixed(2)}秒后自动重试`, Math.max(1, Math.ceil(retryAfterMs / 1000)));
           }
@@ -484,11 +491,14 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           setBattleId(null);
           setBattleState(null);
           setResult('idle');
+          setStartupStatus('none');
+          onEscape?.();
           startingBattleRef.current = false;
           return;
         }
         setBattleId(res.data.battleId);
         setBattleState(res.data.state);
+        setStartupStatus('none');
         setIsTeamBattle(res.data.isTeamBattle ?? false);
         setTeamMemberCount(res.data.teamMemberCount ?? 1);
         lastLogIndexRef.current = res.data.state.logs?.length ?? 0;
@@ -511,7 +521,9 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         setBattleId(null);
         setBattleState(null);
         setResult('idle');
+        setStartupStatus('none');
         pushBattleLines([FAST_BATTLE_LOG_SYSTEM_LINES.startFailed]);
+        onEscape?.();
       } finally {
         startingBattleRef.current = false;
       }
@@ -523,6 +535,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       ensureBattleStartAnnounced,
       formatNewLogs,
       message,
+      onEscape,
       pushBattleLines,
       syncBattleCooldownMeta,
     ],
@@ -554,12 +567,16 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     setSelectedEnemyId(null);
     setIsTeamBattle(false);
     setTeamMemberCount(1);
+    setStartupStatus('preparing');
     setBattleId(resolvedExternalBattleId);
     setBattleState(null);
     setResult('running');
     void (async () => {
       const res = await getBattleState(resolvedExternalBattleId);
-      if (!res?.success || !res.data?.state) return;
+      if (!res?.success || !res.data?.state) {
+        setStartupStatus('none');
+        return;
+      }
       const teamInfo = calcTeamInfoFromState(res.data.state);
       setIsTeamBattle(teamInfo.isTeamBattle);
       setTeamMemberCount(teamInfo.teamMemberCount);
@@ -571,6 +588,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       ensureBattleEndAnnounced(res.data.state);
       ensureBattleDropsAnnounced(res.data.state, res.data.rewards ?? null);
       setBattleState(res.data.state);
+      setStartupStatus('none');
     })();
   }, [
     clearAutoNextTimer,
@@ -585,6 +603,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
 
   useEffect(() => {
     if (!battleState) return;
+    setStartupStatus('none');
     const nextResult: BattleResult =
       battleState.phase === 'finished'
         ? battleState.result === 'attacker_win'
@@ -715,6 +734,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         setBattleId(incomingBattleId);
         const nextState = data?.state as BattleStateDto | undefined;
         if (nextState) {
+          setStartupStatus('none');
           lastChatLogIndexRef.current = 0;
           announcedBattleIdRef.current = null;
           announcedBattleEndIdRef.current = null;
@@ -758,6 +778,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         pushBattleLines(nextLines);
         ensureBattleEndAnnounced(next);
         setBattleState(next);
+        setStartupStatus('none');
         const teamInfo = calcTeamInfoFromState(next);
         setIsTeamBattle(teamInfo.isTeamBattle);
         setTeamMemberCount(teamInfo.teamMemberCount);
@@ -780,6 +801,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           ensureBattleEndAnnounced(next);
           ensureBattleDropsAnnounced(next, rewards);
           setBattleState(next);
+          setStartupStatus('none');
           const teamInfo = calcTeamInfoFromState(next);
           setIsTeamBattle(teamInfo.isTeamBattle);
           setTeamMemberCount(teamInfo.teamMemberCount);
@@ -797,6 +819,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         setBattleId(null);
         setBattleState(null);
         setResult('idle');
+        setStartupStatus('none');
         return;
       }
     });
@@ -823,20 +846,38 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     onTurnChange?.(turnCount, turnSide, actionKey, activeUnitId);
   }, [actionKey, activeUnitId, onTurnChange, turnCount, turnSide]);
 
-  const enemyUnits = useMemo(() => {
-    const units = battleState?.teams?.defender?.units ?? [];
-    return units.map((u) => toClientUnit(u));
-  }, [battleState]);
+  const enemyUnits = useMemo<BattleUnit[]>(() => {
+    const units = battleState?.teams?.defender?.units;
+    if (Array.isArray(units)) {
+      return units.map((u) => toClientUnit(u));
+    }
+    if (!resolvedExternalBattleId && startupStatus !== 'none') {
+      return enemies ?? [];
+    }
+    return [];
+  }, [battleState, enemies, resolvedExternalBattleId, startupStatus]);
 
-  const allyUnits = useMemo(() => {
-    const units = battleState?.teams?.attacker?.units ?? [];
-    return units.map((u) => toClientUnit(u));
-  }, [battleState]);
+  const allyUnits = useMemo<BattleUnit[]>(() => {
+    const units = battleState?.teams?.attacker?.units;
+    if (Array.isArray(units)) {
+      return units.map((u) => toClientUnit(u));
+    }
+    if (!resolvedExternalBattleId && startupStatus !== 'none') {
+      return allies ?? [];
+    }
+    return [];
+  }, [allies, battleState, resolvedExternalBattleId, startupStatus]);
 
   const enemyAliveCount = useMemo(() => pickAlive(enemyUnits).length, [enemyUnits]);
   const allyAliveCount = useMemo(() => pickAlive(allyUnits).length, [allyUnits]);
 
   const statusText = useMemo(() => {
+    if (!battleState && startupStatus === 'preparing') {
+      return '正在接敌...';
+    }
+    if (!battleState && startupStatus === 'cooldown') {
+      return '战斗间隔冷却中，等待自动重试';
+    }
     const teamTag = isTeamBattle ? `[组队${teamMemberCount}人] ` : '';
     const base = `${teamTag}敌方 ${enemyAliveCount}/${enemyUnits.length} · 我方 ${allyAliveCount}/${allyUnits.length}`;
     const sideText = turnSide === 'enemy' ? '敌方行动' : '我方行动';
@@ -845,7 +886,11 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     if (result === 'lose') return `${base} · ${sideText} · 失败`;
     if (result === 'draw') return `${base} · ${sideText} · 平局`;
     return '等待目标';
-  }, [allyAliveCount, allyUnits.length, enemyAliveCount, enemyUnits.length, isTeamBattle, result, teamMemberCount, turnSide]);
+  }, [allyAliveCount, allyUnits.length, battleState, enemyAliveCount, enemyUnits.length, isTeamBattle, result, startupStatus, teamMemberCount, turnSide]);
+
+  const isPreparingView = !battleState && (startupStatus !== 'none' || (Boolean(resolvedExternalBattleId) && result === 'running'));
+  const enemyEmptyText = isPreparingView ? '正在锁定敌方目标...' : '暂无敌方目标';
+  const allyEmptyText = isPreparingView ? '正在同步我方单位...' : '暂无我方单位';
 
   const handleEscape = useCallback(() => {
     const id = battleIdRef.current;
@@ -860,6 +905,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     setBattleId(null);
     setBattleState(null);
     setResult('idle');
+    setStartupStatus('none');
     setIsTeamBattle(false);
     setTeamMemberCount(1);
     lastLogIndexRef.current = 0;
@@ -1020,7 +1066,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
                   onClick={() => setSelectedEnemyId((prev) => (prev === u.id ? null : u.id))}
                 />
               ))}
-              {(enemyUnits ?? []).length === 0 ? <div className="battle-empty">暂无敌方目标</div> : null}
+              {(enemyUnits ?? []).length === 0 ? <div className="battle-empty">{enemyEmptyText}</div> : null}
             </div>
           </div>
         </section>
@@ -1040,7 +1086,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
                   onClick={() => setSelectedAllyId((prev) => (prev === u.id ? null : u.id))}
                 />
               ))}
-              {(allyUnits ?? []).length === 0 ? <div className="battle-empty">暂无我方单位</div> : null}
+              {(allyUnits ?? []).length === 0 ? <div className="battle-empty">{allyEmptyText}</div> : null}
             </div>
           </div>
         </section>
