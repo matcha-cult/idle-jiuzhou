@@ -351,13 +351,13 @@ export const getDungeonWeeklyTargets = async (
   userId: number
 ): Promise<
   | {
-      success: true;
-      data: {
-        period: { weekStart: string; weekEnd: string };
-        summary: { totalClears: number; targetClears: number };
-        targets: DungeonWeeklyTargetDto[];
-      };
-    }
+    success: true;
+    data: {
+      period: { weekStart: string; weekEnd: string };
+      summary: { totalClears: number; targetClears: number };
+      targets: DungeonWeeklyTargetDto[];
+    };
+  }
   | { success: false; message: string }
 > => {
   try {
@@ -554,10 +554,10 @@ export const getDungeonPreview = async (
   const entry =
     typeof userId === 'number' && Number.isFinite(userId)
       ? await (async () => {
-          const characterId = await getCharacterIdByUserId(userId);
-          if (!characterId) return null;
-          return getDungeonEntryRemaining(characterId, dungeonId, dungeon.daily_limit, dungeon.weekly_limit);
-        })()
+        const characterId = await getCharacterIdByUserId(userId);
+        if (!characterId) return null;
+        return getDungeonEntryRemaining(characterId, dungeonId, dungeon.daily_limit, dungeon.weekly_limit);
+      })()
       : null;
 
   const diffRow =
@@ -586,20 +586,20 @@ export const getDungeonPreview = async (
     monsterIds.length === 0
       ? { rows: [] as MonsterLiteRow[] }
       : {
-          rows: getMonsterDefinitions()
-            .filter((entry) => entry.enabled !== false)
-            .filter((entry) => monsterIds.includes(entry.id))
-            .sort((left, right) => Number(left.level ?? 0) - Number(right.level ?? 0) || String(left.id).localeCompare(String(right.id)))
-            .map((entry) => ({
-              id: entry.id,
-              name: entry.name,
-              realm: entry.realm ?? null,
-              level: Number(entry.level ?? 0),
-              avatar: entry.avatar ?? null,
-              kind: entry.kind ?? null,
-              drop_pool_id: entry.drop_pool_id ?? null,
-            } as MonsterLiteRow)),
-        };
+        rows: getMonsterDefinitions()
+          .filter((entry) => entry.enabled !== false)
+          .filter((entry) => monsterIds.includes(entry.id))
+          .sort((left, right) => Number(left.level ?? 0) - Number(right.level ?? 0) || String(left.id).localeCompare(String(right.id)))
+          .map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            realm: entry.realm ?? null,
+            level: Number(entry.level ?? 0),
+            avatar: entry.avatar ?? null,
+            kind: entry.kind ?? null,
+            drop_pool_id: entry.drop_pool_id ?? null,
+          } as MonsterLiteRow)),
+      };
   const monsters = monstersRes.rows as MonsterLiteRow[];
 
   const stageNameById = new Map(stages.map((s) => [s.id, s.name ?? `第${s.stage_index}关`]));
@@ -1027,12 +1027,12 @@ const getStageAndWave = async (
   waveIndex: number
 ): Promise<
   | {
-      ok: true;
-      stage: Pick<DungeonStageRow, 'id' | 'stage_index' | 'name' | 'type'>;
-      wave: Pick<DungeonWaveRow, 'id' | 'wave_index' | 'monsters'>;
-      stageCount: number;
-      maxWaveIndexInStage: number;
-    }
+    ok: true;
+    stage: Pick<DungeonStageRow, 'id' | 'stage_index' | 'name' | 'type'>;
+    wave: Pick<DungeonWaveRow, 'id' | 'wave_index' | 'monsters'>;
+    stageCount: number;
+    maxWaveIndexInStage: number;
+  }
   | { ok: false; message: string; stageCount: number }
 > => {
   const stages = getEnabledDungeonStagesByDifficultyId(difficultyId);
@@ -1330,22 +1330,22 @@ export const getDungeonInstance = async (
   instanceId: string
 ): Promise<
   | {
-      success: true;
-      data: {
-        instance: {
-          id: string;
-          dungeonId: string;
-          difficultyId: string;
-          status: DungeonInstanceStatus;
-          currentStage: number;
-          currentWave: number;
-          participants: DungeonInstanceParticipant[];
-          currentBattleId: string | null;
-          startTime: string | null;
-          endTime: string | null;
-        };
+    success: true;
+    data: {
+      instance: {
+        id: string;
+        dungeonId: string;
+        difficultyId: string;
+        status: DungeonInstanceStatus;
+        currentStage: number;
+        currentWave: number;
+        participants: DungeonInstanceParticipant[];
+        currentBattleId: string | null;
+        startTime: string | null;
+        endTime: string | null;
       };
-    }
+    };
+  }
   | { success: false; message: string }
 > => {
   try {
@@ -1386,14 +1386,14 @@ export const startDungeonInstance = async (
   instanceId: string
 ): Promise<
   | {
-      success: true;
-      data: {
-        instanceId: string;
-        status: DungeonInstanceStatus;
-        battleId: string;
-        state: unknown;
-      };
-    }
+    success: true;
+    data: {
+      instanceId: string;
+      status: DungeonInstanceStatus;
+      battleId: string;
+      state: unknown;
+    };
+  }
   | { success: false; message: string }
 > => {
   const user = await getUserAndCharacter(userId);
@@ -1500,7 +1500,7 @@ export const startDungeonInstance = async (
       instanceId,
     ]);
 
-    const battleRes = await startDungeonPVEBattle(userId, monsterDefIds, { resourceSyncClient: client });
+    const battleRes = await startDungeonPVEBattle(userId, monsterDefIds, { resourceSyncClient: client, skipCooldown: true });
     if (!battleRes.success || !battleRes.data?.battleId) {
       await client.query('ROLLBACK');
       return { success: false, message: battleRes.message || '开启战斗失败' };
@@ -1528,15 +1528,15 @@ export const nextDungeonInstance = async (
   instanceId: string
 ): Promise<
   | {
-      success: true;
-      data: {
-        instanceId: string;
-        status: DungeonInstanceStatus;
-        battleId?: string;
-        state?: unknown;
-        finished?: boolean;
-      };
-    }
+    success: true;
+    data: {
+      instanceId: string;
+      status: DungeonInstanceStatus;
+      battleId?: string;
+      state?: unknown;
+      finished?: boolean;
+    };
+  }
   | { success: false; message: string }
 > => {
   try {
@@ -1752,7 +1752,7 @@ export const nextDungeonInstance = async (
 
         for (const p of participants) {
           const characterId = Number(p.characterId);
-      if (!Number.isFinite(characterId) || characterId <= 0) continue;
+          if (!Number.isFinite(characterId) || characterId <= 0) continue;
           let rewardBundle: DungeonRewardBundle = { exp: 0, silver: 0, items: [] };
 
           const isFirstClear = asNumber(clearCountMap.get(characterId), 0) <= 0;
@@ -1881,7 +1881,7 @@ export const nextDungeonInstance = async (
             if (!Number.isFinite(characterId) || characterId <= 0) continue;
             await recordDungeonClearEvent(characterId, inst.dungeon_id, 1, inst.difficulty_id);
           }
-        } catch {}
+        } catch { }
 
         return { success: true, data: { instanceId, status: 'cleared', finished: true } };
       } catch (error) {
@@ -1905,7 +1905,7 @@ export const nextDungeonInstance = async (
       nextWave,
     ]);
 
-    const battleRes = await startDungeonPVEBattle(userId, monsterDefIds);
+    const battleRes = await startDungeonPVEBattle(userId, monsterDefIds, { skipCooldown: true });
     if (!battleRes.success || !battleRes.data?.battleId) return { success: false, message: battleRes.message || '开启战斗失败' };
 
     const battleId = String(battleRes.data.battleId);

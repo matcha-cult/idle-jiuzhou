@@ -1522,6 +1522,8 @@ export async function playerAction(
 
 type StartDungeonPVEBattleOptions = {
   resourceSyncClient?: QueryExecutor;
+  /** 跳过战斗冷却检查（秘境推进时使用，因为秘境战斗由系统驱动，不应受手动发起的冷却限制） */
+  skipCooldown?: boolean;
 };
 
 export async function startDungeonPVEBattle(
@@ -1543,18 +1545,23 @@ export async function startDungeonPVEBattle(
     if (isCharacterInBattle(characterId)) {
       return { success: false, message: '角色正在战斗中' };
     }
-    const selfCooldown = validateBattleStartCooldown(characterId);
-    if (selfCooldown) {
-      return {
-        success: false,
-        message: selfCooldown.message,
-        data: {
-          reason: 'battle_start_cooldown',
-          retryAfterMs: selfCooldown.retryAfterMs,
-          battleStartCooldownMs: selfCooldown.cooldownMs,
-          nextBattleAvailableAt: selfCooldown.nextBattleAvailableAt,
-        },
-      };
+    // 秘境推进时跳过冷却检查：秘境战斗由系统驱动，不应受手动发起战斗的冷却限制。
+    // 若不跳过，auto-next 3秒定时器与服务端 3秒冷却卡在边界，可能导致
+    // nextDungeonInstance 中 stage/wave 已推进但战斗创建失败，造成波次跳过。
+    if (!options?.skipCooldown) {
+      const selfCooldown = validateBattleStartCooldown(characterId);
+      if (selfCooldown) {
+        return {
+          success: false,
+          message: selfCooldown.message,
+          data: {
+            reason: 'battle_start_cooldown',
+            retryAfterMs: selfCooldown.retryAfterMs,
+            battleStartCooldownMs: selfCooldown.cooldownMs,
+            nextBattleAvailableAt: selfCooldown.nextBattleAvailableAt,
+          },
+        };
+      }
     }
     const character = withBattleStartResources(characterWithSetBonus);
 
