@@ -54,6 +54,7 @@ import {
   type SkillDefConfig,
 } from '../staticConfigLoader.js';
 import { normalizeRealmKeepingUnknown } from '../shared/realmRules.js';
+import { getActiveIdleSession } from '../idle/idleSessionService.js';
 
 // 活跃战斗缓存
 const activeBattles = new Map<string, BattleEngine>();
@@ -90,6 +91,22 @@ const BATTLE_SET_BONUS_EFFECT_TYPE_SET = new Set([
   'resource',
   'shield',
 ]);
+
+/**
+ * 挂机中检查 — 若角色有活跃挂机会话则拒绝发起战斗
+ *
+ * 复用点：startPVEBattle / startDungeonPVEBattle / startPVPBattle 三处调用，
+ * 避免重复编写相同的查询 + 判断逻辑。
+ *
+ * 返回：null 表示未挂机，可继续；非 null 为拒绝结果，直接 return 即可。
+ */
+async function rejectIfIdling(characterId: number): Promise<BattleResult | null> {
+  const idleSession = await getActiveIdleSession(characterId);
+  if (idleSession) {
+    return { success: false, message: '离线挂机中，无法发起战斗' };
+  }
+  return null;
+}
 
 // Redis 战斗持久化常量
 const REDIS_BATTLE_KEY_PREFIX = 'battle:state:';
@@ -1289,6 +1306,11 @@ export async function startPVEBattle(
       return { success: false, message: '角色不存在' };
     }
     const characterId = Number(characterBase.id);
+
+    // 挂机中禁止发起战斗
+    const idleReject = await rejectIfIdling(characterId);
+    if (idleReject) return idleReject;
+
     const characterWithSetBonus = await attachSetBonusEffectsToCharacterData(characterId, characterBase as CharacterData);
 
     if (characterWithSetBonus.qixue <= 0) {
@@ -1538,6 +1560,11 @@ export async function startDungeonPVEBattle(
     }
 
     const characterId = Number(baseCharacter.id);
+
+    // 挂机中禁止发起战斗
+    const idleReject = await rejectIfIdling(characterId);
+    if (idleReject) return idleReject;
+
     const characterWithSetBonus = await attachSetBonusEffectsToCharacterData(characterId, baseCharacter as CharacterData);
     if (characterWithSetBonus.qixue <= 0) {
       return { success: false, message: '气血不足，无法战斗' };
@@ -1665,6 +1692,10 @@ export async function startPVPBattle(
     if (!Number.isFinite(challengerCharacterId) || challengerCharacterId <= 0) {
       return { success: false, message: '角色数据异常' };
     }
+
+    // 挂机中禁止发起战斗
+    const idleReject = await rejectIfIdling(challengerCharacterId);
+    if (idleReject) return idleReject;
 
     const oppId = Number(opponentCharacterId);
     if (!Number.isFinite(oppId) || oppId <= 0) {
