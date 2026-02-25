@@ -261,7 +261,18 @@ export async function executeSingleBatch(
   userId: number,
 ): Promise<SingleBatchResult> {
   const room = await getRoomInMap(session.mapId, session.roomId);
-  const monsterIds: string[] = (room?.monsters ?? []).map((m) => m.monster_def_id);
+
+  // 按选中怪物构建 monsterIds：有 targetMonsterDefId 时只打该种怪，数量取房间配置的 count
+  const targetDefId = session.sessionSnapshot.targetMonsterDefId;
+  let monsterIds: string[];
+  if (targetDefId) {
+    const monsterEntry = (room?.monsters ?? []).find((m) => m.monster_def_id === targetDefId);
+    const count = monsterEntry?.count ?? 1;
+    monsterIds = Array(count).fill(targetDefId) as string[];
+  } else {
+    // 旧会话无此字段时走原有全怪物逻辑
+    monsterIds = (room?.monsters ?? []).map((m) => m.monster_def_id);
+  }
 
   if (monsterIds.length === 0) {
     return {

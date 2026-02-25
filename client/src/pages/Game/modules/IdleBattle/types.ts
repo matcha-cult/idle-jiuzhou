@@ -48,6 +48,8 @@ export interface IdleConfigDto {
   roomId: string | null;
   maxDurationMs: number;
   autoSkillPolicy: AutoSkillPolicyDto;
+  /** 目标怪物定义 ID（null 表示未选择） */
+  targetMonsterDefId: string | null;
 }
 
 // ============================================
@@ -153,4 +155,5 @@ export interface IdleStartParams {
   roomId: string;
   maxDurationMs: number;
   autoSkillPolicy: AutoSkillPolicyDto;
+  targetMonsterDefId: string;
 }

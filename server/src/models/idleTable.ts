@@ -67,12 +67,13 @@ CREATE INDEX IF NOT EXISTS idx_idle_batches_session ON idle_battle_batches(sessi
 // ─── idle_configs：挂机配置持久化表 ──────────────────────────────────────────
 const idleConfigsTableSQL = `
 CREATE TABLE IF NOT EXISTS idle_configs (
-  character_id    INTEGER PRIMARY KEY REFERENCES characters(id),
-  map_id          VARCHAR(100),
-  room_id         VARCHAR(100),
-  max_duration_ms BIGINT NOT NULL DEFAULT 3600000,
-  auto_skill_policy JSONB NOT NULL DEFAULT '{"slots":[]}',
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  character_id          INTEGER PRIMARY KEY REFERENCES characters(id),
+  map_id                VARCHAR(100),
+  room_id               VARCHAR(100),
+  max_duration_ms       BIGINT NOT NULL DEFAULT 3600000,
+  auto_skill_policy     JSONB NOT NULL DEFAULT '{"slots":[]}',
+  target_monster_def_id VARCHAR(100),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 `;
 
@@ -92,6 +93,8 @@ export const initIdleTables = async (): Promise<void> => {
     console.log('  → 离线挂机战斗批次表检测完成');
 
     await query(idleConfigsTableSQL);
+    // 兼容已有表：新增 target_monster_def_id 列（IF NOT EXISTS 防止重复执行报错）
+    await query(`ALTER TABLE idle_configs ADD COLUMN IF NOT EXISTS target_monster_def_id VARCHAR(100)`);
     console.log('  → 离线挂机配置表检测完成');
 
     console.log('✓ 离线挂机表检测完成');

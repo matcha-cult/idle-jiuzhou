@@ -191,6 +191,7 @@ export async function startIdleSession(params: StartIdleSessionParams): Promise<
       skills: snapshotData.skills,
       setBonusEffects: snapshotData.setBonusEffects,
       autoSkillPolicy: config.autoSkillPolicy,
+      targetMonsterDefId: config.targetMonsterDefId,
     };
 
     // 5. 写入 idle_sessions

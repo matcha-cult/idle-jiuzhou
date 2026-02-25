@@ -44,7 +44,7 @@ interface AvailableSkillOption {
 // 常量
 // ============================================
 
-const MIN_DURATION_MS = 60_000;
+const MIN_DURATION_MS = 600_000;
 const MAX_DURATION_MS = 28_800_000;
 const MAX_SKILL_SLOTS = 6;
 
@@ -183,11 +183,15 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
   }, []);
 
   const handleMapChange = (mapId: string) => {
-    onConfigChange({ mapId, roomId: null });
+    onConfigChange({ mapId, roomId: null, targetMonsterDefId: null });
   };
 
   const handleRoomChange = (roomId: string) => {
-    onConfigChange({ roomId });
+    onConfigChange({ roomId, targetMonsterDefId: null });
+  };
+
+  const handleMonsterChange = (targetMonsterDefId: string) => {
+    onConfigChange({ targetMonsterDefId });
   };
 
   const handleDurationChange = (ms: number) => {
@@ -220,7 +224,14 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
     onConfigChange({ autoSkillPolicy: { slots: next } });
   };
 
-  const canStart = stamina > 0 && !!config.mapId && !!config.roomId && !isActive;
+  // 从当前选中房间派生怪物选项
+  const currentRoom = rooms.find((r) => r.id === config.roomId);
+  const monsterOptions = (currentRoom?.monsters ?? []).map((m) => ({
+    value: m.monster_def_id,
+    label: m.name ?? m.monster_def_id,
+  }));
+
+  const canStart = stamina > 0 && !!config.mapId && !!config.roomId && !!config.targetMonsterDefId && !isActive;
   const durationMinutes = Math.round(config.maxDurationMs / 60_000);
 
   return (
@@ -256,6 +267,17 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
               }))}
             />
           </div>
+          <div className="idle-config-field">
+            <label className="idle-config-label">挂机怪物</label>
+            <Select
+              className="idle-config-select"
+              value={config.targetMonsterDefId ?? undefined}
+              onChange={handleMonsterChange}
+              disabled={isActive || isStopping || !config.roomId || monsterOptions.length === 0}
+              placeholder="选择怪物"
+              options={monsterOptions}
+            />
+          </div>
         </div>
       </div>
 
@@ -278,7 +300,7 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
             <Slider
               min={MIN_DURATION_MS / 60_000}
               max={MAX_DURATION_MS / 60_000}
-              step={30}
+              step={10}
               value={durationMinutes}
               onChange={(v) => handleDurationChange(v * 60_000)}
               disabled={isActive || isStopping}
@@ -373,7 +395,7 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
             <Button onClick={onSave} disabled={isLoading}>
               保存配置
             </Button>
-            <Tooltip title={stamina <= 0 ? '体力不足' : (!config.mapId || !config.roomId) ? '请先选择地图和房间' : ''}>
+            <Tooltip title={stamina <= 0 ? '体力不足' : (!config.mapId || !config.roomId) ? '请先选择地图和房间' : !config.targetMonsterDefId ? '请选择挂机怪物' : ''}>
               <Button
                 type="primary"
                 onClick={onStart}

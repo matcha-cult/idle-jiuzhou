@@ -59,6 +59,7 @@ const DEFAULT_CONFIG: IdleConfigDto = {
   roomId: null,
   maxDurationMs: 3_600_000,
   autoSkillPolicy: { slots: [] },
+  targetMonsterDefId: null,
 };
 
 // ============================================
@@ -264,11 +265,16 @@ export function useIdleBattle(): UseIdleBattleReturn {
       setError('请先选择挂机地图和房间');
       return;
     }
+    if (!config.targetMonsterDefId) {
+      setError('请先选择挂机怪物');
+      return;
+    }
     const res = await startIdleSession({
       mapId: config.mapId,
       roomId: config.roomId,
       maxDurationMs: config.maxDurationMs,
       autoSkillPolicy: config.autoSkillPolicy,
+      targetMonsterDefId: config.targetMonsterDefId,
     });
     if (!res.success) {
       setError(res.message ?? '启动挂机失败');

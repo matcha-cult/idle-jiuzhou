@@ -44,6 +44,8 @@ export interface IdleConfigDto {
   roomId: string;
   maxDurationMs: number;
   autoSkillPolicy: AutoSkillPolicy;
+  /** 目标怪物定义 ID（选择只打某一种怪） */
+  targetMonsterDefId: string;
 }
 
 /**
@@ -81,6 +83,8 @@ export interface SessionSnapshot {
   setBonusEffects: import('../../battle/types.js').BattleSetBonusEffect[];
   /** 挂机技能策略快照（开始挂机时写入，旧会话可能缺失） */
   autoSkillPolicy?: AutoSkillPolicy;
+  /** 目标怪物定义 ID（旧会话可能缺失，缺失时走全怪物逻辑） */
+  targetMonsterDefId?: string;
 }
 
 // ============================================

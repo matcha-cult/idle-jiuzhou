@@ -39,6 +39,7 @@ import {
 import { startExecutionLoop } from '../services/idle/idleBattleExecutor.js';
 import { validateAutoSkillPolicy, serializeAutoSkillPolicy } from '../services/idle/autoSkillPolicyCodec.js';
 import { query } from '../config/database.js';
+import { getRoomInMap } from '../services/mapService.js';
 import type { IdleConfigDto } from '../services/idle/types.js';
 
 // ============================================
@@ -58,7 +59,7 @@ router.post('/start', requireCharacter, async (req: Request, res: Response): Pro
   const characterId = req.characterId!;
   const userId = req.userId!;
 
-  const { mapId, roomId, maxDurationMs, autoSkillPolicy } = req.body as Partial<IdleConfigDto>;
+  const { mapId, roomId, maxDurationMs, autoSkillPolicy, targetMonsterDefId } = req.body as Partial<IdleConfigDto>;
 
   if (!mapId || typeof mapId !== 'string') {
     res.status(400).json({ success: false, message: '缺少 mapId' });
@@ -66,6 +67,10 @@ router.post('/start', requireCharacter, async (req: Request, res: Response): Pro
   }
   if (!roomId || typeof roomId !== 'string') {
     res.status(400).json({ success: false, message: '缺少 roomId' });
+    return;
+  }
+  if (!targetMonsterDefId || typeof targetMonsterDefId !== 'string') {
+    res.status(400).json({ success: false, message: '缺少 targetMonsterDefId' });
     return;
   }
   const durationMs = Number(maxDurationMs);
@@ -84,11 +89,24 @@ router.post('/start', requireCharacter, async (req: Request, res: Response): Pro
     return;
   }
 
+  // 校验 targetMonsterDefId 属于目标房间
+  const room = await getRoomInMap(mapId, roomId);
+  if (!room) {
+    res.status(400).json({ success: false, message: '房间不存在' });
+    return;
+  }
+  const monsterInRoom = (room.monsters ?? []).some((m) => m.monster_def_id === targetMonsterDefId);
+  if (!monsterInRoom) {
+    res.status(400).json({ success: false, message: '所选怪物不属于该房间' });
+    return;
+  }
+
   const config: IdleConfigDto = {
     mapId,
     roomId,
     maxDurationMs: durationMs,
     autoSkillPolicy: policyValidation.value,
+    targetMonsterDefId,
   };
 
   const result = await startIdleSession({ characterId, userId, config });
@@ -211,7 +229,7 @@ router.get('/config', requireCharacter, async (req: Request, res: Response): Pro
   const characterId = req.characterId!;
 
   const res2 = await query(
-    `SELECT map_id, room_id, max_duration_ms, auto_skill_policy
+    `SELECT map_id, room_id, max_duration_ms, auto_skill_policy, target_monster_def_id
      FROM idle_configs WHERE character_id = $1`,
     [characterId],
   );
@@ -225,6 +243,7 @@ router.get('/config', requireCharacter, async (req: Request, res: Response): Pro
         roomId: null,
         maxDurationMs: 3_600_000,
         autoSkillPolicy: { slots: [] },
+        targetMonsterDefId: null,
       },
     });
     return;
@@ -235,6 +254,7 @@ router.get('/config', requireCharacter, async (req: Request, res: Response): Pro
     room_id: string | null;
     max_duration_ms: string;
     auto_skill_policy: unknown;
+    target_monster_def_id: string | null;
   };
 
   res.json({
@@ -244,6 +264,7 @@ router.get('/config', requireCharacter, async (req: Request, res: Response): Pro
       roomId: row.room_id,
       maxDurationMs: Number(row.max_duration_ms),
       autoSkillPolicy: row.auto_skill_policy,
+      targetMonsterDefId: row.target_monster_def_id,
     },
   });
 });
@@ -255,7 +276,7 @@ router.get('/config', requireCharacter, async (req: Request, res: Response): Pro
 router.put('/config', requireCharacter, async (req: Request, res: Response): Promise<void> => {
   const characterId = req.characterId!;
 
-  const { mapId, roomId, maxDurationMs, autoSkillPolicy } = req.body as Partial<IdleConfigDto>;
+  const { mapId, roomId, maxDurationMs, autoSkillPolicy, targetMonsterDefId } = req.body as Partial<IdleConfigDto>;
 
   // 校验 autoSkillPolicy（必填）
   const policyValidation = validateAutoSkillPolicy(autoSkillPolicy);
@@ -281,20 +302,22 @@ router.put('/config', requireCharacter, async (req: Request, res: Response): Pro
   const policyJson = serializeAutoSkillPolicy(policyValidation.value);
 
   await query(
-    `INSERT INTO idle_configs (character_id, map_id, room_id, max_duration_ms, auto_skill_policy, updated_at)
-     VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
+    `INSERT INTO idle_configs (character_id, map_id, room_id, max_duration_ms, auto_skill_policy, target_monster_def_id, updated_at)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, NOW())
      ON CONFLICT (character_id) DO UPDATE SET
-       map_id           = EXCLUDED.map_id,
-       room_id          = EXCLUDED.room_id,
-       max_duration_ms  = EXCLUDED.max_duration_ms,
-       auto_skill_policy = EXCLUDED.auto_skill_policy,
-       updated_at       = NOW()`,
+       map_id                = EXCLUDED.map_id,
+       room_id               = EXCLUDED.room_id,
+       max_duration_ms       = EXCLUDED.max_duration_ms,
+       auto_skill_policy     = EXCLUDED.auto_skill_policy,
+       target_monster_def_id = EXCLUDED.target_monster_def_id,
+       updated_at            = NOW()`,
     [
       characterId,
       mapId ?? null,
       roomId ?? null,
       validatedDurationMs ?? 3_600_000,
       policyJson,
+      targetMonsterDefId ?? null,
     ],
   );
 

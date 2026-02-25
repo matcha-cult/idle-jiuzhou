@@ -23,6 +23,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Tag, Tooltip } from 'antd';
 import { LoadingOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { getEnabledMaps, getMapDetail } from '../../../../../services/api/world';
 import type { IdleSessionDto } from '../types';
 import './IdleStatusIndicator.scss';
 
@@ -31,7 +32,7 @@ import './IdleStatusIndicator.scss';
 // ============================================
 
 /**
- * 将毫秒数格式化为 "Xh Ym Zs" 形式
+ * 将毫秒数格式化为 "X时Y分Z秒" 形式
  * 复用点：仅此处使用，不抽到全局 util（避免过度抽象）
  */
 const formatElapsed = (ms: number): string => {
@@ -39,9 +40,9 @@ const formatElapsed = (ms: number): string => {
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
+  if (h > 0) return `${h}时${m}分`;
+  if (m > 0) return `${m}分${s}秒`;
+  return `${s}秒`;
 };
 
 // ============================================
@@ -70,6 +71,25 @@ const IdleStatusIndicator: React.FC<IdleStatusIndicatorProps> = ({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isStopping = activeSession.status === 'stopping';
 
+  // 根据 mapId/roomId 解析地图名和房间名（仅挂载时请求一次）
+  const [mapName, setMapName] = useState(activeSession.mapId);
+  const [roomName, setRoomName] = useState(activeSession.roomId);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getEnabledMaps().then((res) => {
+      if (cancelled || !res.success || !res.data?.maps) return;
+      const map = res.data.maps.find((m) => m.id === activeSession.mapId);
+      if (map) setMapName(map.name);
+    });
+    void getMapDetail(activeSession.mapId).then((res) => {
+      if (cancelled || !res.success || !res.data?.rooms) return;
+      const room = res.data.rooms.find((r) => r.id === activeSession.roomId);
+      if (room) setRoomName(room.name);
+    });
+    return () => { cancelled = true; };
+  }, [activeSession.mapId, activeSession.roomId]);
+
   useEffect(() => {
     // stopping 状态不再更新计时
     if (isStopping) {
@@ -97,7 +117,11 @@ const IdleStatusIndicator: React.FC<IdleStatusIndicatorProps> = ({
     <div className="idle-status-tooltip">
       <div className="idle-status-tooltip-row">
         <span>地图</span>
-        <span>{activeSession.mapId}</span>
+        <span>{mapName}</span>
+      </div>
+      <div className="idle-status-tooltip-row">
+        <span>房间</span>
+        <span>{roomName}</span>
       </div>
       <div className="idle-status-tooltip-row">
         <span>战斗场数</span>

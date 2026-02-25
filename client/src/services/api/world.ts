@@ -140,7 +140,7 @@ export type MapRoom = {
     req_realm_min?: string;
   }>;
   npcs?: string[];
-  monsters?: Array<{ monster_def_id: string; count: number; respawn_sec?: number }>;
+  monsters?: Array<{ monster_def_id: string; count: number; respawn_sec?: number; name?: string }>;
   resources?: Array<{ resource_id: string; count: number; respawn_sec?: number; collect_limit?: number }>;
   items?: Array<{ item_def_id: string; once?: boolean; chance?: number; req_quest_id?: string }>;
   portals?: Array<{ target_map_id: string; target_room_id: string; name: string; req_realm_min?: string }>;

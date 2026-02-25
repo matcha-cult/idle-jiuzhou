@@ -3,6 +3,7 @@ import { withRouteError } from '../middleware/routeError.js';
 import { requireCharacter, getOptionalUserId } from '../middleware/auth.js';
 import { getEnabledMaps, getMapDefById, getRoomInMap, getRoomsInMap, getWorldMap } from '../services/mapService.js';
 import { getAreaObjects, getRoomObjects, gatherRoomResource, pickupRoomItem } from '../services/roomObjectService.js';
+import { getMonsterDefinitions } from '../services/staticConfigLoader.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
 import { getSingleParam } from '../services/shared/httpParam.js';
 
@@ -45,7 +46,19 @@ router.get('/:mapId', async (req: Request, res: Response) => {
       return;
     }
     const rooms = await getRoomsInMap(mapId);
-    res.json({ success: true, data: { map, rooms } });
+
+    // 注入怪物中文名：构建 id→name 映射，给每个 room.monsters 条目追加 name 字段
+    const monsterDefs = getMonsterDefinitions();
+    const monsterNameMap = new Map(monsterDefs.map((m) => [m.id, m.name]));
+    const enrichedRooms = rooms.map((r) => ({
+      ...r,
+      monsters: r.monsters?.map((m) => ({
+        ...m,
+        name: monsterNameMap.get(m.monster_def_id) ?? m.monster_def_id,
+      })),
+    }));
+
+    res.json({ success: true, data: { map, rooms: enrichedRooms } });
   } catch (error) {
     return withRouteError(res, 'mapRoutes 路由异常', error);
   }
