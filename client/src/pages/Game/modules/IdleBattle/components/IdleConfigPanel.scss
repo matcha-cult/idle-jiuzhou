@@ -1,34 +1,55 @@
 /**
  * IdleConfigPanel 样式
  *
- * 复用项目 CSS 变量体系（--panel-bg、--text-color、--border-color-soft 等）
+ * 复用项目 CSS 变量体系（--panel-bg-soft、--border-color-soft、--hover-bg 等）
+ * 参考 TechniqueModal / MailModal 的卡片式分区布局
  * 深色主题通过 body.theme-dark 覆盖
  */
 
 .idle-config-panel {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px;
-  background: var(--panel-bg);
-  border-radius: 8px;
-  border: 1px solid var(--border-color-soft);
+  gap: 20px;
   color: var(--text-color);
 }
 
 // ============================================
-// 行布局
+// 分区卡片：每个配置区域一个浅色卡片
 // ============================================
 
-.idle-config-row {
+.idle-config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--panel-bg-soft, #fafafa);
+  border: 1px solid var(--border-color-soft, #eee);
+  border-radius: 12px;
+
+  &--skills {
+    gap: 12px;
+  }
+}
+
+// ============================================
+// 双列网格（地图 + 房间同行）
+// ============================================
+
+.idle-config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.idle-config-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
-
-  &--skills {
-    gap: 8px;
-  }
 }
+
+// ============================================
+// 标签
+// ============================================
 
 .idle-config-label {
   font-size: 13px;
@@ -38,7 +59,6 @@
   align-items: center;
   gap: 4px;
 }
-
 .idle-config-label-hint {
   font-size: 11px;
   font-weight: 400;
@@ -56,19 +76,34 @@
 .idle-config-duration {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
-.idle-config-duration-custom {
+.idle-config-duration-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.idle-config-duration-slider {
   display: flex;
   align-items: center;
   gap: 12px;
 
-  // Slider 占满剩余空间
   .ant-slider {
     flex: 1;
     min-width: 0;
+    margin: 0;
   }
+}
+
+.idle-config-duration-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-color-secondary, #888);
+  white-space: nowrap;
+  min-width: 56px;
+  text-align: right;
 }
 
 // ============================================
@@ -78,35 +113,69 @@
 .idle-skill-slots {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .idle-skill-slot {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  background: var(--panel-bg-soft, rgba(0, 0, 0, 0.03));
-  border: 1px solid var(--border-color-soft);
-  border-radius: 6px;
-}
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel-bg, #fff);
+  border: 1px solid var(--border-color-soft, #eee);
+  border-radius: 10px;
+  transition: border-color 0.15s, background 0.15s;
 
+  &:hover {
+    border-color: var(--border-color, #e0e0e0);
+    background: var(--hover-bg, #f0f0f0);
+  }
+}
 .idle-skill-slot-priority {
-  font-size: 11px;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary-bg-soft, rgba(22, 119, 255, 0.08));
   color: var(--primary-color, #1677ff);
-  min-width: 20px;
-  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
-.idle-skill-slot-id {
+.idle-skill-slot-select {
   flex: 1;
   min-width: 0;
 }
 
-.idle-skill-slot-prio {
-  width: 110px;
-  flex-shrink: 0;
+// 添加技能按钮（原生 button，不用 antd dashed）
+.idle-skill-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 0;
+  border: 1px dashed var(--border-color, #e0e0e0);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-color-secondary, #888);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+
+  &:hover:not(:disabled) {
+    color: var(--primary-color, #1677ff);
+    border-color: var(--primary-color, #1677ff);
+    background: var(--primary-bg-soft, rgba(22, 119, 255, 0.04));
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 }
 
 // ============================================
@@ -116,10 +185,10 @@
 .idle-config-stamina-warn {
   font-size: 12px;
   color: var(--color-warning, #faad14);
-  padding: 6px 10px;
+  padding: 8px 12px;
   background: var(--color-warning-bg, rgba(250, 173, 20, 0.08));
   border: 1px solid var(--color-warning-border, rgba(250, 173, 20, 0.3));
-  border-radius: 6px;
+  border-radius: 10px;
 }
 
 // ============================================
@@ -129,7 +198,7 @@
 .idle-config-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
   padding-top: 4px;
 }
 
@@ -139,24 +208,23 @@
 
 @media (max-width: 640px) {
   .idle-config-panel {
-    padding: 12px;
-    gap: 12px;
+    gap: 14px;
   }
 
-  .idle-config-duration-custom {
-    flex-direction: column;
-    align-items: stretch;
+  .idle-config-section {
+    padding: 12px;
+  }
 
-    .ant-slider {
-      width: 100%;
-    }
+  .idle-config-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 
   .idle-skill-slot {
     flex-wrap: wrap;
   }
 
-  .idle-skill-slot-prio {
+  .idle-skill-slot-select {
     width: 100%;
   }
 }
@@ -166,8 +234,24 @@
 // ============================================
 
 body.theme-dark {
+  .idle-config-section {
+    background: var(--panel-bg-soft, #141414);
+    border-color: var(--border-color-soft, #303030);
+  }
+
   .idle-skill-slot {
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--panel-bg, #1f1f1f);
+    border-color: var(--border-color-soft, #303030);
+
+    &:hover {
+      background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+      border-color: var(--border-color, #303030);
+    }
+  }
+
+  .idle-skill-add-btn {
+    border-color: var(--border-color, #303030);
+    color: var(--text-color-secondary, rgba(255, 255, 255, 0.45));
   }
 
   .idle-config-stamina-warn {

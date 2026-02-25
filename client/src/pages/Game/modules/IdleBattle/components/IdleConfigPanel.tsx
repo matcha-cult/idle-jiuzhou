@@ -25,10 +25,20 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Button, Select, Slider, InputNumber, Tag, Space, Tooltip } from 'antd';
+import { Button, Select, Slider, Tag, Tooltip } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { getEnabledMaps, getMapDetail, type MapDefLite, type MapRoom } from '../../../../../services/api/world';
-import type { IdleConfigDto, AutoSkillSlotDto } from '../types';
+import { getCharacterTechniqueStatus } from '../../../../../services/api/technique';
+import { gameSocket } from '../../../../../services/gameSocket';
+import type { IdleConfigDto } from '../types';
+import './IdleConfigPanel.scss';
+
+/** 可选技能项（从角色功法状态 API 获取） */
+interface AvailableSkillOption {
+  skillId: string;
+  skillName: string;
+  skillIcon: string;
+}
 
 // ============================================
 // 常量
@@ -81,6 +91,8 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
   const [rooms, setRooms] = useState<MapRoom[]>([]);
   const [mapsLoading, setMapsLoading] = useState(false);
   const [roomsLoading, setRoomsLoading] = useState(false);
+  const [availableSkills, setAvailableSkills] = useState<AvailableSkillOption[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
 
   // 加载地图列表
   useEffect(() => {
@@ -112,6 +124,64 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
       .finally(() => setRoomsLoading(false));
   }, [config.mapId]);
 
+  // 加载角色可用技能列表（订阅角色数据，确保 characterId 可用后再请求）
+  // 合并 equippedSkills（已装备到技能栏，含普通攻击等先天技能）和 availableSkills（功法解锁的），去重
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSkills = (charId: number) => {
+      setSkillsLoading(true);
+      void getCharacterTechniqueStatus(charId)
+        .then((res) => {
+          if (cancelled || !res.success || !res.data) return;
+          const seen = new Set<string>();
+          const merged: AvailableSkillOption[] = [];
+
+          // 已装备技能栏的技能（含先天技能如普通攻击）
+          for (const s of res.data.equippedSkills) {
+            if (!s.skill_id || seen.has(s.skill_id)) continue;
+            seen.add(s.skill_id);
+            merged.push({
+              skillId: s.skill_id,
+              skillName: s.skill_name ?? s.skill_id,
+              skillIcon: s.skill_icon ?? '',
+            });
+          }
+
+          // 功法解锁但未装备的技能
+          for (const s of res.data.availableSkills) {
+            if (seen.has(s.skillId)) continue;
+            seen.add(s.skillId);
+            merged.push({
+              skillId: s.skillId,
+              skillName: s.skillName,
+              skillIcon: s.skillIcon,
+            });
+          }
+
+          setAvailableSkills(merged);
+        })
+        .finally(() => { if (!cancelled) setSkillsLoading(false); });
+    };
+
+    // 尝试立即加载（角色数据可能已就绪）
+    const charId = gameSocket.getCharacter()?.id;
+    if (charId) {
+      loadSkills(charId);
+    }
+
+    // 订阅角色更新，首次拿到 id 时加载
+    const unsub = gameSocket.onCharacterUpdate((c) => {
+      if (cancelled || !c?.id) return;
+      setAvailableSkills((prev) => {
+        if (prev.length === 0) loadSkills(c.id);
+        return prev;
+      });
+    });
+
+    return () => { cancelled = true; unsub(); };
+  }, []);
+
   const handleMapChange = (mapId: string) => {
     onConfigChange({ mapId, roomId: null });
   };
@@ -124,7 +194,7 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
     onConfigChange({ maxDurationMs: ms });
   };
 
-  // 技能槽位操作
+  // 技能槽位操作（顺序即优先级，无需独立 priority 输入）
   const handleAddSlot = () => {
     if (config.autoSkillPolicy.slots.length >= MAX_SKILL_SLOTS) return;
     const nextPriority = config.autoSkillPolicy.slots.length + 1;
@@ -136,13 +206,16 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
   };
 
   const handleRemoveSlot = (index: number) => {
-    const next = config.autoSkillPolicy.slots.filter((_, i) => i !== index);
+    // 移除后重新编号 priority（顺序即优先级）
+    const next = config.autoSkillPolicy.slots
+      .filter((_, i) => i !== index)
+      .map((slot, i) => ({ ...slot, priority: i + 1 }));
     onConfigChange({ autoSkillPolicy: { slots: next } });
   };
 
-  const handleSlotChange = (index: number, patch: Partial<AutoSkillSlotDto>) => {
+  const handleSlotSkillChange = (index: number, skillId: string) => {
     const next = config.autoSkillPolicy.slots.map((slot, i) =>
-      i === index ? { ...slot, ...patch } : slot
+      i === index ? { ...slot, skillId } : slot
     );
     onConfigChange({ autoSkillPolicy: { slots: next } });
   };
@@ -152,43 +225,45 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
 
   return (
     <div className="idle-config-panel">
-      {/* 地图选择 */}
-      <div className="idle-config-row">
-        <label className="idle-config-label">挂机地图</label>
-        <Select
-          className="idle-config-select"
-          value={config.mapId ?? undefined}
-          onChange={handleMapChange}
-          loading={mapsLoading}
-          disabled={isActive || isStopping}
-          placeholder="选择地图"
-          options={maps.map((m) => ({ value: m.id, label: m.name }))}
-        />
+      {/* 第一区：地图 & 房间（同行双列） */}
+      <div className="idle-config-section">
+        <div className="idle-config-grid">
+          <div className="idle-config-field">
+            <label className="idle-config-label">挂机地图</label>
+            <Select
+              className="idle-config-select"
+              value={config.mapId ?? undefined}
+              onChange={handleMapChange}
+              loading={mapsLoading}
+              disabled={isActive || isStopping}
+              placeholder="选择地图"
+              options={maps.map((m) => ({ value: m.id, label: m.name }))}
+            />
+          </div>
+          <div className="idle-config-field">
+            <label className="idle-config-label">挂机房间</label>
+            <Select
+              className="idle-config-select"
+              value={config.roomId ?? undefined}
+              onChange={handleRoomChange}
+              loading={roomsLoading}
+              disabled={isActive || isStopping || !config.mapId}
+              placeholder="选择房间"
+              options={rooms.map((r) => ({
+                value: r.id,
+                label: r.name,
+                title: r.description,
+              }))}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* 房间选择 */}
-      <div className="idle-config-row">
-        <label className="idle-config-label">挂机房间</label>
-        <Select
-          className="idle-config-select"
-          value={config.roomId ?? undefined}
-          onChange={handleRoomChange}
-          loading={roomsLoading}
-          disabled={isActive || isStopping || !config.mapId}
-          placeholder="选择房间"
-          options={rooms.map((r) => ({
-            value: r.id,
-            label: r.name,
-            title: r.description,
-          }))}
-        />
-      </div>
-
-      {/* 挂机时长 */}
-      <div className="idle-config-row">
+      {/* 第二区：挂机时长 */}
+      <div className="idle-config-section">
         <label className="idle-config-label">挂机时长</label>
         <div className="idle-config-duration">
-          <Space wrap size={4}>
+          <div className="idle-config-duration-tags">
             {DURATION_PRESETS.map((p) => (
               <Tag.CheckableTag
                 key={p.value}
@@ -198,8 +273,8 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
                 {p.label}
               </Tag.CheckableTag>
             ))}
-          </Space>
-          <div className="idle-config-duration-custom">
+          </div>
+          <div className="idle-config-duration-slider">
             <Slider
               min={MIN_DURATION_MS / 60_000}
               max={MAX_DURATION_MS / 60_000}
@@ -209,47 +284,35 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
               disabled={isActive || isStopping}
               tooltip={{ formatter: (v) => `${v}分钟` }}
             />
-            <InputNumber
-              min={MIN_DURATION_MS / 60_000}
-              max={MAX_DURATION_MS / 60_000}
-              value={durationMinutes}
-              onChange={(v) => v !== null && handleDurationChange(v * 60_000)}
-              disabled={isActive || isStopping}
-              addonAfter="分钟"
-              size="small"
-              style={{ width: 120 }}
-            />
+            <span className="idle-config-duration-value">{durationMinutes} 分钟</span>
           </div>
         </div>
       </div>
 
-      {/* 技能策略槽位 */}
-      <div className="idle-config-row idle-config-row--skills">
+      {/* 第三区：技能策略 */}
+      <div className="idle-config-section idle-config-section--skills">
         <label className="idle-config-label">
           技能策略
-          <span className="idle-config-label-hint">（按优先级顺序释放，最多 {MAX_SKILL_SLOTS} 个）</span>
+          <span className="idle-config-label-hint">（按顺序释放，最多 {MAX_SKILL_SLOTS} 个）</span>
         </label>
         <div className="idle-skill-slots">
           {config.autoSkillPolicy.slots.map((slot, index) => (
             <div key={index} className="idle-skill-slot">
-              <span className="idle-skill-slot-priority">P{slot.priority}</span>
-              <InputNumber
-                className="idle-skill-slot-id"
+              <span className="idle-skill-slot-priority">{index + 1}</span>
+              <Select
+                className="idle-skill-slot-select"
                 value={slot.skillId || undefined}
-                placeholder="技能 ID"
-                onChange={(v) => handleSlotChange(index, { skillId: String(v ?? '') })}
+                placeholder="选择技能"
+                onChange={(v) => handleSlotSkillChange(index, v)}
                 disabled={isActive || isStopping}
+                loading={skillsLoading}
                 size="small"
-              />
-              <InputNumber
-                className="idle-skill-slot-prio"
-                min={1}
-                max={99}
-                value={slot.priority}
-                onChange={(v) => v !== null && handleSlotChange(index, { priority: v })}
-                disabled={isActive || isStopping}
-                size="small"
-                addonBefore="优先级"
+                options={availableSkills.map((s) => ({
+                  value: s.skillId,
+                  label: s.skillName,
+                }))}
+                showSearch
+                optionFilterProp="label"
               />
               <Button
                 type="text"
@@ -258,26 +321,28 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
                 onClick={() => handleRemoveSlot(index)}
                 disabled={isActive || isStopping}
                 size="small"
+                aria-label={`删除第 ${index + 1} 个技能`}
               />
             </div>
           ))}
-          <Button
-            type="dashed"
-            icon={<PlusOutlined />}
-            onClick={handleAddSlot}
-            disabled={isActive || isStopping || config.autoSkillPolicy.slots.length >= MAX_SKILL_SLOTS}
-            size="small"
-            block
-          >
-            添加技能槽位
-          </Button>
+          {config.autoSkillPolicy.slots.length < MAX_SKILL_SLOTS && (
+            <button
+              type="button"
+              className="idle-skill-add-btn"
+              onClick={handleAddSlot}
+              disabled={isActive || isStopping}
+            >
+              <PlusOutlined />
+              <span>添加技能</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Stamina 提示 */}
       {stamina <= 0 && (
         <div className="idle-config-stamina-warn">
-          Stamina 不足，无法开始挂机
+          体力不足，无法开始挂机
         </div>
       )}
 
@@ -285,10 +350,10 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
       <div className="idle-config-actions">
         {!isActive && !isStopping ? (
           <>
-            <Button onClick={onSave} disabled={isLoading} size="small">
+            <Button onClick={onSave} disabled={isLoading}>
               保存配置
             </Button>
-            <Tooltip title={stamina <= 0 ? 'Stamina 不足' : (!config.mapId || !config.roomId) ? '请先选择地图和房间' : ''}>
+            <Tooltip title={stamina <= 0 ? '体力不足' : (!config.mapId || !config.roomId) ? '请先选择地图和房间' : ''}>
               <Button
                 type="primary"
                 onClick={onStart}

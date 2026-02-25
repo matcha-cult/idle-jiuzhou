@@ -26,7 +26,7 @@
  */
 
 import React from 'react';
-import { Alert } from 'antd';
+import { Alert, Tabs, Badge } from 'antd';
 import { useIdleBattle, type UseIdleBattleReturn } from './hooks/useIdleBattle';
 import IdleConfigPanel from './components/IdleConfigPanel';
 import IdleStatusIndicator from './components/IdleStatusIndicator';
@@ -74,6 +74,7 @@ export const IdleBattlePanel: React.FC<IdleBattlePanelProps> = ({ idle, stamina 
   } = idle;
 
   const isStopping = activeSession?.status === 'stopping';
+  const unviewedCount = history.filter((s) => s.viewedAt === null).length;
 
   return (
     <div className="idle-battle-panel">
@@ -88,25 +89,44 @@ export const IdleBattlePanel: React.FC<IdleBattlePanelProps> = ({ idle, stamina 
         />
       )}
 
-      {/* 配置面板 */}
-      <IdleConfigPanel
-        config={config}
-        stamina={stamina}
-        isActive={activeSession !== null && !isStopping}
-        isStopping={isStopping}
-        isLoading={isLoading}
-        onConfigChange={setConfig}
-        onStart={startIdle}
-        onStop={stopIdle}
-        onSave={saveConfig}
-      />
-
-      {/* 历史记录列表 */}
-      <IdleHistoryList
-        history={history}
-        isLoading={isLoading}
-        onSelectSession={selectSession}
-        onRefresh={loadHistory}
+      <Tabs
+        defaultActiveKey="config"
+        className="idle-battle-tabs"
+        items={[
+          {
+            key: 'config',
+            label: '挂机配置',
+            children: (
+              <IdleConfigPanel
+                config={config}
+                stamina={stamina}
+                isActive={activeSession !== null && !isStopping}
+                isStopping={isStopping}
+                isLoading={isLoading}
+                onConfigChange={setConfig}
+                onStart={startIdle}
+                onStop={stopIdle}
+                onSave={saveConfig}
+              />
+            ),
+          },
+          {
+            key: 'history',
+            label: (
+              <Badge count={unviewedCount} size="small" offset={[6, -2]}>
+                挂机历史
+              </Badge>
+            ),
+            children: (
+              <IdleHistoryList
+                history={history}
+                isLoading={isLoading}
+                onSelectSession={selectSession}
+                onRefresh={loadHistory}
+              />
+            ),
+          },
+        ]}
       />
 
       {/* 回放弹窗（selectedSession 非 null 时自动打开） */}
