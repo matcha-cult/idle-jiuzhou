@@ -581,7 +581,9 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
           batchIndex++;
 
           // 实时推送本场摘要（不等 flush，保证客户端体验）
+          // 包含实时体力值，前端可直接展示剩余体力
           try {
+            const cachedStamina = await getCachedStamina(session.characterId);
             getGameServer().emitToUser(userId, 'idle:update', {
               sessionId: session.id,
               batchIndex: batchIndex - 1,
@@ -590,6 +592,7 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
               silverGained: batchResult.silverGained,
               itemsGained: batchResult.itemsGained,
               roundCount: batchResult.roundCount,
+              stamina: cachedStamina?.stamina ?? null,
             });
           } catch {
             // GameServer 未初始化时忽略推送错误（如测试环境）
