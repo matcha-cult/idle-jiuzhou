@@ -1,0 +1,39 @@
+{
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "memorix hook"
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "memorix hook"
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "memorix hook"
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "memorix hook"
+      }
+    ],
+    "afterMCPExecution": [
+      {
+        "command": "memorix hook"
+      }
+    ],
+    "preCompact": [
+      {
+        "command": "memorix hook"
+      }
+    ],
+    "stop": [
+      {
+        "command": "memorix hook"
+      }
+    ]
+  }
+}
