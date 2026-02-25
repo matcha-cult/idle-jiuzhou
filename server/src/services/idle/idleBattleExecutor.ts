@@ -54,8 +54,11 @@ import {
 // 常量
 // ============================================
 
-/** 每场战斗之间的间隔（ms）*/
-const BATTLE_INTERVAL_MS = 100;
+/** 每场战斗开始前的冷却时间（ms）— 与正常战斗的 BATTLE_START_COOLDOWN_MS 对齐 */
+const BATTLE_START_COOLDOWN_MS = 3_000;
+
+/** 每回合耗时（ms）— 与正常战斗的 BATTLE_TICK_MS 对齐 */
+const BATTLE_TICK_MS = 650;
 
 /**
  * 缓冲区积累多少场后触发 flush（场数阈值）
@@ -73,8 +76,8 @@ const FLUSH_INTERVAL_MS = 5_000;
 // 内部状态
 // ============================================
 
-/** 执行循环 Map（sessionId → intervalHandle）*/
-const activeLoops = new Map<string, ReturnType<typeof setInterval>>();
+/** 执行循环 Map（sessionId → timeoutHandle）*/
+const activeLoops = new Map<string, ReturnType<typeof setTimeout>>();
 
 /**
  * 活跃缓冲区 Map（sessionId → { characterId, buffer }）
@@ -525,16 +528,18 @@ function shouldFlush(buffer: BatchBuffer): boolean {
 // ============================================
 
 /**
- * 启动挂机执行循环（批量写入版）
+ * 启动挂机执行循环（动态延迟版）
  *
- * 每次 interval：
+ * 每次迭代：
  *   1. 执行单场战斗（纯计算）
  *   2. 追加结果到 BatchBuffer
  *   3. 实时推送本场摘要给客户端（不等 flush）
  *   4. 检查终止条件
  *   5. 若满足 flush 条件（场数/时间阈值）或即将终止，触发 flushBuffer
+ *   6. 根据本场回合数动态计算下一场延迟：BATTLE_START_COOLDOWN_MS + roundCount × BATTLE_TICK_MS
  *
  * 关键边界：
+ *   - 使用递归 setTimeout 而非 setInterval，每场战斗后根据实际回合数动态调整间隔
  *   - 终止时强制 flush 剩余缓冲区，防止最后几场数据丢失
  *   - flush 失败记录日志，不中断循环（下次 flush 会重试）
  *   - 同一 sessionId 不会重复启动（activeLoops Map 保护）
@@ -543,72 +548,78 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
   if (activeLoops.has(session.id)) return;
 
   let batchIndex = session.totalBattles + 1;
-  let running = false;
   const buffer = createBuffer();
   activeBuffers.set(session.id, { characterId: session.characterId, buffer });
 
-  const handle = setInterval(() => {
-    if (running) return;
-    running = true;
-
-    void (async () => {
-      try {
-        const batchResult = await executeSingleBatch(session, batchIndex, userId);
-        appendToBuffer(buffer, batchResult, session.id, batchIndex);
-        batchIndex++;
-
-        // 实时推送本场摘要（不等 flush，保证客户端体验）
+  /** 递归调度下一场战斗，delayMs 为距下一场的等待时间 */
+  function scheduleNext(delayMs: number): void {
+    const handle = setTimeout(() => {
+      void (async () => {
         try {
-          getGameServer().emitToUser(userId, 'idle:update', {
-            sessionId: session.id,
-            batchIndex: batchIndex - 1,
-            result: batchResult.result,
-            expGained: batchResult.expGained,
-            silverGained: batchResult.silverGained,
-            itemsGained: batchResult.itemsGained,
-            roundCount: batchResult.roundCount,
-          });
-        } catch {
-          // GameServer 未初始化时忽略推送错误（如测试环境）
-        }
+          const batchResult = await executeSingleBatch(session, batchIndex, userId);
+          appendToBuffer(buffer, batchResult, session.id, batchIndex);
+          batchIndex++;
 
-        // 检查终止条件
-        const shouldStop = await checkTerminationConditions(session, userId);
-
-        // 满足 flush 条件或即将终止时批量写入
-        if (shouldFlush(buffer) || shouldStop.terminate) {
+          // 实时推送本场摘要（不等 flush，保证客户端体验）
           try {
-            await flushBuffer(session.characterId, session.id, buffer);
-          } catch (flushErr) {
-            console.error(`[IdleBattleExecutor] 会话 ${session.id} flush 失败:`, flushErr);
-          }
-        }
-
-        if (shouldStop.terminate) {
-          clearInterval(handle);
-          activeLoops.delete(session.id);
-          activeBuffers.delete(session.id);
-          await completeIdleSession(session.id, shouldStop.status);
-          await releaseIdleLock(session.characterId);
-
-          try {
-            getGameServer().emitToUser(userId, 'idle:finished', {
+            getGameServer().emitToUser(userId, 'idle:update', {
               sessionId: session.id,
-              reason: shouldStop.reason,
+              batchIndex: batchIndex - 1,
+              result: batchResult.result,
+              expGained: batchResult.expGained,
+              silverGained: batchResult.silverGained,
+              itemsGained: batchResult.itemsGained,
+              roundCount: batchResult.roundCount,
             });
           } catch {
-            // 忽略推送错误
+            // GameServer 未初始化时忽略推送错误（如测试环境）
           }
-        }
-      } catch (err) {
-        console.error(`[IdleBattleExecutor] 会话 ${session.id} 第 ${batchIndex} 场战斗异常:`, err);
-      } finally {
-        running = false;
-      }
-    })();
-  }, BATTLE_INTERVAL_MS);
 
-  activeLoops.set(session.id, handle);
+          // 检查终止条件
+          const shouldStop = await checkTerminationConditions(session, userId);
+
+          // 满足 flush 条件或即将终止时批量写入
+          if (shouldFlush(buffer) || shouldStop.terminate) {
+            try {
+              await flushBuffer(session.characterId, session.id, buffer);
+            } catch (flushErr) {
+              console.error(`[IdleBattleExecutor] 会话 ${session.id} flush 失败:`, flushErr);
+            }
+          }
+
+          if (shouldStop.terminate) {
+            activeLoops.delete(session.id);
+            activeBuffers.delete(session.id);
+            await completeIdleSession(session.id, shouldStop.status);
+            await releaseIdleLock(session.characterId);
+
+            try {
+              getGameServer().emitToUser(userId, 'idle:finished', {
+                sessionId: session.id,
+                reason: shouldStop.reason,
+              });
+            } catch {
+              // 忽略推送错误
+            }
+            return; // 终止，不再调度下一场
+          }
+
+          // 根据本场实际回合数动态计算下一场延迟
+          const nextDelay = BATTLE_START_COOLDOWN_MS + batchResult.roundCount * BATTLE_TICK_MS;
+          scheduleNext(nextDelay);
+        } catch (err) {
+          console.error(`[IdleBattleExecutor] 会话 ${session.id} 第 ${batchIndex} 场战斗异常:`, err);
+          // 异常后仍继续调度，使用默认延迟
+          scheduleNext(BATTLE_START_COOLDOWN_MS);
+        }
+      })();
+    }, delayMs);
+
+    activeLoops.set(session.id, handle);
+  }
+
+  // 首场战斗使用开战冷却作为初始延迟
+  scheduleNext(BATTLE_START_COOLDOWN_MS);
 }
 
 /**
@@ -620,7 +631,7 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
 export function stopExecutionLoop(sessionId: string): void {
   const handle = activeLoops.get(sessionId);
   if (handle) {
-    clearInterval(handle);
+    clearTimeout(handle);
     activeLoops.delete(sessionId);
     activeBuffers.delete(sessionId);
   }
