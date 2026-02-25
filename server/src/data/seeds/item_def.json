@@ -880,8 +880,8 @@
       "bind_type": "pickup",
       "tradeable": false,
       "icon": "/assets/items/Props_challengeletter.png",
-      "description": "使用后永久扩容背包10格",
-      "long_desc": "蕴含空间法则的符箓，使用后可永久扩展背包容量10格。",
+      "description": "使用后永久扩容背包10格（上限200格）",
+      "long_desc": "蕴含空间法则的符箓，使用后可永久扩展背包容量10格。背包最多可扩展至200格。",
       "tags": [
         "功能",
         "背包",
