@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS character_technique (
   slot_index INTEGER,                                 -- 副功法槽位 1-3（main时为null）
 
   -- 来源追溯
-  obtained_from VARCHAR(32),                          -- 获取来源：drop/shop/quest/sect/gift/admin
+  obtained_from VARCHAR(64),                          -- 获取来源：drop/shop/quest/sect/gift/use_item:xxx 等
   obtained_ref_id VARCHAR(64),                        -- 来源引用ID
 
   acquired_at TIMESTAMPTZ DEFAULT NOW(),              -- 获得时间
@@ -76,6 +76,9 @@ export const initTechniqueTables = async (): Promise<void> => {
 
     await query('ALTER TABLE character_technique DROP CONSTRAINT IF EXISTS character_technique_technique_id_fkey');
     await query('ALTER TABLE character_skill_slot DROP CONSTRAINT IF EXISTS character_skill_slot_skill_id_fkey');
+
+    // 扩展 obtained_from 列长度，兼容 use_item:xxx 等较长来源标识
+    await query('ALTER TABLE character_technique ALTER COLUMN obtained_from TYPE VARCHAR(64)');
 
     console.log('✓ 功法系统表检测完成');
   } catch (error) {
