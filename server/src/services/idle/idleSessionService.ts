@@ -28,7 +28,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { query, pool, withTransaction } from '../../config/database.js';
+import { query, withTransaction } from '../../config/database.js';
 import { redis } from '../../config/redis.js';
 import { buildCharacterBattleSnapshot } from '../battle/index.js';
 import type {
@@ -126,8 +126,9 @@ export interface StartIdleSessionResult {
  *
  * 步骤：
  *   1. Redis SET NX EX 互斥锁检查（原子性，防并发）
- *   2. 事务内：角色行锁、快照构建、DB 写入
- *   3. 返回新会话 ID
+ *   2. 事务外：构建角色快照（避免长事务）
+ *   3. 事务内：角色行锁 + 会话写入
+ *   4. 返回新会话 ID
  *
  * 失败场景：
  *   - 已有活跃会话 → success: false, error: '已有活跃挂机会话', existingSessionId
@@ -159,42 +160,39 @@ export async function startIdleSession(params: StartIdleSessionParams): Promise<
     return { success: false, error: '已有活跃挂机会话', existingSessionId };
   }
 
+  // 2. 快照构建放在事务外，避免长事务占用连接与行锁。
+  const snapshotData = await buildCharacterBattleSnapshot(characterId);
+  if (!snapshotData) {
+    await redis.del(lockKey);
+    return { success: false, error: '角色数据加载失败' };
+  }
+
+  const snapshot: SessionSnapshot = {
+    characterId,
+    nickname: snapshotData.nickname,
+    realm: snapshotData.realm,
+    baseAttrs: snapshotData.baseAttrs,
+    skills: snapshotData.skills,
+    setBonusEffects: snapshotData.setBonusEffects,
+    autoSkillPolicy: config.autoSkillPolicy,
+    targetMonsterDefId: config.targetMonsterDefId,
+  };
+
   try {
     return await withTransaction(async (client) => {
-  // 2. 角色行锁（防止并发修改）
+      // 3. 角色行锁（防止会话创建期间角色被并发变更）
       const charRes = await client.query(
         `SELECT id FROM characters WHERE id = $1 FOR UPDATE`,
         [characterId]
       );
       if (charRes.rows.length === 0) {
-        await client.query('ROLLBACK');
         await redis.del(lockKey);
         return { success: false, error: '角色不存在' };
       }
-  
-      // 3. 构建角色快照（在事务外调用，避免长事务；快照基于当前计算属性）
-  client.release();
-  
-      const snapshotData = await buildCharacterBattleSnapshot(characterId);
-      if (!snapshotData) {
-        await redis.del(lockKey);
-        return { success: false, error: '角色数据加载失败' };
-      }
-  
-      const snapshot: SessionSnapshot = {
-        characterId,
-        nickname: snapshotData.nickname,
-        realm: snapshotData.realm,
-        baseAttrs: snapshotData.baseAttrs,
-        skills: snapshotData.skills,
-        setBonusEffects: snapshotData.setBonusEffects,
-        autoSkillPolicy: config.autoSkillPolicy,
-        targetMonsterDefId: config.targetMonsterDefId,
-      };
-  
-      // 5. 写入 idle_sessions
+
+      // 4. 写入 idle_sessions
       const sessionId = randomUUID();
-      await query(
+      await client.query(
         `INSERT INTO idle_sessions (
           id, character_id, status, map_id, room_id, max_duration_ms,
           session_snapshot, total_battles, win_count, lose_count,

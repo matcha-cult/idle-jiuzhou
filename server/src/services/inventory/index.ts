@@ -1323,13 +1323,9 @@ export const addItemToInventoryTx = async (
     const stack_max = Math.max(1, Math.floor(Number(itemDef.stack_max) || 1));
     const def_bind_type = String(itemDef.bind_type || "none");
     const actualBindType = bindType !== "none" ? bindType : def_bind_type;
-    const obtainedFromResult = normalizeItemInstanceObtainedFrom(
+    const obtainedFrom = normalizeItemInstanceObtainedFrom(
       options.obtainedFrom,
-    );
-    if (!obtainedFromResult.success) {
-      return { success: false, message: obtainedFromResult.message };
-    }
-    const obtainedFrom = obtainedFromResult.value;
+    ).value;
 
     const info = await getInventoryInfoWithClient(characterId, client);
     const capacity = getSlottedCapacity(info, location);

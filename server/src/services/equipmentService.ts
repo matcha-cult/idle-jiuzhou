@@ -748,11 +748,7 @@ export const createEquipmentInstanceTx = async (
   const location = options.location || 'bag';
   const hasExplicitSlot = options.locationSlot !== undefined && options.locationSlot !== null;
   let locationSlot = options.locationSlot ?? null;
-  const obtainedFromResult = normalizeItemInstanceObtainedFrom(options.obtainedFrom);
-  if (!obtainedFromResult.success) {
-    return { success: false, message: obtainedFromResult.message };
-  }
-  const obtainedFrom = obtainedFromResult.value;
+  const obtainedFrom = normalizeItemInstanceObtainedFrom(options.obtainedFrom).value;
 
   await lockCharacterInventoryMutexTx(client, characterId);
 
