@@ -241,25 +241,21 @@ const PlayerInfo: React.FC = () => {
             {uploading ? (
               <div className="player-avatar-placeholder">
                 <LoadingOutlined />
-                <div className="player-avatar-text">上传中...</div>
               </div>
             ) : avatarUrl ? (
               <img className="player-avatar-img" src={avatarUrl} alt="头像" />
             ) : (
               <div className="player-avatar-placeholder">
                 <UserOutlined />
-                <div className="player-avatar-text">上传头像</div>
               </div>
             )}
           </div>
         </Upload>
 
         <div className="player-top-right">
-          <div className="player-name-row">
-            <div className="player-name">
-              <span className="player-title">{character.title}</span>
-              <span className="player-name-text">{character.nickname}</span>
-            </div>
+          <div className="player-name">
+            <span className="player-title">{character.title}</span>
+            <span className="player-name-text">{character.nickname}</span>
           </div>
           <div className="player-meta-row">
             <span className="player-meta-tag">ID: {character.id}</span>
@@ -267,69 +263,69 @@ const PlayerInfo: React.FC = () => {
               {character.realm}{character.subRealm ? ` · ${character.subRealm}` : ''}
             </span>
           </div>
+        </div>
+      </div>
 
-          <div className="player-bars">
-            <div className="bar-item">
-              <span className="bar-label">血</span>
-              <div className="bar-progress">
-                <Progress
-                  percent={qixuePercent}
-                  strokeColor="var(--danger-color)"
-                  railColor="var(--progress-rail-color)"
-                  showInfo={false}
-                  size={{ height: 12 }}
-                />
-                <div className="bar-progress-text">
-                  {qixueCurrent}/{character.maxQixue}
-                </div>
-              </div>
+      <div className="player-bars">
+        <div className="bar-item">
+          <span className="bar-label">血</span>
+          <div className="bar-progress">
+            <Progress
+              percent={qixuePercent}
+              strokeColor="var(--danger-color)"
+              railColor="var(--progress-rail-color)"
+              showInfo={false}
+              size={{ height: 10 }}
+            />
+            <div className="bar-progress-text">
+              {qixueCurrent}/{character.maxQixue}
             </div>
-            <div className="bar-item">
-              <span className="bar-label">灵</span>
-              <div className="bar-progress">
-                <Progress
-                  percent={lingqiPercent}
-                  strokeColor="var(--primary-color)"
-                  railColor="var(--progress-rail-color)"
-                  showInfo={false}
-                  size={{ height: 12 }}
-                />
-                <div className="bar-progress-text">
-                  {lingqiCurrent}/{character.maxLingqi}
-                </div>
-              </div>
+          </div>
+        </div>
+        <div className="bar-item">
+          <span className="bar-label">灵</span>
+          <div className="bar-progress">
+            <Progress
+              percent={lingqiPercent}
+              strokeColor="var(--primary-color)"
+              railColor="var(--progress-rail-color)"
+              showInfo={false}
+              size={{ height: 10 }}
+            />
+            <div className="bar-progress-text">
+              {lingqiCurrent}/{character.maxLingqi}
             </div>
-            <div className="bar-item">
-              <span className="bar-label">体</span>
-              <div className="bar-progress">
-                <Progress
-                  percent={staminaPercent}
-                  strokeColor="var(--success-color)"
-                  railColor="var(--progress-rail-color)"
-                  showInfo={false}
-                  size={{ height: 12 }}
-                />
-                <div className="bar-progress-text">
-                  {staminaCurrent}/{staminaMax}
-                </div>
-              </div>
+          </div>
+        </div>
+        <div className="bar-item">
+          <span className="bar-label">体</span>
+          <div className="bar-progress">
+            <Progress
+              percent={staminaPercent}
+              strokeColor="var(--success-color)"
+              railColor="var(--progress-rail-color)"
+              showInfo={false}
+              size={{ height: 10 }}
+            />
+            <div className="bar-progress-text">
+              {staminaCurrent}/{staminaMax}
             </div>
-            <div className="bar-item">
-              <span className="bar-label">修</span>
-              <div className="bar-exp">
-                <div className="bar-progress">
-                  <Progress
-                    percent={expPercent}
-                    strokeColor="var(--warning-color)"
-                    railColor="var(--progress-rail-color)"
-                    showInfo={false}
-                    size={{ height: 10 }}
-                  />
-                  <div className="bar-progress-text">{expText}</div>
-                </div>
-                <div className="bar-exp-label">经验: {expDetailText}</div>
-              </div>
+          </div>
+        </div>
+        <div className="bar-item">
+          <span className="bar-label">修</span>
+          <div className="bar-exp">
+            <div className="bar-progress">
+              <Progress
+                percent={expPercent}
+                strokeColor="var(--warning-color)"
+                railColor="var(--progress-rail-color)"
+                showInfo={false}
+                size={{ height: 10 }}
+              />
+              <div className="bar-progress-text">{expText}</div>
             </div>
+            <div className="bar-exp-label">经验: {expDetailText}</div>
           </div>
         </div>
       </div>

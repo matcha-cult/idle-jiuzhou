@@ -1,8 +1,9 @@
+/* 玩家信息面板 — 紧凑布局 */
 .player-info {
-  padding: 20px 16px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
   font-size: 13px;
   color: var(--text-color);
 }
@@ -15,33 +16,35 @@
   color: var(--text-secondary);
 }
 
+/* 顶部：头像 + 名字横排 */
 .player-top {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
 }
 
 .player-avatar-card {
-  width: 120px;
-  height: 120px;
+  width: 64px;
+  height: 64px;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid var(--border-color);
   background: var(--panel-bg-soft);
-  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.04);
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   user-select: none;
-  transition: all 0.3s ease;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .player-avatar-card:hover {
   border-color: var(--primary-color);
-  box-shadow: 0 4px 12px var(--primary-shadow);
+  box-shadow: 0 2px 8px var(--primary-shadow);
 }
+/* SCSS_APPEND_MARKER */
 
 .player-avatar-img {
   width: 100%;
@@ -52,20 +55,13 @@
 
 .player-avatar-placeholder {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   color: var(--text-secondary);
-}
 
-.player-avatar-placeholder .anticon {
-  font-size: 28px;
-}
-
-.player-avatar-text {
-  font-size: 12px;
-  color: var(--text-tertiary);
+  .anticon {
+    font-size: 24px;
+  }
 }
 
 .player-top-right {
@@ -74,42 +70,28 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  /* Reduced gap from 8px to 4px */
-}
-
-.player-name-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-  padding-bottom: 4px;
-  /* Reduced padding from 6px */
-  border-bottom: 1px dashed var(--border-color-soft);
 }
 
 .player-name {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
   color: var(--text-color);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .player-title {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: #fff;
   background: linear-gradient(135deg, var(--danger-color), var(--warning-color));
-  padding: 2px 8px;
-  border-radius: 6px;
-  letter-spacing: 1px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
 }
 
 .player-name-text {
@@ -119,82 +101,62 @@
   white-space: nowrap;
 }
 
-.player-id {
-  font-size: 12px;
-  color: var(--text-secondary);
-  flex: 0 0 auto;
-}
-
 .player-meta-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
-  padding-top: 2px;
 }
 
 .player-meta-tag {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 10px;
+  height: 20px;
+  padding: 0 8px;
   border: 1px solid var(--primary-color);
   border-radius: 999px;
   background: var(--primary-bg-soft);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--primary-color);
-  line-height: 20px;
+  line-height: 18px;
 }
+/* SCSS_APPEND_2 */
 
+/* 进度条区域 */
 .player-bars {
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  /* Reduced gap from 8px */
+  gap: 4px;
   background: var(--panel-bg-soft);
   border: 1px solid var(--border-color-soft);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 6px 10px;
-  /* Reduced padding from 10px 12px */
-  margin-top: 2px;
-  /* Reduced margin from 4px */
 
   .bar-item {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   }
 
   .bar-label {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
     color: #fff;
-    border-radius: 4px;
+    border-radius: 3px;
     flex: 0 0 auto;
-    text-align: center;
   }
 
-  .bar-item:nth-child(1) .bar-label {
-    background: var(--danger-color);
-  }
-
-  .bar-item:nth-child(2) .bar-label {
-    background: var(--primary-color);
-  }
-
-  .bar-item:nth-child(3) .bar-label {
-    background: var(--success-color);
-  }
-
-  .bar-item:nth-child(4) .bar-label {
-    background: var(--warning-color);
-  }
+  .bar-item:nth-child(1) .bar-label { background: var(--danger-color); }
+  .bar-item:nth-child(2) .bar-label { background: var(--primary-color); }
+  .bar-item:nth-child(3) .bar-label { background: var(--success-color); }
+  .bar-item:nth-child(4) .bar-label { background: var(--warning-color); }
 
   .ant-progress {
     flex: 1;
@@ -208,27 +170,24 @@
   min-width: 0;
   display: flex;
   align-items: center;
-}
 
-.bar-progress .ant-progress {
-  width: 100%;
-}
+  .ant-progress {
+    width: 100%;
+  }
 
-.bar-progress .ant-progress-inner {
-  border-radius: 999px;
-}
-
-.bar-progress .ant-progress-bg {
-  border-radius: 999px;
+  .ant-progress-inner,
+  .ant-progress-bg {
+    border-radius: 999px;
+  }
 }
 
 .bar-progress-text {
   position: absolute;
-  right: 8px;
+  right: 6px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: #fff;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
@@ -240,7 +199,7 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .bar-exp-label {
@@ -248,23 +207,24 @@
   font-weight: 700;
   color: var(--text-tertiary);
   text-align: right;
-  line-height: 16px;
+  line-height: 14px;
 }
+/* SCSS_APPEND_3 */
 
+/* 属性区块 */
 .attr-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   background: var(--panel-bg-soft);
   border: 1px solid var(--border-color-soft);
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
-  transition: all 0.3s ease;
+  border-radius: 8px;
+  padding: 10px;
+  transition: box-shadow 0.2s, border-color 0.2s;
 }
 
 .attr-section:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   border-color: var(--border-color);
 }
 
@@ -272,35 +232,35 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding-bottom: 8px;
+  gap: 8px;
+  padding-bottom: 6px;
   border-bottom: 1px dashed var(--border-color-soft);
 }
 
 .attr-section-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   color: var(--text-color);
   position: relative;
   padding-left: 10px;
   display: flex;
   align-items: center;
-}
 
-.attr-section-title::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 4px;
-  height: 14px;
-  background: var(--primary-color);
-  border-radius: 2px;
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 12px;
+    background: var(--primary-color);
+    border-radius: 2px;
+  }
 }
 
 .attr-section-sub {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-tertiary);
   flex: 0 0 auto;
 }
@@ -310,49 +270,51 @@
   font-weight: 800;
   color: var(--danger-color);
   background: rgba(255, 77, 79, 0.1);
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: 4px;
 }
+/* SCSS_APPEND_4 */
 
+/* 基础属性（精气神）行 */
 .base-rows {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
 .base-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 4px 8px;
   background: var(--panel-bg);
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid transparent;
-  transition: all 0.2s;
-}
+  transition: border-color 0.2s, background 0.2s;
 
-.base-row:hover {
-  border-color: var(--primary-bg-soft);
-  background: var(--hover-bg);
+  &:hover {
+    border-color: var(--primary-bg-soft);
+    background: var(--hover-bg);
+  }
 }
 
 .base-left {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
   min-width: 0;
 }
 
 .base-label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-secondary);
   flex: 0 0 auto;
 }
 
 .base-value {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   color: var(--text-color);
   flex: 0 0 auto;
@@ -362,64 +324,56 @@
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
+  gap: 4px;
   flex: 0 0 auto;
-}
 
-.base-actions .ant-btn {
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  padding: 0;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  line-height: 1;
-  border-color: var(--border-color);
-  color: var(--text-secondary);
-  transition: all 0.2s;
-}
+  .ant-btn {
+    width: 26px;
+    min-width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1;
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+    transition: all 0.2s;
 
-.base-actions .ant-btn:hover:not(:disabled) {
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-  background: var(--primary-bg-soft);
-}
+    &:hover:not(:disabled) {
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+      background: var(--primary-bg-soft);
+    }
 
-.base-actions .ant-btn>span {
-  line-height: 1;
+    > span { line-height: 1; }
+    .anticon { font-size: 12px; }
+  }
 }
+/* SCSS_APPEND_5 */
 
-.base-actions .ant-btn .anticon {
-  font-size: 14px;
-}
-
+/* 战斗/辅助属性列表 — 简洁无边框风格 */
 .player-attrs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 2px 8px;
 }
 
 .attr-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
-  padding: 8px 10px;
-  background: var(--panel-bg);
-  border-radius: 6px;
-  border: 1px solid var(--border-color-soft);
-  transition: all 0.2s;
-}
+  padding: 3px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
 
-.attr-item:hover {
-  background: var(--hover-bg);
-  border-color: var(--primary-bg-soft);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  &:hover {
+    background: var(--hover-bg);
+  }
 }
 
 .attr-label {
@@ -429,7 +383,7 @@
 }
 
 .attr-value {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-color);
   min-width: 0;
@@ -438,6 +392,7 @@
   white-space: nowrap;
 }
 
+/* 响应式：移动端 */
 @media screen and (max-width: 768px) {
   .player-info {
     padding: 10px;
@@ -445,39 +400,12 @@
   }
 
   .player-top {
-    flex-direction: column;
-    align-items: center;
-    /* Center horizontally in mobile */
-    gap: 12px;
+    gap: 8px;
   }
 
   .player-avatar-card {
-    width: 140px;
-    /* Make avatar a bit larger on mobile */
-    height: 140px;
-  }
-
-  .player-top-right {
-    width: 100%;
-    /* Ensure right block takes full width */
-    gap: 8px;
-    align-items: center;
-    /* Center names and meta rows */
-  }
-
-  .player-name-row {
-    justify-content: center;
-    /* Center name row */
-  }
-
-  .player-meta-row {
-    justify-content: center;
-    /* Center ID and Realm */
-  }
-
-  .player-bars {
-    width: 100%;
-    margin-top: 4px;
+    width: 56px;
+    height: 56px;
   }
 
   .player-name {
@@ -485,91 +413,41 @@
   }
 
   .player-title {
-    font-size: 11px;
-  }
-
-  .player-meta-row {
-    gap: 6px;
+    font-size: 10px;
   }
 
   .player-meta-tag {
     height: 18px;
-    padding: 0 7px;
-    font-size: 11px;
+    padding: 0 6px;
+    font-size: 10px;
     line-height: 16px;
   }
 
   .player-bars {
-    gap: 5px;
+    padding: 5px 8px;
+    gap: 3px;
   }
 
   .bar-progress-text {
-    font-size: 10px;
-  }
-
-  .bar-exp-label {
-    font-size: 10px;
-    line-height: 14px;
+    font-size: 9px;
   }
 
   .attr-section {
-    border: 1px solid var(--border-color-soft);
-    border-radius: 12px;
-    background: var(--panel-bg-soft);
     padding: 8px;
-  }
-
-  .attr-section-header {
-    flex-wrap: wrap;
-    gap: 6px;
   }
 
   .attr-section-title {
     font-size: 12px;
   }
 
-  .attr-section-sub {
-    font-size: 11px;
-  }
-
-  .base-rows {
-    gap: 6px;
-  }
-
-  .base-row {
-    gap: 8px;
-  }
-
-  .base-label,
-  .base-value {
-    font-size: 11px;
-  }
-
-  .base-actions {
-    gap: 6px;
-  }
-
   .base-actions .ant-btn {
     width: 24px;
     min-width: 24px;
     height: 24px;
-    padding: 0;
-    border-radius: 8px;
-    font-size: 12px;
-    line-height: 1;
-  }
-
-  .base-actions .ant-btn .anticon {
-    font-size: 11px;
   }
 
   .player-attrs {
-    gap: 7px;
     grid-template-columns: 1fr;
-  }
-
-  .attr-label,
-  .attr-value {
-    font-size: 11px;
+    gap: 1px 0;
   }
 }
