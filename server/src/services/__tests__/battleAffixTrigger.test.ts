@@ -151,7 +151,7 @@ test('on_hit/on_be_hit/on_crit/on_turn_start四类触发词条可被识别', () 
   assert.deepEqual(triggers, ['on_be_hit', 'on_crit', 'on_hit', 'on_turn_start']);
 });
 
-test('六个高品池触发词条应与方案一致且词条仅包含T5/T6', () => {
+test('六个高品池触发词条应与方案一致且词条仅包含T5~T8', () => {
   const candidatePaths = [
     resolve(process.cwd(), 'server/src/data/seeds/affix_pool.json'),
     resolve(process.cwd(), 'src/data/seeds/affix_pool.json'),
@@ -179,7 +179,7 @@ test('六个高品池触发词条应与方案一致且词条仅包含T5/T6', () 
 
     for (const affix of specialAffixes) {
       const tiers = affix.tiers.map((tier) => tier.tier).sort((a, b) => a - b);
-      assert.deepEqual(tiers, [5, 6], `${plan.id}:${affix.key} 词条档位应仅有T5/T6`);
+      assert.deepEqual(tiers, [5, 6, 7, 8], `${plan.id}:${affix.key} 词条档位应仅有T5~T8`);
       for (const tier of affix.tiers) {
         assert.ok(
           typeof tier.description === 'string' && tier.description.trim().length > 0,

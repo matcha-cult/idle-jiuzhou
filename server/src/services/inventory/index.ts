@@ -2259,7 +2259,7 @@ export const rerollEquipmentAffixes = async (
       `
         UPDATE item_instance
         SET affixes = $1::jsonb,
-            affix_gen_version = 3,
+            affix_gen_version = 4,
             updated_at = NOW()
         WHERE id = $2 AND owner_character_id = $3
       `,
