@@ -299,6 +299,16 @@ class GameSocketService {
       this.notifyOnlinePlayersListeners(this.currentOnlinePlayers);
     });
 
+    // 战斗冷却结束推送
+    this.socket.on('battle:cooldown-ready', (data: { characterId: number; timestamp: number }) => {
+      window.dispatchEvent(new CustomEvent('battle:cooldown-ready', { detail: data }));
+    });
+
+    // 重连时的冷却状态同步
+    this.socket.on('battle:cooldown-sync', (data: { characterId: number; remainingMs: number; timestamp: number }) => {
+      window.dispatchEvent(new CustomEvent('battle:cooldown-sync', { detail: data }));
+    });
+
     this.socket.connect();
   }
 

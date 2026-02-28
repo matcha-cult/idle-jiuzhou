@@ -263,6 +263,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   const [isTeamBattle, setIsTeamBattle] = useState(false);
   const [teamMemberCount, setTeamMemberCount] = useState(1);
   const [nexting, setNexting] = useState(false);
+  const [waitingForCooldown, setWaitingForCooldown] = useState(false);
   const floatDxIndexRef = useRef(0);
   const floatTimerSetRef = useRef<Set<number>>(new Set());
   const nextingRef = useRef(false);
@@ -611,6 +612,42 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     void startBattle(monsterIds, { retryOnCooldown: true, silentCooldown: true });
   }, [enemies, resolvedExternalBattleId, startBattle]);
 
+  // 监听服务端冷却结束推送
+  useEffect(() => {
+    const handleCooldownReady = (event: Event) => {
+      const customEvent = event as CustomEvent<{ characterId: number; timestamp: number }>;
+      const myCharacterId = gameSocket.getCharacter()?.id;
+
+      if (customEvent.detail.characterId === myCharacterId) {
+        setWaitingForCooldown(false);
+        setStartupStatus('none');
+
+        // 自动触发下一场战斗
+        if (resolvedAllowAutoNext && result === 'win' && !resolvedExternalBattleId) {
+          void startBattle(lastMonsterIdsRef.current, { retryOnCooldown: false, silentCooldown: true });
+        }
+      }
+    };
+
+    const handleCooldownSync = (event: Event) => {
+      const customEvent = event as CustomEvent<{ characterId: number; remainingMs: number; timestamp: number }>;
+      const myCharacterId = gameSocket.getCharacter()?.id;
+
+      if (customEvent.detail.characterId === myCharacterId && customEvent.detail.remainingMs > 0) {
+        setWaitingForCooldown(true);
+        setStartupStatus('cooldown');
+      }
+    };
+
+    window.addEventListener('battle:cooldown-ready', handleCooldownReady);
+    window.addEventListener('battle:cooldown-sync', handleCooldownSync);
+
+    return () => {
+      window.removeEventListener('battle:cooldown-ready', handleCooldownReady);
+      window.removeEventListener('battle:cooldown-sync', handleCooldownSync);
+    };
+  }, [resolvedAllowAutoNext, result, resolvedExternalBattleId, startBattle]);
+
   useEffect(() => {
     if (!resolvedExternalBattleId) return;
     if (battleIdRef.current === resolvedExternalBattleId) return;
@@ -691,9 +728,16 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     announcedAutoNextBattleIdRef.current = currentBattleId;
     clearAutoNextTimer();
 
+    // 战斗结束后，设置等待服务端冷却推送状态
+    if (!onNext && !resolvedExternalBattleId) {
+      setWaitingForCooldown(true);
+      setStartupStatus('cooldown');
+      return;
+    }
+
+    // 如果有 onNext 回调，仍使用前端定时器（非自动战斗场景）
     const delayMs = getAutoNextDelayMs();
     const delaySec = (delayMs / 1000).toFixed(1);
-    // 延迟低于阈值时静默触发，不显示无意义的"等待0.0秒"提示
     const shouldShowMessage = delayMs >= MINIMUM_MEANINGFUL_COOLDOWN_DISPLAY_MS;
 
     if (onNext) {
@@ -714,16 +758,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       }, delayMs);
       return;
     }
-
-    if (resolvedExternalBattleId) return;
-
-    if (shouldShowMessage) {
-      message.info(`战斗结束，等待${delaySec}秒后开启下一场`, Math.max(1, Math.ceil(delayMs / 1000)));
-    }
-    autoNextTimerRef.current = window.setTimeout(() => {
-      if (battleIdRef.current !== currentBattleId) return;
-      void startBattle(lastMonsterIdsRef.current, { retryOnCooldown: true, silentCooldown: true });
-    }, delayMs);
   }, [
     battleId,
     battleState,
@@ -734,7 +768,6 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     resolvedAllowAutoNext,
     resolvedExternalBattleId,
     startupStatus,
-    startBattle,
   ]);
 
   const pollBattleState = useCallback(async () => {
@@ -943,8 +976,8 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     if (!battleState && startupStatus === 'preparing') {
       return '正在接敌...';
     }
-    if (!battleState && startupStatus === 'cooldown') {
-      return '战斗间隔冷却中，等待自动重试';
+    if (waitingForCooldown || (!battleState && startupStatus === 'cooldown')) {
+      return '战斗间隔冷却中，等待服务端通知...';
     }
     const teamTag = isTeamBattle ? `[组队${teamMemberCount}人] ` : '';
     const base = `${teamTag}敌方 ${enemyAliveCount}/${enemyUnits.length} · 我方 ${allyAliveCount}/${allyUnits.length}`;
@@ -954,7 +987,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     if (result === 'lose') return `${base} · ${sideText} · 失败`;
     if (result === 'draw') return `${base} · ${sideText} · 平局`;
     return '等待目标';
-  }, [allyAliveCount, allyUnits.length, battleState, enemyAliveCount, enemyUnits.length, isTeamBattle, result, startupStatus, teamMemberCount, turnSide]);
+  }, [allyAliveCount, allyUnits.length, battleState, enemyAliveCount, enemyUnits.length, isTeamBattle, result, startupStatus, teamMemberCount, turnSide, waitingForCooldown]);
 
   const isPreparingView = !battleState && (startupStatus !== 'none' || (Boolean(resolvedExternalBattleId) && result === 'running'));
   const enemyEmptyText = isPreparingView ? '正在锁定敌方目标...' : '暂无敌方目标';
@@ -970,6 +1003,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       pushBattleLines([FAST_BATTLE_LOG_SYSTEM_LINES.escaped]);
     }
     clearAutoNextTimer();
+    setWaitingForCooldown(false);
     setBattleId(null);
     setBattleState(null);
     setResult('idle');

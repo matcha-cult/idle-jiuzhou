@@ -37,6 +37,10 @@ import { getBattleSkills } from '../characterTechniqueService.js';
 import { getArenaStatus } from '../arenaService.js';
 import type { PoolClient } from 'pg';
 import {
+  scheduleBattleCooldownPush,
+  cancelBattleCooldown,
+} from './cooldownManager.js';
+import {
   applyCharacterResourceDeltaByCharacterId,
   getCharacterComputedByCharacterId,
   getCharacterComputedByUserId,
@@ -305,6 +309,9 @@ function setBattleStartCooldownByCharacterIds(characterIds: number[], now: numbe
     const characterId = Math.floor(Number(raw));
     if (!Number.isFinite(characterId) || characterId <= 0) continue;
     characterBattleStartCooldownUntil.set(characterId, cooldownUntil);
+
+    // 启动服务端推送定时器
+    scheduleBattleCooldownPush(characterId, BATTLE_START_COOLDOWN_MS);
   }
   cleanupBattleStartCooldownCache(now);
   return cooldownUntil;
@@ -2190,6 +2197,11 @@ export async function abandonBattle(
   const cooldownUntilMs = setBattleStartCooldownByCharacterIds(
     cooldownCharacterIds.length > 0 ? cooldownCharacterIds : collectPlayerCharacterIdsFromBattleState(state),
   );
+
+  // 取消冷却推送（逃跑不应触发自动战斗）
+  for (const characterId of cooldownCharacterIds) {
+    cancelBattleCooldown(characterId);
+  }
 
   try {
     if (state.battleType === 'pvp') {

@@ -13,6 +13,7 @@ import {
   getCharacterComputedByUserId,
   invalidateCharacterComputedCacheByUserId,
 } from '../services/characterComputedService.js';
+import { getRemainingCooldown } from '../services/battle/cooldownManager.js';
 
 // 玩家会话
 interface PlayerSession {
@@ -122,6 +123,12 @@ class GameServer {
 
           // 发送角色数据
           socket.emit('game:character', { character });
+
+          // 同步战斗冷却状态（重连时）
+          if (character) {
+            await this.syncBattleCooldownOnReconnect(socket, character.id);
+          }
+
           this.scheduleEmitOnlinePlayers(true);
         } catch (error) {
           console.error('游戏认证错误:', error);
@@ -489,6 +496,26 @@ class GameServer {
     return true;
   }
 
+  /**
+   * 向指定角色推送事件
+   *
+   * 用于冷却管理器等服务向特定角色推送消息
+   */
+  public emitToCharacter<T = any>(characterId: number, event: string, data: T): boolean {
+    // 查找角色对应的 session
+    const session = Array.from(this.sessions.values()).find(
+      s => s.character?.id === characterId
+    );
+
+    if (!session) return false;
+
+    const socket = this.io.sockets.sockets.get(session.socketId);
+    if (!socket) return false;
+
+    socket.emit(event, data);
+    return true;
+  }
+
   // 踢出指定用户
   public kickUser(userId: number, reason: string = '账号已在其他设备登录'): void {
     const socketId = this.userSocketMap.get(userId);
@@ -510,6 +537,23 @@ class GameServer {
   // 获取IO实例
   public getIO(): SocketServer {
     return this.io;
+  }
+
+  /**
+   * 处理断线重连时的冷却状态同步
+   */
+  private async syncBattleCooldownOnReconnect(
+    socket: Socket,
+    characterId: number
+  ): Promise<void> {
+    const remaining = getRemainingCooldown(characterId);
+    if (remaining > 0) {
+      socket.emit('battle:cooldown-sync', {
+        characterId,
+        remainingMs: remaining,
+        timestamp: Date.now(),
+      });
+    }
   }
 }
 
