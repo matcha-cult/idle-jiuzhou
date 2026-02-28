@@ -9,7 +9,7 @@
  * 5. 删除邮件
  * 6. 批量操作
  */
-import { query, withTransaction } from '../config/database.js';
+import { query, withTransaction, withTransactionAuto } from '../config/database.js';
 import { createItem } from './itemService.js';
 import { getInventoryInfoWithClient } from './inventory/index.js';
 import { recordCollectItemEvent } from './taskService.js';
@@ -357,7 +357,7 @@ export const claimAttachments = async (
   const collectCounts = new Map<string, number>();
 
   try {
-    return await withTransaction(async (client) => {
+    return await withTransactionAuto(async (client) => {
 
     // 1. 获取邮件并锁定
     const mailResult = await client.query(`
@@ -495,7 +495,7 @@ export const claimAllAttachments = async (
   const collectCounts = new Map<string, number>();
 
   try {
-    return await withTransaction(async (client) => {
+    return await withTransactionAuto(async (client) => {
 
     // 1. 获取所有未领取的邮件
     const mailsResult = await client.query(`

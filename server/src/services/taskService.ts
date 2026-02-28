@@ -1,4 +1,4 @@
-import { pool, query, withTransaction } from '../config/database.js';
+import { pool, query, withTransaction, withTransactionAuto } from '../config/database.js';
 import { createItem } from './itemService.js';
 import type { PoolClient } from 'pg';
 import { ensureMainQuestProgressForNewChapters, updateSectionProgress } from './mainQuest/index.js';
@@ -711,7 +711,7 @@ export const claimTaskReward = async (
   if (!tid) return { success: false, message: '任务ID不能为空' };
 
   try {
-    return await withTransaction(async (client) => {
+    return await withTransactionAuto(async (client) => {
   await resetRecurringTaskProgressIfNeeded(cid, client);
   
       const progressRes = await client.query(

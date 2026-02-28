@@ -7,7 +7,7 @@
  * 3. 分发物品、装备给玩家（组队随机分配）
  * 4. 装备通过装备生成模块生成
  */
-import { query, withTransaction } from '../config/database.js';
+import { query, withTransaction, withTransactionAuto } from '../config/database.js';
 import { createItem, CreateItemOptions } from './itemService.js';
 import { sendSystemMail, type MailAttachItem } from './mailService.js';
 import { recordCollectItemEvent } from './taskService.js';
@@ -354,7 +354,7 @@ export const distributeBattleRewards = async (
   const collectCounts = new Map<string, { characterId: number; itemDefId: string; qty: number }>();
   
   try {
-    return await withTransaction(async (client) => {
+    return await withTransactionAuto(async (client) => {
 
     const participantCharacterIds = [...new Set(
       participants

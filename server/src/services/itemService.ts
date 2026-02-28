@@ -4,7 +4,7 @@
  * - 装备类：生成词条后创建实例
  * - 普通物品：直接创建实例（支持堆叠）
  */
-import { query, pool, withTransaction } from '../config/database.js';
+import { query, pool, withTransaction, withTransactionAuto } from '../config/database.js';
 import type { PoolClient } from 'pg';
 import { generateEquipment, createEquipmentInstance, createEquipmentInstanceTx, GenerateOptions, GeneratedEquipment } from './equipmentService.js';
 import {
@@ -248,7 +248,7 @@ export const useItem = async (
   qty: number = 1
 ): Promise<{ success: boolean; message: string; effects?: any[]; character?: any; lootResults?: { type: string; name?: string; amount: number }[] }> => {
   try {
-    return await withTransaction(async (client) => {
+    return await withTransactionAuto(async (client) => {
   await lockCharacterInventoryMutexTx(client, characterId);
   
       const charResult = await client.query(
