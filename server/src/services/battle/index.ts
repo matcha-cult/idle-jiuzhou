@@ -1304,7 +1304,11 @@ async function tickBattle(battleId: string): Promise<void> {
         return;
       }
       const autoEnabled = await getCharacterAutoCastSkillsEnabled(characterId);
-      if (!autoEnabled) return;
+      if (!autoEnabled) {
+        // 玩家回合开始，推送状态通知客户端
+        emitBattleUpdate(battleId, { kind: 'battle_state', battleId, state: engine.getState() });
+        return;
+      }
       engine.aiAction(true);
       emitBattleUpdate(battleId, { kind: 'battle_state', battleId, state: engine.getState() });
       return;

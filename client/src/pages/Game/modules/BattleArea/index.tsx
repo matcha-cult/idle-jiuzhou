@@ -1081,6 +1081,23 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           void pollBattleState();
           return false;
         }
+        // 检查是否是状态不同步错误，如果是则直接使用返回的最新状态
+        const resData = res?.data as any;
+        if (resData?.reason === 'state_mismatch' && resData?.state) {
+          const nextState = resData.state;
+          const prevIndex = lastLogIndexRef.current;
+          applyLogsToFloats(prevIndex, nextState.logs ?? []);
+          lastLogIndexRef.current = nextState.logs?.length ?? prevIndex;
+          ensureBattleStartAnnounced(nextState);
+          const prevChatIndex = lastChatLogIndexRef.current;
+          const nextLines = formatNewLogs(prevChatIndex, nextState.logs ?? []);
+          lastChatLogIndexRef.current = nextState.logs?.length ?? prevChatIndex;
+          pushBattleLines(nextLines);
+          ensureBattleEndAnnounced(nextState);
+          ensureBattleDropsAnnounced(nextState, null);
+          setBattleState(nextState);
+          return false;
+        }
         void 0;
         return false;
       }
