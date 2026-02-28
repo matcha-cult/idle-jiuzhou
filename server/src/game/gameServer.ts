@@ -242,22 +242,17 @@ class GameServer {
           return;
         }
 
-        try {
-          const success = await this.saveAttributePoints(session.userId, attribute, amount);
-          if (success) {
-            // 重新加载角色数据
-            const updatedCharacter = await this.loadCharacter(session.userId);
-            session.character = updatedCharacter;
-            session.lastUpdate = Date.now();
+        const success = await this.saveAttributePoints(session.userId, attribute, amount);
+        if (success) {
+          // 重新加载角色数据
+          const updatedCharacter = await this.loadCharacter(session.userId);
+          session.character = updatedCharacter;
+          session.lastUpdate = Date.now();
 
-            // 广播更新
-            socket.emit('game:character', { character: updatedCharacter });
-          } else {
-            socket.emit('game:error', { message: '加点失败' });
-          }
-        } catch (error) {
-          console.error('加点错误:', error);
-          socket.emit('game:error', { message: '服务器错误' });
+          // 广播更新
+          socket.emit('game:character', { character: updatedCharacter });
+        } else {
+          socket.emit('game:error', { message: '加点失败' });
         }
       });
 
@@ -269,15 +264,10 @@ class GameServer {
           return;
         }
 
-        try {
-          const character = await this.loadCharacter(session.userId);
-          session.character = character;
-          session.lastUpdate = Date.now();
-          socket.emit('game:character', { character });
-        } catch (error) {
-          console.error('刷新角色错误:', error);
-          socket.emit('game:error', { message: '服务器错误' });
-        }
+        const character = await this.loadCharacter(session.userId);
+        session.character = character;
+        session.lastUpdate = Date.now();
+        socket.emit('game:character', { character });
       });
 
       // 断开连接
@@ -343,11 +333,7 @@ class GameServer {
    * 说明：仅在连接断开时更新，字段语义始终是“离线发生时刻”。
    */
   private async touchCharacterLastOfflineAt(userId: number): Promise<void> {
-    try {
-      await query(`UPDATE characters SET last_offline_at = NOW(), updated_at = NOW() WHERE user_id = $1`, [userId]);
-    } catch (error) {
-      console.error('更新角色最后离线时间失败:', error);
-    }
+    await query(`UPDATE characters SET last_offline_at = NOW(), updated_at = NOW() WHERE user_id = $1`, [userId]);
   }
 
   // 加载角色数据

@@ -127,29 +127,20 @@ const repairDuplicateSlots = async (): Promise<void> => {
 // 初始化背包表
 // ============================================
 export const initInventoryTable = async (): Promise<void> => {
-  try {
-    // 创建背包表
-    await query(inventoryTableSQL);
+  // 创建背包表
+  await query(inventoryTableSQL);
 
-    await query(`ALTER TABLE inventory ALTER COLUMN warehouse_capacity SET DEFAULT 1000`);
-    await query(`COMMENT ON COLUMN inventory.warehouse_capacity IS '仓库格子数量'`);
-    await query(`UPDATE inventory SET warehouse_capacity = 1000 WHERE warehouse_capacity < 1000`);
+  await query(`ALTER TABLE inventory ALTER COLUMN warehouse_capacity SET DEFAULT 1000`);
+  await query(`COMMENT ON COLUMN inventory.warehouse_capacity IS '仓库格子数量'`);
+  await query(`UPDATE inventory SET warehouse_capacity = 1000 WHERE warehouse_capacity < 1000`);
     
-    // 添加性能优化索引
-    await query(itemInstanceIndexSQL);
+  // 添加性能优化索引
+  await query(itemInstanceIndexSQL);
 
-    await repairDuplicateSlots();
-    try {
-      await query(itemInstanceUniqueSlotIndexSQL);
-    } catch (error) {
-      console.warn('背包格子唯一性索引创建失败（可能存在无法自动修复的重复格子）:', error);
-    }
+  await repairDuplicateSlots();
+  await query(itemInstanceUniqueSlotIndexSQL);
     
-    console.log('✓ 背包系统表检测完成');
-  } catch (error) {
-    console.error('✗ 背包系统表初始化失败:', error);
-    throw error;
-  }
+  console.log('✓ 背包系统表检测完成');
 };
 
 // ============================================

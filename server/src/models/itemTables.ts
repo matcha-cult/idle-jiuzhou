@@ -154,24 +154,20 @@ const itemInstanceColumnsToCheck = [
 
 const checkAndAddItemInstanceColumns = async () => {
   for (const col of itemInstanceColumnsToCheck) {
-    try {
-      const checkSQL = `
-        SELECT column_name FROM information_schema.columns
-        WHERE table_name = 'item_instance' AND column_name = $1
-      `;
-      const result = await query(checkSQL, [col.name]);
+    const checkSQL = `
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'item_instance' AND column_name = $1
+    `;
+    const result = await query(checkSQL, [col.name]);
 
-      if (result.rows.length === 0) {
-        const addSQL = `ALTER TABLE item_instance ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
-        await query(addSQL);
+    if (result.rows.length === 0) {
+      const addSQL = `ALTER TABLE item_instance ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
+      await query(addSQL);
 
-        const commentSQL = `COMMENT ON COLUMN item_instance.${col.name} IS '${col.comment}'`;
-        await query(commentSQL);
+      const commentSQL = `COMMENT ON COLUMN item_instance.${col.name} IS '${col.comment}'`;
+      await query(commentSQL);
 
-        console.log(`物品实例表已添加缺失字段: ${col.name}`);
-      }
-    } catch (error) {
-      console.error(`检查字段 ${col.name} 时出错:`, error);
+      console.log(`物品实例表已添加缺失字段: ${col.name}`);
     }
   }
 };
@@ -500,49 +496,44 @@ const migrateItemInstanceObtainedFromLengthV128 = async (): Promise<void> => {
 // 初始化物品系统表
 // ============================================
 export const initItemTables = async (): Promise<void> => {
-  try {
-    console.log('  → 物品定义/词条池/套装/配方改为静态JSON加载，跳过建表');
+  console.log('  → 物品定义/词条池/套装/配方改为静态JSON加载，跳过建表');
 
-    await query(itemInstanceTableSQL);
-    await query(itemUseCooldownTableSQL);
-    await query(itemUseCountTableSQL);
+  await query(itemInstanceTableSQL);
+  await query(itemUseCooldownTableSQL);
+  await query(itemUseCountTableSQL);
 
-    await dropLegacyStaticDefForeignKeys();
-    await checkAndAddItemInstanceColumns();
+  await dropLegacyStaticDefForeignKeys();
+  await checkAndAddItemInstanceColumns();
 
-    await runDbMigrationOnce({
-      migrationKey: 'item_instance_affixes_modifiers_v1',
-      description: '将装备词条实例统一迁移为支持modifiers复合结构',
-      execute: migrateItemInstanceAffixesToModifiers,
-    });
+  await runDbMigrationOnce({
+    migrationKey: 'item_instance_affixes_modifiers_v1',
+    description: '将装备词条实例统一迁移为支持modifiers复合结构',
+    execute: migrateItemInstanceAffixesToModifiers,
+  });
 
-    await runDbMigrationOnce({
-      migrationKey: 'item_instance_affixes_rating_v3',
-      description: '将装备词条实例统一迁移为Rating语义（value_type=rating）',
-      execute: migrateItemInstanceAffixesToRatingV3,
-    });
+  await runDbMigrationOnce({
+    migrationKey: 'item_instance_affixes_rating_v3',
+    description: '将装备词条实例统一迁移为Rating语义（value_type=rating）',
+    execute: migrateItemInstanceAffixesToRatingV3,
+  });
 
-    await runDbMigrationOnce({
-      migrationKey: 'item_instance_technique_book_tradeable_v1',
-      description: '将历史功法书实例解绑为none以支持坊市交易',
-      execute: migrateTechniqueBookBindTypeForMarket,
-    });
+  await runDbMigrationOnce({
+    migrationKey: 'item_instance_technique_book_tradeable_v1',
+    description: '将历史功法书实例解绑为none以支持坊市交易',
+    execute: migrateTechniqueBookBindTypeForMarket,
+  });
 
-    await runDbMigrationOnce({
-      migrationKey: 'item_instance_obtained_from_v128',
-      description: '扩容 item_instance.obtained_from 字段长度到 VARCHAR(128)',
-      execute: migrateItemInstanceObtainedFromLengthV128,
-    });
+  await runDbMigrationOnce({
+    migrationKey: 'item_instance_obtained_from_v128',
+    description: '扩容 item_instance.obtained_from 字段长度到 VARCHAR(128)',
+    execute: migrateItemInstanceObtainedFromLengthV128,
+  });
 
-    await query("COMMENT ON COLUMN item_instance.identified IS '是否已鉴定';");
-    await query("COMMENT ON COLUMN item_instance.quality IS '实例品质（为空则按定义表）';");
-    await query("COMMENT ON COLUMN item_instance.quality_rank IS '实例品质排序值（为空则按定义表）';");
-    await query("COMMENT ON COLUMN item_instance.affix_gen_version IS '词条生成版本号（用于规则升级）';");
-    await query("COMMENT ON COLUMN item_instance.affix_roll_meta IS '词条生成元信息（预算/参数快照）';");
+  await query("COMMENT ON COLUMN item_instance.identified IS '是否已鉴定';");
+  await query("COMMENT ON COLUMN item_instance.quality IS '实例品质（为空则按定义表）';");
+  await query("COMMENT ON COLUMN item_instance.quality_rank IS '实例品质排序值（为空则按定义表）';");
+  await query("COMMENT ON COLUMN item_instance.affix_gen_version IS '词条生成版本号（用于规则升级）';");
+  await query("COMMENT ON COLUMN item_instance.affix_roll_meta IS '词条生成元信息（预算/参数快照）';");
 
-    console.log('✓ 物品系统表检测完成');
-  } catch (error) {
-    console.error('✗ 物品系统表初始化失败:', error);
-    throw error;
-  }
+  console.log('✓ 物品系统表检测完成');
 };

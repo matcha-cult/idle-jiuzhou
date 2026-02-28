@@ -76,87 +76,82 @@ const getHolidayInfo = (date: Date) => {
 };
 
 export const getSignInOverview = async (userId: number, month: string): Promise<SignInOverviewResult> => {
-  try {
-    const parsed = parseMonth(month);
-    if (!parsed) return { success: false, message: '月份参数错误' };
+  const parsed = parseMonth(month);
+  if (!parsed) return { success: false, message: '月份参数错误' };
 
-    const start = `${month}-01`;
-    const nextMonthDate = new Date(parsed.year, parsed.month, 1);
-    const next = `${nextMonthDate.getFullYear()}-${pad2(nextMonthDate.getMonth() + 1)}-01`;
+  const start = `${month}-01`;
+  const nextMonthDate = new Date(parsed.year, parsed.month, 1);
+  const next = `${nextMonthDate.getFullYear()}-${pad2(nextMonthDate.getMonth() + 1)}-01`;
 
-    const monthRows = await query(
-      `
-        SELECT sign_date, reward, is_holiday, holiday_name, created_at
-        FROM sign_in_records
-        WHERE user_id = $1 AND sign_date >= $2::date AND sign_date < $3::date
-        ORDER BY sign_date ASC
-      `,
-      [userId, start, next]
-    );
+  const monthRows = await query(
+    `
+      SELECT sign_date, reward, is_holiday, holiday_name, created_at
+      FROM sign_in_records
+      WHERE user_id = $1 AND sign_date >= $2::date AND sign_date < $3::date
+      ORDER BY sign_date ASC
+    `,
+    [userId, start, next]
+  );
 
-    const records: Record<string, SignInRecordDto> = {};
-    for (const row of monthRows.rows as Array<Record<string, unknown>>) {
-      const dateKey = normalizeDateKey(row.sign_date);
-      if (!dateKey) continue;
-      const signedAt =
-        row.created_at instanceof Date ? row.created_at.toISOString() : typeof row.created_at === 'string' ? row.created_at : '';
-      records[dateKey] = {
-        date: dateKey,
-        signedAt,
-        reward: Number(row.reward ?? 0),
-        isHoliday: Boolean(row.is_holiday),
-        holidayName: typeof row.holiday_name === 'string' ? row.holiday_name : null,
-      };
-    }
-
-    const todayKey = buildDateKey(new Date());
-    const signedToday = Boolean(records[todayKey]) || (await query(
-      'SELECT 1 FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1',
-      [userId, todayKey]
-    )).rows.length > 0;
-
-    const historyRows = await query(
-      `
-        SELECT sign_date
-        FROM sign_in_records
-        WHERE user_id = $1 AND sign_date >= ($2::date - INTERVAL '366 days')
-        ORDER BY sign_date DESC
-        LIMIT 366
-      `,
-      [userId, todayKey]
-    );
-
-    const signedSet = new Set<string>();
-    for (const row of historyRows.rows as Array<Record<string, unknown>>) {
-      const key = normalizeDateKey(row.sign_date);
-      if (key) signedSet.add(key);
-    }
-
-    let streakDays = 0;
-    let cursor = new Date();
-    while (streakDays < 366) {
-      const key = buildDateKey(cursor);
-      if (!signedSet.has(key)) break;
-      streakDays += 1;
-      cursor = addDays(cursor, -1);
-    }
-
-    return {
-      success: true,
-      message: '获取成功',
-      data: {
-        today: todayKey,
-        signedToday,
-        month,
-        monthSignedCount: Object.keys(records).length,
-        streakDays,
-        records,
-      },
+  const records: Record<string, SignInRecordDto> = {};
+  for (const row of monthRows.rows as Array<Record<string, unknown>>) {
+    const dateKey = normalizeDateKey(row.sign_date);
+    if (!dateKey) continue;
+    const signedAt =
+      row.created_at instanceof Date ? row.created_at.toISOString() : typeof row.created_at === 'string' ? row.created_at : '';
+    records[dateKey] = {
+      date: dateKey,
+      signedAt,
+      reward: Number(row.reward ?? 0),
+      isHoliday: Boolean(row.is_holiday),
+      holidayName: typeof row.holiday_name === 'string' ? row.holiday_name : null,
     };
-  } catch (error) {
-    console.error('获取签到信息失败:', error);
-    return { success: false, message: '获取签到信息失败' };
   }
+
+  const todayKey = buildDateKey(new Date());
+  const signedToday = Boolean(records[todayKey]) || (await query(
+    'SELECT 1 FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1',
+    [userId, todayKey]
+  )).rows.length > 0;
+
+  const historyRows = await query(
+    `
+      SELECT sign_date
+      FROM sign_in_records
+      WHERE user_id = $1 AND sign_date >= ($2::date - INTERVAL '366 days')
+      ORDER BY sign_date DESC
+      LIMIT 366
+    `,
+    [userId, todayKey]
+  );
+
+  const signedSet = new Set<string>();
+  for (const row of historyRows.rows as Array<Record<string, unknown>>) {
+    const key = normalizeDateKey(row.sign_date);
+    if (key) signedSet.add(key);
+  }
+
+  let streakDays = 0;
+  let cursor = new Date();
+  while (streakDays < 366) {
+    const key = buildDateKey(cursor);
+    if (!signedSet.has(key)) break;
+    streakDays += 1;
+    cursor = addDays(cursor, -1);
+  }
+
+  return {
+    success: true,
+    message: '获取成功',
+    data: {
+      today: todayKey,
+      signedToday,
+      month,
+      monthSignedCount: Object.keys(records).length,
+      streakDays,
+      records,
+    },
+  };
 };
 
 export const doSignIn = async (userId: number): Promise<DoSignInResult> => {
@@ -164,47 +159,42 @@ export const doSignIn = async (userId: number): Promise<DoSignInResult> => {
   const holidayInfo = getHolidayInfo(new Date());
   const reward = holidayInfo.isHoliday ? 50 : 10;
 
-  try {
-    return await withTransaction(async (client) => {
-  const characterCheck = await client.query('SELECT id FROM characters WHERE user_id = $1 FOR UPDATE', [userId]);
-      if (characterCheck.rows.length === 0) {
-        return rollbackAndReturn(client, { success: false, message: '角色不存在，无法签到' });
-      }
+  return await withTransaction(async (client) => {
+const characterCheck = await client.query('SELECT id FROM characters WHERE user_id = $1 FOR UPDATE', [userId]);
+    if (characterCheck.rows.length === 0) {
+      return rollbackAndReturn(client, { success: false, message: '角色不存在，无法签到' });
+    }
   
-      const exist = await client.query(
-        'SELECT id FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1',
-        [userId, todayKey]
-      );
-      if (exist.rows.length > 0) {
-        return rollbackAndReturn(client, { success: false, message: '今日已签到' });
-      }
+    const exist = await client.query(
+      'SELECT id FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1',
+      [userId, todayKey]
+    );
+    if (exist.rows.length > 0) {
+      return rollbackAndReturn(client, { success: false, message: '今日已签到' });
+    }
   
-      await client.query(
-        `
-          INSERT INTO sign_in_records (user_id, sign_date, reward, is_holiday, holiday_name)
-          VALUES ($1, $2::date, $3, $4, $5)
-        `,
-        [userId, todayKey, reward, holidayInfo.isHoliday, holidayInfo.holidayName]
-      );
+    await client.query(
+      `
+        INSERT INTO sign_in_records (user_id, sign_date, reward, is_holiday, holiday_name)
+        VALUES ($1, $2::date, $3, $4, $5)
+      `,
+      [userId, todayKey, reward, holidayInfo.isHoliday, holidayInfo.holidayName]
+    );
   
-      const updated = await client.query(
-        'UPDATE characters SET spirit_stones = spirit_stones + $1 WHERE user_id = $2 RETURNING spirit_stones',
-        [reward, userId]
-      );
-  return {
-        success: true,
-        message: '签到成功',
-        data: {
-          date: todayKey,
-          reward,
-          isHoliday: holidayInfo.isHoliday,
-          holidayName: holidayInfo.holidayName,
-          spiritStones: Number(updated.rows[0]?.spirit_stones ?? 0),
-        },
-      };
-    });
-  } catch (error) {
-    console.error('签到失败:', error);
-    return { success: false, message: '签到失败' };
-  }
+    const updated = await client.query(
+      'UPDATE characters SET spirit_stones = spirit_stones + $1 WHERE user_id = $2 RETURNING spirit_stones',
+      [reward, userId]
+    );
+return {
+      success: true,
+      message: '签到成功',
+      data: {
+        date: todayKey,
+        reward,
+        isHoliday: holidayInfo.isHoliday,
+        holidayName: holidayInfo.holidayName,
+        spiritStones: Number(updated.rows[0]?.spirit_stones ?? 0),
+      },
+    };
+  });
 };

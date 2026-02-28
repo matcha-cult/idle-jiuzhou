@@ -78,32 +78,27 @@ export interface CharacterResult {
 
 // 检查用户是否有角色
 export const checkCharacter = async (userId: number): Promise<CharacterResult> => {
-  try {
-    await applyStaminaRecoveryByUserId(userId);
-    const character = await getCharacterComputedByUserId(userId);
-    if (character) {
-      return {
-        success: true,
-        message: '已有角色',
-        data: {
-          character: character as unknown as Character,
-          hasCharacter: true,
-        },
-      };
-    }
-    
+  await applyStaminaRecoveryByUserId(userId);
+  const character = await getCharacterComputedByUserId(userId);
+  if (character) {
     return {
       success: true,
-      message: '未创建角色',
+      message: '已有角色',
       data: {
-        character: null as unknown as Character,
-        hasCharacter: false,
+        character: character as unknown as Character,
+        hasCharacter: true,
       },
     };
-  } catch (error) {
-    console.error('检查角色失败:', error);
-    return { success: false, message: '检查角色失败' };
   }
+    
+  return {
+    success: true,
+    message: '未创建角色',
+    data: {
+      character: null as unknown as Character,
+      hasCharacter: false,
+    },
+  };
 };
 
 // 创建角色
@@ -112,88 +107,74 @@ export const createCharacter = async (
   nickname: string,
   gender: 'male' | 'female'
 ): Promise<CharacterResult> => {
-  try {
-    // 检查是否已有角色
-    const existCheck = await query('SELECT id FROM characters WHERE user_id = $1', [userId]);
-    if (existCheck.rows.length > 0) {
-      return { success: false, message: '已存在角色，无法重复创建' };
-    }
-
-    // 检查昵称是否已被使用
-    const nicknameCheck = await query('SELECT id FROM characters WHERE nickname = $1', [nickname]);
-    if (nicknameCheck.rows.length > 0) {
-      return { success: false, message: '该道号已被使用' };
-    }
-
-    // 创建角色
-    const insertSQL = `
-      INSERT INTO characters (
-        user_id, nickname, gender, title,
-        spirit_stones, silver, realm, exp,
-        attribute_points, jing, qi, shen,
-        attribute_type, attribute_element,
-        current_map_id, current_room_id
-      ) VALUES (
-        $1, $2, $3, '散修',
-        0, 0, '凡人', 0,
-        0, 0, 0, 0,
-        'physical', 'none',
-        'map-qingyun-village', 'room-village-center'
-      ) RETURNING id
-    `;
-    
-    const result = await query(insertSQL, [userId, nickname, gender]);
-    
-    // 创建角色背包
-    const characterId = result.rows[0].id;
-    await createInventoryForCharacter(characterId);
-
-    try {
-      await initCharacterAchievements(characterId);
-    } catch (error) {
-      console.error('初始化角色成就失败:', error);
-    }
-
-    const computedCharacter = await getCharacterComputedByUserId(userId);
-    if (!computedCharacter) {
-      return { success: false, message: '角色创建成功，但读取角色数据失败' };
-    }
-
-    return {
-      success: true,
-      message: '角色创建成功',
-      data: {
-        character: computedCharacter as unknown as Character,
-        hasCharacter: true,
-      },
-    };
-  } catch (error) {
-    console.error('创建角色失败:', error);
-    return { success: false, message: '创建角色失败' };
+  // 检查是否已有角色
+  const existCheck = await query('SELECT id FROM characters WHERE user_id = $1', [userId]);
+  if (existCheck.rows.length > 0) {
+    return { success: false, message: '已存在角色，无法重复创建' };
   }
+
+  // 检查昵称是否已被使用
+  const nicknameCheck = await query('SELECT id FROM characters WHERE nickname = $1', [nickname]);
+  if (nicknameCheck.rows.length > 0) {
+    return { success: false, message: '该道号已被使用' };
+  }
+
+  // 创建角色
+  const insertSQL = `
+    INSERT INTO characters (
+      user_id, nickname, gender, title,
+      spirit_stones, silver, realm, exp,
+      attribute_points, jing, qi, shen,
+      attribute_type, attribute_element,
+      current_map_id, current_room_id
+    ) VALUES (
+      $1, $2, $3, '散修',
+      0, 0, '凡人', 0,
+      0, 0, 0, 0,
+      'physical', 'none',
+      'map-qingyun-village', 'room-village-center'
+    ) RETURNING id
+  `;
+    
+  const result = await query(insertSQL, [userId, nickname, gender]);
+    
+  // 创建角色背包
+  const characterId = result.rows[0].id;
+  await createInventoryForCharacter(characterId);
+
+  await initCharacterAchievements(characterId);
+
+  const computedCharacter = await getCharacterComputedByUserId(userId);
+  if (!computedCharacter) {
+    return { success: false, message: '角色创建成功，但读取角色数据失败' };
+  }
+
+  return {
+    success: true,
+    message: '角色创建成功',
+    data: {
+      character: computedCharacter as unknown as Character,
+      hasCharacter: true,
+    },
+  };
 };
 
 // 获取角色信息
 export const getCharacter = async (userId: number): Promise<CharacterResult> => {
-  try {
-    await applyStaminaRecoveryByUserId(userId);
-    const character = await getCharacterComputedByUserId(userId);
-    if (!character) {
-      return { success: false, message: '角色不存在' };
-    }
-    
-    return {
-      success: true,
-      message: '获取成功',
-      data: {
-        character: character as unknown as Character,
-        hasCharacter: true,
-      },
-    };
-  } catch (error) {
-    console.error('获取角色失败:', error);
-    return { success: false, message: '获取角色失败' };
+  await applyStaminaRecoveryByUserId(userId);
+  const character = await getCharacterComputedByUserId(userId);
+  if (!character) {
+    return { success: false, message: '角色不存在' };
   }
+    
+  return {
+    success: true,
+    message: '获取成功',
+    data: {
+      character: character as unknown as Character,
+      hasCharacter: true,
+    },
+  };
 };
 
 export const updateCharacterPosition = async (
@@ -201,84 +182,58 @@ export const updateCharacterPosition = async (
   currentMapId: string,
   currentRoomId: string
 ): Promise<{ success: boolean; message: string }> => {
-  try {
-    const mapId = String(currentMapId || '').trim();
-    const roomId = String(currentRoomId || '').trim();
+  const mapId = String(currentMapId || '').trim();
+  const roomId = String(currentRoomId || '').trim();
 
-    if (!mapId || !roomId) {
-      return { success: false, message: '位置参数不能为空' };
-    }
-
-    if (mapId.length > 64 || roomId.length > 64) {
-      return { success: false, message: '位置参数过长' };
-    }
-
-    const sql = `
-      UPDATE characters
-      SET current_map_id = $1,
-          current_room_id = $2,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = $3
-      RETURNING id
-    `;
-    const result = await query(sql, [mapId, roomId, userId]);
-
-    if (result.rowCount === 0) {
-      return { success: false, message: '角色不存在' };
-    }
-
-    const characterId = Number(result.rows?.[0]?.id);
-    if (Number.isFinite(characterId) && characterId > 0) {
-      try {
-        await updateSectionProgress(characterId, { type: 'reach', roomId });
-      } catch (error) {
-        // 如果是事务中止错误，必须重新抛出
-        if (error && typeof error === 'object' && 'code' in error && error.code === '25P02') {
-          throw error;
-        }
-        console.warn('操作失败（已忽略）:', error);
-      }
-      try {
-        await updateAchievementProgress(characterId, `map:discover:${mapId}`, 1);
-        await updateAchievementProgress(characterId, `room:reach:${roomId}`, 1);
-      } catch (error) {
-        // 如果是事务中止错误，必须重新抛出
-        if (error && typeof error === 'object' && 'code' in error && error.code === '25P02') {
-          throw error;
-        }
-        console.warn('操作失败（已忽略）:', error);
-      }
-    }
-
-    return { success: true, message: '位置更新成功' };
-  } catch (error) {
-    console.error('更新位置失败:', error);
-    return { success: false, message: '更新位置失败' };
+  if (!mapId || !roomId) {
+    return { success: false, message: '位置参数不能为空' };
   }
+
+  if (mapId.length > 64 || roomId.length > 64) {
+    return { success: false, message: '位置参数过长' };
+  }
+
+  const sql = `
+    UPDATE characters
+    SET current_map_id = $1,
+        current_room_id = $2,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = $3
+    RETURNING id
+  `;
+  const result = await query(sql, [mapId, roomId, userId]);
+
+  if (result.rowCount === 0) {
+    return { success: false, message: '角色不存在' };
+  }
+
+  const characterId = Number(result.rows?.[0]?.id);
+  if (Number.isFinite(characterId) && characterId > 0) {
+    await updateSectionProgress(characterId, { type: 'reach', roomId });
+    await updateAchievementProgress(characterId, `map:discover:${mapId}`, 1);
+    await updateAchievementProgress(characterId, `room:reach:${roomId}`, 1);
+  }
+
+  return { success: true, message: '位置更新成功' };
 };
 
 export const updateCharacterAutoCastSkills = async (
   userId: number,
   enabled: boolean,
 ): Promise<{ success: boolean; message: string }> => {
-  try {
-    const sql = `
-      UPDATE characters
-      SET auto_cast_skills = $1,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = $2
-    `;
-    const result = await query(sql, [Boolean(enabled), userId]);
+  const sql = `
+    UPDATE characters
+    SET auto_cast_skills = $1,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = $2
+  `;
+  const result = await query(sql, [Boolean(enabled), userId]);
 
-    if (result.rowCount === 0) {
-      return { success: false, message: '角色不存在' };
-    }
-
-    return { success: true, message: '设置已保存' };
-  } catch (error) {
-    console.error('更新自动释放技能开关失败:', error);
-    return { success: false, message: '更新设置失败' };
+  if (result.rowCount === 0) {
+    return { success: false, message: '角色不存在' };
   }
+
+  return { success: true, message: '设置已保存' };
 };
 
 export const updateCharacterAutoDisassembleSettings = async (

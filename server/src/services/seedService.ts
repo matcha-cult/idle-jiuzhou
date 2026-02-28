@@ -110,12 +110,7 @@ const isDirectRun = (() => {
 
 if (isDirectRun) {
   void (async () => {
-    try {
-      await loadAllSeeds();
-      process.exit(0);
-    } catch (error) {
-      console.error(error);
-      process.exit(1);
-    }
+    await loadAllSeeds();
+    process.exit(0);
   })();
 }

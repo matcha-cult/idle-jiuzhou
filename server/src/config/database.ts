@@ -200,11 +200,7 @@ const nextSavepointName = (state: ClientTransactionState): string => {
 };
 
 const safeRollbackRootTransaction = async (client: PoolClient): Promise<void> => {
-  try {
-    await client.query('ROLLBACK');
-  } catch {
-    // 回滚失败不覆盖主异常，交由上层保留原始错误信息。
-  }
+  await client.query('ROLLBACK');
 };
 
 const safeReleaseClient = (client: PoolClient): void => {
@@ -490,31 +486,19 @@ export const withTransaction = async <T>(
   const parentContext = getActiveTransactionContext();
 
   if (parentContext) {
-    try {
-      await parentContext.client.query('BEGIN');
-      const result = await callback(parentContext.client);
-      await parentContext.client.query('COMMIT');
-      return result;
-    } catch (error) {
-      await safeRollbackRootTransaction(parentContext.client);
-      throw error;
-    }
+    await parentContext.client.query('BEGIN');
+    const result = await callback(parentContext.client);
+    await parentContext.client.query('COMMIT');
+    return result;
   }
 
   const client = await pool.connect();
   const rootContext: TransactionContext = { client };
 
-  try {
-    await client.query('BEGIN');
-    const result = await transactionContextStorage.run(rootContext, async () => callback(client));
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await safeRollbackRootTransaction(client);
-    throw error;
-  } finally {
-    safeReleaseClient(client);
-  }
+  await client.query('BEGIN');
+  const result = await transactionContextStorage.run(rootContext, async () => callback(client));
+  await client.query('COMMIT');
+  return result;
 };
 
 /**

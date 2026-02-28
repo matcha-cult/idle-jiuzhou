@@ -266,44 +266,40 @@ export async function getActiveIdleSession(characterId: number): Promise<IdleSes
  * 超过 30 条时自动删除最旧记录（在同一事务内完成，保证原子性）。
  */
 export async function getIdleHistory(characterId: number): Promise<IdleSessionRow[]> {
-  try {
-    return await withTransaction(async (client) => {
-  // 查询总数
-      const countRes = await client.query(
-        `SELECT COUNT(*) AS cnt FROM idle_sessions
-         WHERE character_id = $1 AND status IN ('completed', 'interrupted')`,
-        [characterId]
-      );
-      const total = Number(countRes.rows[0]?.cnt ?? 0);
+  return await withTransaction(async (client) => {
+// 查询总数
+    const countRes = await client.query(
+      `SELECT COUNT(*) AS cnt FROM idle_sessions
+       WHERE character_id = $1 AND status IN ('completed', 'interrupted')`,
+      [characterId]
+    );
+    const total = Number(countRes.rows[0]?.cnt ?? 0);
   
-      // 超出上限时删除最旧记录
-      if (total > MAX_HISTORY_COUNT) {
-        const deleteCount = total - MAX_HISTORY_COUNT;
-        await client.query(
-          `DELETE FROM idle_sessions
-           WHERE id IN (
-             SELECT id FROM idle_sessions
-             WHERE character_id = $1 AND status IN ('completed', 'interrupted')
-             ORDER BY started_at ASC
-             LIMIT $2
-           )`,
-          [characterId, deleteCount]
-        );
-      }
-  
-      // 查询最近 30 条（倒序）
-      const res = await client.query(
-        `SELECT * FROM idle_sessions
-         WHERE character_id = $1 AND status IN ('completed', 'interrupted')
-         ORDER BY started_at DESC
-         LIMIT $2`,
-        [characterId, MAX_HISTORY_COUNT]
+    // 超出上限时删除最旧记录
+    if (total > MAX_HISTORY_COUNT) {
+      const deleteCount = total - MAX_HISTORY_COUNT;
+      await client.query(
+        `DELETE FROM idle_sessions
+         WHERE id IN (
+           SELECT id FROM idle_sessions
+           WHERE character_id = $1 AND status IN ('completed', 'interrupted')
+           ORDER BY started_at ASC
+           LIMIT $2
+         )`,
+        [characterId, deleteCount]
       );
-  return (res.rows as Record<string, unknown>[]).map(rowToIdleSessionRow);
-    });
-  } catch (err) {
-throw err;
-  }
+    }
+  
+    // 查询最近 30 条（倒序）
+    const res = await client.query(
+      `SELECT * FROM idle_sessions
+       WHERE character_id = $1 AND status IN ('completed', 'interrupted')
+       ORDER BY started_at DESC
+       LIMIT $2`,
+      [characterId, MAX_HISTORY_COUNT]
+    );
+return (res.rows as Record<string, unknown>[]).map(rowToIdleSessionRow);
+  });
 }
 
 /**

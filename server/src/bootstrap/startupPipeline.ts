@@ -64,21 +64,13 @@ export const registerGracefulShutdown = (httpServer: HttpServer): void => {
 
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    try {
-      await closeRedis();
-      console.log('Redis 连接已关闭');
-    } catch (error) {
-      console.error('关闭 Redis 连接失败:', error);
-    }
+    await closeRedis();
+    console.log('Redis 连接已关闭');
 
     await flushAllBuffers();
 
-    try {
-      await pool.end();
-      console.log('数据库连接池已关闭');
-    } catch (error) {
-      console.error('关闭数据库连接池失败:', error);
-    }
+    await pool.end();
+    console.log('数据库连接池已关闭');
 
     console.log('服务已关闭');
     process.exit(0);

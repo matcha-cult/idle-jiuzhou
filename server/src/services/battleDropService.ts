@@ -681,16 +681,7 @@ export const distributeBattleRewards = async (
     }
     
     for (const entry of collectCounts.values()) {
-      try {
-        await recordCollectItemEvent(entry.characterId, entry.itemDefId, entry.qty);
-      } catch (error) {
-        // 记录成就/主线失败不应该影响战斗奖励发放
-        // 但如果是事务中止错误，必须重新抛出
-        if (error && typeof error === 'object' && 'code' in error && error.code === '25P02') {
-          throw error;
-        }
-        console.warn('记录收集物品事件失败:', error);
-      }
+      await recordCollectItemEvent(entry.characterId, entry.itemDefId, entry.qty);
     }
 
     for (const [receiverCharacterId, entry] of pendingMailByReceiver.entries()) {
@@ -698,20 +689,16 @@ export const distributeBattleRewards = async (
       const chunkSize = 10;
       for (let i = 0; i < items.length; i += chunkSize) {
         const chunk = items.slice(i, i + chunkSize);
-        try {
-          const mailResult = await sendSystemMail(
-            entry.userId,
-            receiverCharacterId,
-            '战斗掉落补发',
-            '由于背包已满，部分战斗掉落已通过邮件补发，请前往邮箱领取。',
-            { items: chunk },
-            30
-          );
-          if (!mailResult.success) {
-            console.warn(`战斗掉落补发邮件发送失败: ${mailResult.message}`);
-          }
-        } catch (error) {
-          console.warn('战斗掉落补发邮件发送异常:', error);
+        const mailResult = await sendSystemMail(
+          entry.userId,
+          receiverCharacterId,
+          '战斗掉落补发',
+          '由于背包已满，部分战斗掉落已通过邮件补发，请前往邮箱领取。',
+          { items: chunk },
+          30
+        );
+        if (!mailResult.success) {
+          console.warn(`战斗掉落补发邮件发送失败: ${mailResult.message}`);
         }
       }
     }

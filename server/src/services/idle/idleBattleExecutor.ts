@@ -560,11 +560,7 @@ export function startExecutionLoop(session: IdleSessionRow, userId: number): voi
 
           // 满足 flush 条件或即将终止时批量写入
           if (shouldFlush(buffer) || shouldStop.terminate) {
-            try {
-              await flushBuffer(session.characterId, session.id, buffer);
-            } catch (flushErr) {
-              console.error(`[IdleBattleExecutor] 会话 ${session.id} flush 失败:`, flushErr);
-            }
+            await flushBuffer(session.characterId, session.id, buffer);
           }
 
           if (shouldStop.terminate) {
@@ -716,39 +712,35 @@ export async function recoverActiveIdleSessions(): Promise<void> {
     const sessionId = String(row.id);
     const characterId = Number(row.character_id);
 
-    try {
-      const userId = await getCharacterUserId(characterId);
-      if (!userId) {
-        console.warn(`  跳过会话 ${sessionId}：角色 ${characterId} 不存在`);
-        await completeIdleSession(sessionId, 'interrupted');
-        continue;
-      }
-
-      const session: IdleSessionRow = {
-        id: sessionId,
-        characterId,
-        status: row.status as IdleSessionRow['status'],
-        mapId: String(row.map_id),
-        roomId: String(row.room_id),
-        maxDurationMs: Number(row.max_duration_ms),
-        sessionSnapshot: row.session_snapshot as IdleSessionRow['sessionSnapshot'],
-        totalBattles: Number(row.total_battles),
-        winCount: Number(row.win_count),
-        loseCount: Number(row.lose_count),
-        totalExp: Number(row.total_exp),
-        totalSilver: Number(row.total_silver),
-        rewardItems: (row.reward_items as RewardItemEntry[]) ?? [],
-        bagFullFlag: Boolean(row.bag_full_flag),
-        startedAt: new Date(row.started_at as string),
-        endedAt: row.ended_at ? new Date(row.ended_at as string) : null,
-        viewedAt: row.viewed_at ? new Date(row.viewed_at as string) : null,
-      };
-
-      startExecutionLoop(session, userId);
-      console.log(`  恢复会话: ${sessionId} (角色 ${characterId})`);
-    } catch (err) {
-      console.error(`  恢复会话 ${sessionId} 失败:`, err);
+    const userId = await getCharacterUserId(characterId);
+    if (!userId) {
+      console.warn(`  跳过会话 ${sessionId}：角色 ${characterId} 不存在`);
+      await completeIdleSession(sessionId, 'interrupted');
+      continue;
     }
+
+    const session: IdleSessionRow = {
+      id: sessionId,
+      characterId,
+      status: row.status as IdleSessionRow['status'],
+      mapId: String(row.map_id),
+      roomId: String(row.room_id),
+      maxDurationMs: Number(row.max_duration_ms),
+      sessionSnapshot: row.session_snapshot as IdleSessionRow['sessionSnapshot'],
+      totalBattles: Number(row.total_battles),
+      winCount: Number(row.win_count),
+      loseCount: Number(row.lose_count),
+      totalExp: Number(row.total_exp),
+      totalSilver: Number(row.total_silver),
+      rewardItems: (row.reward_items as RewardItemEntry[]) ?? [],
+      bagFullFlag: Boolean(row.bag_full_flag),
+      startedAt: new Date(row.started_at as string),
+      endedAt: row.ended_at ? new Date(row.ended_at as string) : null,
+      viewedAt: row.viewed_at ? new Date(row.viewed_at as string) : null,
+    };
+
+    startExecutionLoop(session, userId);
+    console.log(`  恢复会话: ${sessionId} (角色 ${characterId})`);
   }
 
   console.log('✓ 挂机会话恢复完成');

@@ -72,12 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_mail_expire ON mail(expire_at) WHERE expire_at IS
 `;
 
 export const initMailTable = async (): Promise<void> => {
-  try {
-    await query(mailTableSQL);
-    console.log('✓ 邮件表检测完成');
-  } catch (error) {
-    console.error('✗ 邮件表初始化失败:', error);
-    throw error;
-  }
+  await query(mailTableSQL);
+  console.log('✓ 邮件表检测完成');
 };
 

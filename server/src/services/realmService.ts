@@ -1029,259 +1029,237 @@ export const getRealmOverview = async (
     canBreakthrough: boolean;
   };
 }> => {
-  try {
-    const cfg = await loadConfig();
+  const cfg = await loadConfig();
 
-    const res = await query(
-      "SELECT id, realm, sub_realm, exp, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1",
-      [userId],
-    );
-    if (res.rows.length === 0) return { success: false, message: "角色不存在" };
+  const res = await query(
+    "SELECT id, realm, sub_realm, exp, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1",
+    [userId],
+  );
+  if (res.rows.length === 0) return { success: false, message: "角色不存在" };
 
-    const row = res.rows[0] as {
-      id?: unknown;
-      realm?: unknown;
-      sub_realm?: unknown;
-      exp?: unknown;
-      spirit_stones?: unknown;
-    };
-    const characterId = Number(row.id ?? 0) || 0;
-    const realm = typeof row.realm === "string" ? row.realm.trim() : "凡人";
-    const subRealm =
-      typeof row.sub_realm === "string" ? row.sub_realm.trim() : "";
-    const currentRealm =
-      realm === "凡人" || !subRealm ? realm : `${realm}·${subRealm}`;
-    const exp = Number(row.exp ?? 0) || 0;
-    const spiritStones = Number(row.spirit_stones ?? 0) || 0;
+  const row = res.rows[0] as {
+    id?: unknown;
+    realm?: unknown;
+    sub_realm?: unknown;
+    exp?: unknown;
+    spirit_stones?: unknown;
+  };
+  const characterId = Number(row.id ?? 0) || 0;
+  const realm = typeof row.realm === "string" ? row.realm.trim() : "凡人";
+  const subRealm =
+    typeof row.sub_realm === "string" ? row.sub_realm.trim() : "";
+  const currentRealm =
+    realm === "凡人" || !subRealm ? realm : `${realm}·${subRealm}`;
+  const exp = Number(row.exp ?? 0) || 0;
+  const spiritStones = Number(row.spirit_stones ?? 0) || 0;
 
-    const currentIndex = getRealmIndex(cfg.realmOrder, currentRealm);
-    const nextRealm = getNextRealmName(cfg.realmOrder, currentRealm);
-    const bt = nextRealm ? getBreakthroughConfig(cfg, currentRealm) : null;
+  const currentIndex = getRealmIndex(cfg.realmOrder, currentRealm);
+  const nextRealm = getNextRealmName(cfg.realmOrder, currentRealm);
+  const bt = nextRealm ? getBreakthroughConfig(cfg, currentRealm) : null;
 
-    const requirements = bt
-      ? await withClient(async (client) =>
-          evaluateRequirements({
-            client,
-            characterId,
-            exp,
-            spiritStones,
-            requirements: bt.requirements ?? [],
-          }),
-        )
-      : [];
+  const requirements = bt
+    ? await withClient(async (client) =>
+        evaluateRequirements({
+          client,
+          characterId,
+          exp,
+          spiritStones,
+          requirements: bt.requirements ?? [],
+        }),
+      )
+    : [];
 
-    const costsBuilt = bt
-      ? await withClient(async (client) =>
-          buildCostsView({
-            client,
-            costs: bt.costs ?? [],
-            characterId,
-            currentExp: exp,
-            currentSpiritStones: spiritStones,
-          }),
-        )
-      : null;
-    const costs = costsBuilt?.view ?? [];
-    const rewards = buildRewardsView(bt?.rewards);
+  const costsBuilt = bt
+    ? await withClient(async (client) =>
+        buildCostsView({
+          client,
+          costs: bt.costs ?? [],
+          characterId,
+          currentExp: exp,
+          currentSpiritStones: spiritStones,
+        }),
+      )
+    : null;
+  const costs = costsBuilt?.view ?? [];
+  const rewards = buildRewardsView(bt?.rewards);
 
-    const canBreakthrough =
-      !!nextRealm &&
-      bt?.to === nextRealm &&
-      requirements.every((r) => r.status === "done") &&
-      (costsBuilt ? costsBuilt.affordable : true);
+  const canBreakthrough =
+    !!nextRealm &&
+    bt?.to === nextRealm &&
+    requirements.every((r) => r.status === "done") &&
+    (costsBuilt ? costsBuilt.affordable : true);
 
-    return {
-      success: true,
-      message: "ok",
-      data: {
-        configPath: cachedConfigPath,
-        realmOrder: cfg.realmOrder,
-        currentRealm,
-        currentIndex,
-        nextRealm,
-        exp,
-        spiritStones,
-        requirements,
-        costs,
-        rewards,
-        canBreakthrough,
-      },
-    };
-  } catch (error) {
-    console.error("获取境界信息失败:", error);
-    return { success: false, message: "获取境界信息失败" };
-  }
+  return {
+    success: true,
+    message: "ok",
+    data: {
+      configPath: cachedConfigPath,
+      realmOrder: cfg.realmOrder,
+      currentRealm,
+      currentIndex,
+      nextRealm,
+      exp,
+      spiritStones,
+      requirements,
+      costs,
+      rewards,
+      canBreakthrough,
+    },
+  };
 };
 
 export const breakthroughToNextRealm = async (
   userId: number,
 ): Promise<RealmBreakthroughResult> => {
-  try {
-    const cfg = await loadConfig();
+  const cfg = await loadConfig();
 
-    const result = await withClient<RealmBreakthroughResult>(async (client) => {
-      const charRes = await client.query(
-        `SELECT 
-           id, realm, sub_realm, exp, spirit_stones, attribute_points
-         FROM characters
-         WHERE user_id = $1
-         FOR UPDATE`,
-        [userId],
-      );
-      if (charRes.rows.length === 0)
-        return { success: false, message: "角色不存在" };
+  const result = await withClient<RealmBreakthroughResult>(async (client) => {
+    const charRes = await client.query(
+      `SELECT 
+         id, realm, sub_realm, exp, spirit_stones, attribute_points
+       FROM characters
+       WHERE user_id = $1
+       FOR UPDATE`,
+      [userId],
+    );
+    if (charRes.rows.length === 0)
+      return { success: false, message: "角色不存在" };
 
-      const row = charRes.rows[0] as any;
-      const characterId = Number(row.id ?? 0) || 0;
-      const realm = typeof row.realm === "string" ? row.realm.trim() : "凡人";
-      const subRealm =
-        typeof row.sub_realm === "string" ? row.sub_realm.trim() : "";
-      const fromRealm =
-        realm === "凡人" || !subRealm ? realm : `${realm}·${subRealm}`;
+    const row = charRes.rows[0] as any;
+    const characterId = Number(row.id ?? 0) || 0;
+    const realm = typeof row.realm === "string" ? row.realm.trim() : "凡人";
+    const subRealm =
+      typeof row.sub_realm === "string" ? row.sub_realm.trim() : "";
+    const fromRealm =
+      realm === "凡人" || !subRealm ? realm : `${realm}·${subRealm}`;
 
-      const exp = Number(row.exp ?? 0) || 0;
-      const spiritStones = Number(row.spirit_stones ?? 0) || 0;
-      const attributePoints = Number(row.attribute_points ?? 0) || 0;
+    const exp = Number(row.exp ?? 0) || 0;
+    const spiritStones = Number(row.spirit_stones ?? 0) || 0;
+    const attributePoints = Number(row.attribute_points ?? 0) || 0;
 
-      const nextRealm = getNextRealmName(cfg.realmOrder, fromRealm);
-      if (!nextRealm) return { success: false, message: "已达最高境界" };
+    const nextRealm = getNextRealmName(cfg.realmOrder, fromRealm);
+    if (!nextRealm) return { success: false, message: "已达最高境界" };
 
-      const bt = getBreakthroughConfig(cfg, fromRealm);
-      if (!bt || bt.to !== nextRealm)
-        return { success: false, message: "下一境界配置不存在" };
+    const bt = getBreakthroughConfig(cfg, fromRealm);
+    if (!bt || bt.to !== nextRealm)
+      return { success: false, message: "下一境界配置不存在" };
 
-      const reqViews = await evaluateRequirements({
-        client,
-        characterId,
-        exp,
-        spiritStones,
-        requirements: bt.requirements ?? [],
-      });
-      const unmet = reqViews.find((r) => r.status !== "done");
-      if (unmet) {
-        if (unmet.sourceType === "version_gate") {
-          return {
-            success: false,
-            message: unmet.detail || "当前版本暂未开放",
-          };
-        }
-        return { success: false, message: `条件未满足：${unmet.title}` };
-      }
-
-      const costsBuilt = await buildCostsView({
-        client,
-        costs: bt.costs ?? [],
-      });
-      if (exp < costsBuilt.exp)
-        return { success: false, message: `经验不足，需要 ${costsBuilt.exp}` };
-      if (spiritStones < costsBuilt.spiritStones)
+    const reqViews = await evaluateRequirements({
+      client,
+      characterId,
+      exp,
+      spiritStones,
+      requirements: bt.requirements ?? [],
+    });
+    const unmet = reqViews.find((r) => r.status !== "done");
+    if (unmet) {
+      if (unmet.sourceType === "version_gate") {
         return {
           success: false,
-          message: `灵石不足，需要 ${costsBuilt.spiritStones}`,
+          message: unmet.detail || "当前版本暂未开放",
         };
-
-      const itemDefIds = costsBuilt.items.map((x) => x.itemDefId);
-      const itemMap = await getItemDefMap(client, itemDefIds);
-
-      for (const it of costsBuilt.items) {
-        const have = await getItemQtyInBag(client, characterId, it.itemDefId);
-        if (have < it.qty) {
-          const meta = itemMap[it.itemDefId];
-          return {
-            success: false,
-            message: `材料不足：${meta?.name || it.itemDefId}`,
-          };
-        }
       }
+      return { success: false, message: `条件未满足：${unmet.title}` };
+    }
 
-      for (const it of costsBuilt.items) {
-        const consumeRes = await consumeItemFromBagTx(
-          client,
-          characterId,
-          it.itemDefId,
-          it.qty,
-        );
-        if (!consumeRes.success)
-          return { success: false, message: consumeRes.message };
-      }
-
-      const rewards = bt.rewards || {};
-      const apAdd = Math.max(0, Number(rewards.attributePoints ?? 0) || 0);
-
-      const newExp = exp - costsBuilt.exp;
-      const newSpiritStones = spiritStones - costsBuilt.spiritStones;
-      const newAttributePoints = attributePoints + apAdd;
-
-      await client.query(
-        `
-          UPDATE characters
-          SET realm = $1,
-              sub_realm = NULL,
-              exp = $2,
-              spirit_stones = $3,
-              attribute_points = $4,
-              updated_at = NOW()
-          WHERE id = $5
-        `,
-        [bt.to, newExp, newSpiritStones, newAttributePoints, characterId],
-      );
-
-      try {
-        await updateSectionProgress(characterId, {
-          type: "upgrade_realm",
-          realm: bt.to,
-        });
-      } catch (error) {
-        console.error("更新主线境界突破目标失败:", error);
-      }
-      try {
-        await updateAchievementProgress(characterId, `realm:reach:${bt.to}`, 1);
-      } catch (error) {
-        // 如果是事务中止错误，必须重新抛出
-        if (error && typeof error === 'object' && 'code' in error && error.code === '25P02') {
-          throw error;
-        }
-        console.warn('操作失败（已忽略）:', error);
-      }
-
-      const spentItems = costsBuilt.items.map((x) => {
-        const meta = itemMap[x.itemDefId];
-        return {
-          itemDefId: x.itemDefId,
-          qty: x.qty,
-          name: meta?.name,
-          icon: meta?.icon ?? undefined,
-        };
-      });
-
-      return {
-        success: true,
-        message: `突破至${bt.to}成功`,
-        data: {
-          fromRealm,
-          newRealm: bt.to,
-          spentExp: costsBuilt.exp,
-          spentSpiritStones: costsBuilt.spiritStones,
-          spentItems,
-          gainedAttributePoints: apAdd,
-          currentExp: newExp,
-          currentSpiritStones: newSpiritStones,
-        },
-      };
+    const costsBuilt = await buildCostsView({
+      client,
+      costs: bt.costs ?? [],
     });
+    if (exp < costsBuilt.exp)
+      return { success: false, message: `经验不足，需要 ${costsBuilt.exp}` };
+    if (spiritStones < costsBuilt.spiritStones)
+      return {
+        success: false,
+        message: `灵石不足，需要 ${costsBuilt.spiritStones}`,
+      };
 
-    if (result.success) {
-      const characterId = await getCharacterIdByUserId(userId);
-      if (characterId) {
-        await invalidateCharacterComputedCache(characterId);
+    const itemDefIds = costsBuilt.items.map((x) => x.itemDefId);
+    const itemMap = await getItemDefMap(client, itemDefIds);
+
+    for (const it of costsBuilt.items) {
+      const have = await getItemQtyInBag(client, characterId, it.itemDefId);
+      if (have < it.qty) {
+        const meta = itemMap[it.itemDefId];
+        return {
+          success: false,
+          message: `材料不足：${meta?.name || it.itemDefId}`,
+        };
       }
     }
 
-    return result;
-  } catch (error) {
-    console.error("境界突破失败:", error);
-    return { success: false, message: "境界突破失败" };
+    for (const it of costsBuilt.items) {
+      const consumeRes = await consumeItemFromBagTx(
+        client,
+        characterId,
+        it.itemDefId,
+        it.qty,
+      );
+      if (!consumeRes.success)
+        return { success: false, message: consumeRes.message };
+    }
+
+    const rewards = bt.rewards || {};
+    const apAdd = Math.max(0, Number(rewards.attributePoints ?? 0) || 0);
+
+    const newExp = exp - costsBuilt.exp;
+    const newSpiritStones = spiritStones - costsBuilt.spiritStones;
+    const newAttributePoints = attributePoints + apAdd;
+
+    await client.query(
+      `
+        UPDATE characters
+        SET realm = $1,
+            sub_realm = NULL,
+            exp = $2,
+            spirit_stones = $3,
+            attribute_points = $4,
+            updated_at = NOW()
+        WHERE id = $5
+      `,
+      [bt.to, newExp, newSpiritStones, newAttributePoints, characterId],
+    );
+
+    await updateSectionProgress(characterId, {
+      type: "upgrade_realm",
+      realm: bt.to,
+    });
+    await updateAchievementProgress(characterId, `realm:reach:${bt.to}`, 1);
+
+    const spentItems = costsBuilt.items.map((x) => {
+      const meta = itemMap[x.itemDefId];
+      return {
+        itemDefId: x.itemDefId,
+        qty: x.qty,
+        name: meta?.name,
+        icon: meta?.icon ?? undefined,
+      };
+    });
+
+    return {
+      success: true,
+      message: `突破至${bt.to}成功`,
+      data: {
+        fromRealm,
+        newRealm: bt.to,
+        spentExp: costsBuilt.exp,
+        spentSpiritStones: costsBuilt.spiritStones,
+        spentItems,
+        gainedAttributePoints: apAdd,
+        currentExp: newExp,
+        currentSpiritStones: newSpiritStones,
+      },
+    };
+  });
+
+  if (result.success) {
+    const characterId = await getCharacterIdByUserId(userId);
+    if (characterId) {
+      await invalidateCharacterComputedCache(characterId);
+    }
   }
+
+  return result;
 };
 
 export const breakthroughToTargetRealm = async (

@@ -141,24 +141,20 @@ const deprecatedAttrColumns = [
 const checkAndAddColumns = async () => {
   const addedFields: string[] = [];
   for (const col of columnsToCheck) {
-    try {
-      const checkSQL = `
-        SELECT column_name FROM information_schema.columns
-        WHERE table_name = 'characters' AND column_name = $1
-      `;
-      const result = await query(checkSQL, [col.name]);
+    const checkSQL = `
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'characters' AND column_name = $1
+    `;
+    const result = await query(checkSQL, [col.name]);
 
-      if (result.rows.length === 0) {
-        const addSQL = `ALTER TABLE characters ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
-        await query(addSQL);
-        addedFields.push(col.name);
-      }
-
-      const commentSQL = `COMMENT ON COLUMN characters.${col.name} IS '${col.comment}'`;
-      await query(commentSQL);
-    } catch (error) {
-      console.error(`  ✗ 检查字段 ${col.name} 时出错:`, error);
+    if (result.rows.length === 0) {
+      const addSQL = `ALTER TABLE characters ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
+      await query(addSQL);
+      addedFields.push(col.name);
     }
+
+    const commentSQL = `COMMENT ON COLUMN characters.${col.name} IS '${col.comment}'`;
+    await query(commentSQL);
   }
 
   if (addedFields.length > 0) {
@@ -184,53 +180,48 @@ const dropDeprecatedAutoDisassembleGlobalQualityColumn = async (): Promise<void>
 
 // 初始化角色表
 export const initCharacterTable = async (): Promise<void> => {
-  try {
-    // 检查表是否存在
-    const tableCheck = await query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables
-        WHERE table_name = 'characters'
-      )
+  // 检查表是否存在
+  const tableCheck = await query(`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables
+      WHERE table_name = 'characters'
+    )
+  `);
+
+  if (tableCheck.rows[0].exists) {
+    // 检查关键字段是否存在，如果不存在则删除重建
+    const columnCheck = await query(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'characters' AND column_name = 'spirit_stones'
     `);
 
-    if (tableCheck.rows[0].exists) {
-      // 检查关键字段是否存在，如果不存在则删除重建
-      const columnCheck = await query(`
-        SELECT column_name FROM information_schema.columns
-        WHERE table_name = 'characters' AND column_name = 'spirit_stones'
-      `);
-
-      if (columnCheck.rows.length === 0) {
-        console.log('  → 角色表结构不完整，重建表...');
-        await query('DROP TABLE IF EXISTS characters CASCADE');
-      }
+    if (columnCheck.rows.length === 0) {
+      console.log('  → 角色表结构不完整，重建表...');
+      await query('DROP TABLE IF EXISTS characters CASCADE');
     }
-
-    // 创建角色表
-    await query(characterTableSQL);
-
-    // 检查并补齐缺失字段
-    await checkAndAddColumns();
-
-    // 字段补齐后再写注释，避免旧库缺字段时在注释阶段中断初始化。
-    await query(characterTableCommentSQL);
-
-    // 一次性下线旧属性字段，避免启动重复迁移导致不可预期结果。
-    await runDbMigrationOnce({
-      migrationKey: 'characters_runtime_attr_columns_drop_v1',
-      description: '角色可计算属性改为运行时计算并删除旧字段',
-      execute: dropDeprecatedAttrColumns,
-    });
-
-    await runDbMigrationOnce({
-      migrationKey: 'characters_auto_disassemble_global_quality_drop_v1',
-      description: '自动分解最高品质迁移到规则并删除旧全局字段',
-      execute: dropDeprecatedAutoDisassembleGlobalQualityColumn,
-    });
-
-    console.log('✓ 角色表检测完成');
-  } catch (error) {
-    console.error('✗ 角色表初始化失败:', error);
-    throw error;
   }
+
+  // 创建角色表
+  await query(characterTableSQL);
+
+  // 检查并补齐缺失字段
+  await checkAndAddColumns();
+
+  // 字段补齐后再写注释，避免旧库缺字段时在注释阶段中断初始化。
+  await query(characterTableCommentSQL);
+
+  // 一次性下线旧属性字段，避免启动重复迁移导致不可预期结果。
+  await runDbMigrationOnce({
+    migrationKey: 'characters_runtime_attr_columns_drop_v1',
+    description: '角色可计算属性改为运行时计算并删除旧字段',
+    execute: dropDeprecatedAttrColumns,
+  });
+
+  await runDbMigrationOnce({
+    migrationKey: 'characters_auto_disassemble_global_quality_drop_v1',
+    description: '自动分解最高品质迁移到规则并删除旧全局字段',
+    execute: dropDeprecatedAutoDisassembleGlobalQualityColumn,
+  });
+
+  console.log('✓ 角色表检测完成');
 };

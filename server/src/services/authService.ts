@@ -37,92 +37,82 @@ const generateSessionToken = (): string => {
 
 // 注册
 export const register = async (username: string, password: string): Promise<AuthResult> => {
-  try {
-    // 检查用户名是否已存在
-    const existCheck = await query('SELECT id FROM users WHERE username = $1', [username]);
-    if (existCheck.rows.length > 0) {
-      return { success: false, message: '用户名已存在' };
-    }
-
-    // 加密密码
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // 插入用户
-    const insertSQL = `
-      INSERT INTO users (username, password, created_at, updated_at) 
-      VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) 
-      RETURNING id, username, created_at, updated_at, status
-    `;
-    const result = await query(insertSQL, [username, hashedPassword]);
-    const user = result.rows[0];
-
-    // 生成token
-    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, {
-      expiresIn: JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
-    });
-
-    return {
-      success: true,
-      message: '注册成功',
-      data: { user, token, sessionToken: '' },
-    };
-  } catch (error) {
-    console.error('注册失败:', error);
-    return { success: false, message: '注册失败，请稍后重试' };
+  // 检查用户名是否已存在
+  const existCheck = await query('SELECT id FROM users WHERE username = $1', [username]);
+  if (existCheck.rows.length > 0) {
+    return { success: false, message: '用户名已存在' };
   }
+
+  // 加密密码
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt);
+
+  // 插入用户
+  const insertSQL = `
+    INSERT INTO users (username, password, created_at, updated_at) 
+    VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) 
+    RETURNING id, username, created_at, updated_at, status
+  `;
+  const result = await query(insertSQL, [username, hashedPassword]);
+  const user = result.rows[0];
+
+  // 生成token
+  const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, {
+    expiresIn: JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
+  });
+
+  return {
+    success: true,
+    message: '注册成功',
+    data: { user, token, sessionToken: '' },
+  };
 };
 
 // 登录
 export const login = async (username: string, password: string): Promise<AuthResult> => {
-  try {
-    // 查询用户
-    const result = await query('SELECT * FROM users WHERE username = $1', [username]);
-    if (result.rows.length === 0) {
-      return { success: false, message: '用户名或密码错误' };
-    }
-
-    const user = result.rows[0] as User;
-
-    // 检查账号状态
-    if (user.status === 0) {
-      return { success: false, message: '账号已被禁用' };
-    }
-
-    // 验证密码
-    const isMatch = await bcrypt.compare(password, user.password!);
-    if (!isMatch) {
-      return { success: false, message: '用户名或密码错误' };
-    }
-
-    // 生成新的会话token
-    const sessionToken = generateSessionToken();
-
-    // 更新最后登录时间和会话token
-    await query(
-      'UPDATE users SET last_login = CURRENT_TIMESTAMP, session_token = $1 WHERE id = $2',
-      [sessionToken, user.id]
-    );
-
-    // 生成JWT token
-    const token = jwt.sign(
-      { id: user.id, username: user.username, sessionToken },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] }
-    );
-
-    // 移除敏感字段
-    const { password: _, session_token: __, ...userWithoutSensitive } = user;
-
-    return {
-      success: true,
-      message: '登录成功',
-      data: { user: userWithoutSensitive, token, sessionToken },
-    };
-  } catch (error) {
-    console.error('登录失败:', error);
-    return { success: false, message: '登录失败，请稍后重试' };
+  // 查询用户
+  const result = await query('SELECT * FROM users WHERE username = $1', [username]);
+  if (result.rows.length === 0) {
+    return { success: false, message: '用户名或密码错误' };
   }
+
+  const user = result.rows[0] as User;
+
+  // 检查账号状态
+  if (user.status === 0) {
+    return { success: false, message: '账号已被禁用' };
+  }
+
+  // 验证密码
+  const isMatch = await bcrypt.compare(password, user.password!);
+  if (!isMatch) {
+    return { success: false, message: '用户名或密码错误' };
+  }
+
+  // 生成新的会话token
+  const sessionToken = generateSessionToken();
+
+  // 更新最后登录时间和会话token
+  await query(
+    'UPDATE users SET last_login = CURRENT_TIMESTAMP, session_token = $1 WHERE id = $2',
+    [sessionToken, user.id]
+  );
+
+  // 生成JWT token
+  const token = jwt.sign(
+    { id: user.id, username: user.username, sessionToken },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] }
+  );
+
+  // 移除敏感字段
+  const { password: _, session_token: __, ...userWithoutSensitive } = user;
+
+  return {
+    success: true,
+    message: '登录成功',
+    data: { user: userWithoutSensitive, token, sessionToken },
+  };
 };
 
 // 验证token

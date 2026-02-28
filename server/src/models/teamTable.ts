@@ -124,27 +124,22 @@ CREATE INDEX IF NOT EXISTS idx_team_invitations_status ON team_invitations(statu
 
 // 初始化组队相关表
 export const initTeamTables = async (): Promise<void> => {
-  try {
-    // 创建队伍表
-    await query(teamTableSQL);
-    console.log('  → 队伍表检测完成');
+  // 创建队伍表
+  await query(teamTableSQL);
+  console.log('  → 队伍表检测完成');
 
-    // 创建队伍成员表
-    await query(teamMemberTableSQL);
-    console.log('  → 队伍成员表检测完成');
+  // 创建队伍成员表
+  await query(teamMemberTableSQL);
+  console.log('  → 队伍成员表检测完成');
 
-    // 创建入队申请表
-    await query(teamApplicationTableSQL);
-    console.log('  → 入队申请表检测完成');
+  // 创建入队申请表
+  await query(teamApplicationTableSQL);
+  console.log('  → 入队申请表检测完成');
 
-    // 创建入队邀请表
-    await query(teamInvitationTableSQL);
-    console.log('  → 入队邀请表检测完成');
+  // 创建入队邀请表
+  await query(teamInvitationTableSQL);
+  console.log('  → 入队邀请表检测完成');
 
-    console.log('✓ 组队系统表检测完成');
-  } catch (error) {
-    console.error('✗ 组队系统表初始化失败:', error);
-    throw error;
-  }
+  console.log('✓ 组队系统表检测完成');
 };
 

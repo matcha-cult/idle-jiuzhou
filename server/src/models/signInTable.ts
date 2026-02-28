@@ -31,24 +31,20 @@ const columnsToCheck = [
 const checkAndAddColumns = async () => {
   const addedFields: string[] = [];
   for (const col of columnsToCheck) {
-    try {
-      const checkSQL = `
-        SELECT column_name FROM information_schema.columns 
-        WHERE table_name = 'sign_in_records' AND column_name = $1
-      `;
-      const result = await query(checkSQL, [col.name]);
+    const checkSQL = `
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_name = 'sign_in_records' AND column_name = $1
+    `;
+    const result = await query(checkSQL, [col.name]);
 
-      if (result.rows.length === 0) {
-        const addSQL = `ALTER TABLE sign_in_records ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
-        await query(addSQL);
+    if (result.rows.length === 0) {
+      const addSQL = `ALTER TABLE sign_in_records ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
+      await query(addSQL);
 
-        const commentSQL = `COMMENT ON COLUMN sign_in_records.${col.name} IS '${col.comment}'`;
-        await query(commentSQL);
+      const commentSQL = `COMMENT ON COLUMN sign_in_records.${col.name} IS '${col.comment}'`;
+      await query(commentSQL);
 
-        addedFields.push(col.name);
-      }
-    } catch (error) {
-      console.error(`  ✗ 检查字段 ${col.name} 时出错:`, error);
+      addedFields.push(col.name);
     }
   }
   if (addedFields.length > 0) {
@@ -57,13 +53,8 @@ const checkAndAddColumns = async () => {
 };
 
 export const initSignInTable = async (): Promise<void> => {
-  try {
-    await query(signInTableSQL);
-    await checkAndAddColumns();
-    console.log('✓ 签到表检测完成');
-  } catch (error) {
-    console.error('✗ 签到表初始化失败:', error);
-    throw error;
-  }
+  await query(signInTableSQL);
+  await checkAndAddColumns();
+  console.log('✓ 签到表检测完成');
 };
 

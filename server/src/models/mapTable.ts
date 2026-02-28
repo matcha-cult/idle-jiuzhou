@@ -74,36 +74,31 @@ rooms JSONB 结构说明：
 */
 
 export const initMapTable = async (): Promise<void> => {
-  try {
-    await query(characterRoomResourceStateTableSQL);
-    await query(`
-      DO $do$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'character_room_resource_state' AND column_name = 'gather_until'
-        ) THEN
-          EXECUTE $$ALTER TABLE character_room_resource_state ADD COLUMN gather_until TIMESTAMPTZ$$;
-        END IF;
-      END
-      $do$;
-    `);
-    await query(`
-      DO $do$
-      BEGIN
-        IF EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'character_room_resource_state' AND column_name = 'gather_until'
-        ) THEN
-          EXECUTE $$COMMENT ON COLUMN character_room_resource_state.gather_until IS '采集中完成时间点（5秒一次）'$$;
-        END IF;
-      END
-      $do$;
-    `);
-    console.log('✓ 地图定义改为静态JSON加载，动态地图表检测完成');
-  } catch (error) {
-    console.error('✗ 地图表初始化失败:', error);
-    throw error;
-  }
+  await query(characterRoomResourceStateTableSQL);
+  await query(`
+    DO $do$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'character_room_resource_state' AND column_name = 'gather_until'
+      ) THEN
+        EXECUTE $$ALTER TABLE character_room_resource_state ADD COLUMN gather_until TIMESTAMPTZ$$;
+      END IF;
+    END
+    $do$;
+  `);
+  await query(`
+    DO $do$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'character_room_resource_state' AND column_name = 'gather_until'
+      ) THEN
+        EXECUTE $$COMMENT ON COLUMN character_room_resource_state.gather_until IS '采集中完成时间点（5秒一次）'$$;
+      END IF;
+    END
+    $do$;
+  `);
+  console.log('✓ 地图定义改为静态JSON加载，动态地图表检测完成');
 };
 

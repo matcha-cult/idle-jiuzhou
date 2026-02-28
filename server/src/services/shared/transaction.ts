@@ -21,11 +21,7 @@
 import type { PoolClient } from 'pg';
 
 export const safeRollback = async (client: PoolClient): Promise<void> => {
-  try {
-    await client.query('ROLLBACK');
-  } catch {
-    // 回滚失败不再上抛，避免掩盖主错误
-  }
+  await client.query('ROLLBACK');
 };
 
 export const rollbackAndReturn = async <T>(client: PoolClient, result: T): Promise<T> => {

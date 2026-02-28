@@ -299,18 +299,13 @@ export const getMarketListings = async (params: {
     ${whereSql}
   `;
 
-  try {
-    const [listResult, countResult] = await Promise.all([query(listSql, values), query(countSql, values.slice(0, values.length - 2))]);
-    const total = Number(countResult.rows[0]?.cnt ?? 0);
-    const affixPoolCache = new Map<string, ReturnType<typeof loadAffixPoolForReroll>>();
-    const listings: MarketListingDto[] = listResult.rows
-      .map((row) => toListingDto(row as Record<string, unknown>, affixPoolCache))
-      .filter((entry): entry is MarketListingDto => entry !== null);
-    return { success: true, message: 'ok', data: { listings, total } };
-  } catch (error) {
-    console.error('获取坊市列表失败:', error);
-    return { success: false, message: '获取坊市列表失败' };
-  }
+  const [listResult, countResult] = await Promise.all([query(listSql, values), query(countSql, values.slice(0, values.length - 2))]);
+  const total = Number(countResult.rows[0]?.cnt ?? 0);
+  const affixPoolCache = new Map<string, ReturnType<typeof loadAffixPoolForReroll>>();
+  const listings: MarketListingDto[] = listResult.rows
+    .map((row) => toListingDto(row as Record<string, unknown>, affixPoolCache))
+    .filter((entry): entry is MarketListingDto => entry !== null);
+  return { success: true, message: 'ok', data: { listings, total } };
 };
 
 export const getMyMarketListings = async (params: {
@@ -324,55 +319,50 @@ export const getMyMarketListings = async (params: {
   const offset = (page - 1) * pageSize;
   const status = parseMaybeString(params.status) || 'active';
 
-  try {
-    const listResult = await query(
-      `
-        SELECT
-          ml.id,
-          ml.item_instance_id,
-          ml.item_def_id,
-          ml.qty,
-          ml.unit_price_spirit_stones,
-          ml.seller_character_id,
-          ml.listed_at,
-          ii.quality AS instance_quality,
-          ii.quality_rank AS instance_quality_rank,
-          ii.strengthen_level,
-          ii.refine_level,
-          ii.socketed_gems,
-          ii.identified,
-          ii.affixes,
-          c.nickname AS seller_name
-        FROM market_listing ml
-        LEFT JOIN item_instance ii ON ii.id = ml.item_instance_id
-        JOIN characters c ON c.id = ml.seller_character_id
-        WHERE ml.seller_character_id = $1 AND ml.status = $2
-        ORDER BY ml.listed_at DESC
-        LIMIT $3 OFFSET $4
-      `,
-      [params.characterId, status, pageSize, offset],
-    );
+  const listResult = await query(
+    `
+      SELECT
+        ml.id,
+        ml.item_instance_id,
+        ml.item_def_id,
+        ml.qty,
+        ml.unit_price_spirit_stones,
+        ml.seller_character_id,
+        ml.listed_at,
+        ii.quality AS instance_quality,
+        ii.quality_rank AS instance_quality_rank,
+        ii.strengthen_level,
+        ii.refine_level,
+        ii.socketed_gems,
+        ii.identified,
+        ii.affixes,
+        c.nickname AS seller_name
+      FROM market_listing ml
+      LEFT JOIN item_instance ii ON ii.id = ml.item_instance_id
+      JOIN characters c ON c.id = ml.seller_character_id
+      WHERE ml.seller_character_id = $1 AND ml.status = $2
+      ORDER BY ml.listed_at DESC
+      LIMIT $3 OFFSET $4
+    `,
+    [params.characterId, status, pageSize, offset],
+  );
 
-    const countResult = await query(
-      `
-        SELECT COUNT(*)::int AS cnt
-        FROM market_listing
-        WHERE seller_character_id = $1 AND status = $2
-      `,
-      [params.characterId, status],
-    );
+  const countResult = await query(
+    `
+      SELECT COUNT(*)::int AS cnt
+      FROM market_listing
+      WHERE seller_character_id = $1 AND status = $2
+    `,
+    [params.characterId, status],
+  );
 
-    const total = Number(countResult.rows[0]?.cnt ?? 0);
-    const affixPoolCache = new Map<string, ReturnType<typeof loadAffixPoolForReroll>>();
-    const listings: MarketListingDto[] = listResult.rows
-      .map((row) => toListingDto(row as Record<string, unknown>, affixPoolCache))
-      .filter((entry): entry is MarketListingDto => entry !== null);
+  const total = Number(countResult.rows[0]?.cnt ?? 0);
+  const affixPoolCache = new Map<string, ReturnType<typeof loadAffixPoolForReroll>>();
+  const listings: MarketListingDto[] = listResult.rows
+    .map((row) => toListingDto(row as Record<string, unknown>, affixPoolCache))
+    .filter((entry): entry is MarketListingDto => entry !== null);
 
-    return { success: true, message: 'ok', data: { listings, total } };
-  } catch (error) {
-    console.error('获取我的上架失败:', error);
-    return { success: false, message: '获取我的上架失败' };
-  }
+  return { success: true, message: 'ok', data: { listings, total } };
 };
 
 export const createMarketListing = async (params: {
@@ -390,144 +380,139 @@ export const createMarketListing = async (params: {
   if (qty === null) return { success: false, message: 'qty参数错误' };
   if (unitPrice === null) return { success: false, message: 'unitPriceSpiritStones参数错误' };
 
-  try {
-    return await withTransaction(async (client) => {
-  await lockCharacterInventoryMutexTx(client, params.characterId);
+  return await withTransaction(async (client) => {
+await lockCharacterInventoryMutexTx(client, params.characterId);
   
-      const itemResult = await client.query(
+    const itemResult = await client.query(
+      `
+        SELECT
+          ii.id,
+          ii.owner_user_id,
+          ii.owner_character_id,
+          ii.item_def_id,
+          ii.qty,
+          ii.location,
+          ii.location_slot,
+          ii.equipped_slot,
+          ii.strengthen_level,
+          ii.refine_level,
+          ii.socketed_gems,
+          ii.random_seed,
+          ii.affixes,
+          ii.identified,
+          ii.custom_name,
+          ii.locked,
+          ii.expire_at,
+          ii.obtained_from,
+          ii.obtained_ref_id,
+          ii.metadata,
+          ii.bind_type
+        FROM item_instance ii
+        WHERE ii.id = $1 AND ii.owner_character_id = $2
+        FOR UPDATE
+      `,
+      [itemInstanceId, params.characterId],
+    );
+  
+    if (itemResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '物品不存在' };
+    }
+  
+    const row = itemResult.rows[0];
+    const itemDefId = String(row.item_def_id || '').trim();
+    const itemDef = itemDefId ? getItemDefinitionById(itemDefId) : null;
+    if (!itemDef) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '物品不存在' };
+    }
+    if (itemDef.tradeable !== true) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '该物品不可交易' };
+    }
+    if (String(row.bind_type) !== 'none') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '该物品已绑定，无法上架' };
+    }
+    if (row.locked) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '该物品已锁定，无法上架' };
+    }
+    if (String(row.location) === 'equipped' || row.equipped_slot) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '已穿戴物品无法上架' };
+    }
+    if (!['bag', 'warehouse'].includes(String(row.location))) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '该物品当前位置无法上架' };
+    }
+  
+    const curQty = Number(row.qty) || 0;
+    if (qty > curQty) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '数量不足' };
+    }
+  
+    let listingItemInstanceId = itemInstanceId;
+  
+    if (qty < curQty) {
+      await client.query('UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2', [qty, itemInstanceId]);
+  
+      const insertResult = await client.query(
         `
-          SELECT
-            ii.id,
-            ii.owner_user_id,
-            ii.owner_character_id,
-            ii.item_def_id,
-            ii.qty,
-            ii.location,
-            ii.location_slot,
-            ii.equipped_slot,
-            ii.strengthen_level,
-            ii.refine_level,
-            ii.socketed_gems,
-            ii.random_seed,
-            ii.affixes,
-            ii.identified,
-            ii.custom_name,
-            ii.locked,
-            ii.expire_at,
-            ii.obtained_from,
-            ii.obtained_ref_id,
-            ii.metadata,
-            ii.bind_type
-          FROM item_instance ii
-          WHERE ii.id = $1 AND ii.owner_character_id = $2
-          FOR UPDATE
-        `,
-        [itemInstanceId, params.characterId],
-      );
-  
-      if (itemResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '物品不存在' };
-      }
-  
-      const row = itemResult.rows[0];
-      const itemDefId = String(row.item_def_id || '').trim();
-      const itemDef = itemDefId ? getItemDefinitionById(itemDefId) : null;
-      if (!itemDef) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '物品不存在' };
-      }
-      if (itemDef.tradeable !== true) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '该物品不可交易' };
-      }
-      if (String(row.bind_type) !== 'none') {
-        await client.query('ROLLBACK');
-        return { success: false, message: '该物品已绑定，无法上架' };
-      }
-      if (row.locked) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '该物品已锁定，无法上架' };
-      }
-      if (String(row.location) === 'equipped' || row.equipped_slot) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '已穿戴物品无法上架' };
-      }
-      if (!['bag', 'warehouse'].includes(String(row.location))) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '该物品当前位置无法上架' };
-      }
-  
-      const curQty = Number(row.qty) || 0;
-      if (qty > curQty) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '数量不足' };
-      }
-  
-      let listingItemInstanceId = itemInstanceId;
-  
-      if (qty < curQty) {
-        await client.query('UPDATE item_instance SET qty = qty - $1, updated_at = NOW() WHERE id = $2', [qty, itemInstanceId]);
-  
-        const insertResult = await client.query(
-          `
-            INSERT INTO item_instance (
-              owner_user_id, owner_character_id, item_def_id, qty,
-              bind_type, bind_owner_user_id, bind_owner_character_id,
-              location, location_slot, equipped_slot,
-              strengthen_level, refine_level,
-              socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta,
-              custom_name, locked, expire_at,
-              obtained_from, obtained_ref_id, metadata,
-              created_at, updated_at
-            )
-            SELECT
-              owner_user_id, owner_character_id, item_def_id, $1,
-              bind_type, bind_owner_user_id, bind_owner_character_id,
-              'auction', NULL, NULL,
-              strengthen_level, refine_level,
-              socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta,
-              custom_name, locked, expire_at,
-              obtained_from, obtained_ref_id, metadata,
-              NOW(), NOW()
-            FROM item_instance
-            WHERE id = $2
-            RETURNING id
-          `,
-          [qty, itemInstanceId],
-        );
-  
-        listingItemInstanceId = Number(insertResult.rows[0]?.id);
-      } else {
-        await client.query(
-          `UPDATE item_instance SET location = 'auction', location_slot = NULL, equipped_slot = NULL, updated_at = NOW() WHERE id = $1`,
-          [itemInstanceId],
-        );
-      }
-  
-      const listingResult = await client.query(
-        `
-          INSERT INTO market_listing (
-            seller_user_id, seller_character_id,
-            item_instance_id, item_def_id,
-            qty, unit_price_spirit_stones,
-            status
-          ) VALUES (
-            $1, $2,
-            $3, $4,
-            $5, $6,
-            'active'
+          INSERT INTO item_instance (
+            owner_user_id, owner_character_id, item_def_id, qty,
+            bind_type, bind_owner_user_id, bind_owner_character_id,
+            location, location_slot, equipped_slot,
+            strengthen_level, refine_level,
+            socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta,
+            custom_name, locked, expire_at,
+            obtained_from, obtained_ref_id, metadata,
+            created_at, updated_at
           )
+          SELECT
+            owner_user_id, owner_character_id, item_def_id, $1,
+            bind_type, bind_owner_user_id, bind_owner_character_id,
+            'auction', NULL, NULL,
+            strengthen_level, refine_level,
+            socketed_gems, random_seed, affixes, identified, affix_gen_version, affix_roll_meta,
+            custom_name, locked, expire_at,
+            obtained_from, obtained_ref_id, metadata,
+            NOW(), NOW()
+          FROM item_instance
+          WHERE id = $2
           RETURNING id
         `,
-        [params.userId, params.characterId, listingItemInstanceId, itemDefId, qty, unitPrice],
+        [qty, itemInstanceId],
       );
-  return { success: true, message: '上架成功', data: { listingId: Number(listingResult.rows[0].id) } };
-    });
-  } catch (error) {
-console.error('物品上架失败:', error);
-    return { success: false, message: '物品上架失败' };
-  }
+  
+      listingItemInstanceId = Number(insertResult.rows[0]?.id);
+    } else {
+      await client.query(
+        `UPDATE item_instance SET location = 'auction', location_slot = NULL, equipped_slot = NULL, updated_at = NOW() WHERE id = $1`,
+        [itemInstanceId],
+      );
+    }
+  
+    const listingResult = await client.query(
+      `
+        INSERT INTO market_listing (
+          seller_user_id, seller_character_id,
+          item_instance_id, item_def_id,
+          qty, unit_price_spirit_stones,
+          status
+        ) VALUES (
+          $1, $2,
+          $3, $4,
+          $5, $6,
+          'active'
+        )
+        RETURNING id
+      `,
+      [params.userId, params.characterId, listingItemInstanceId, itemDefId, qty, unitPrice],
+    );
+return { success: true, message: '上架成功', data: { listingId: Number(listingResult.rows[0].id) } };
+  });
 };
 
 export const cancelMarketListing = async (params: {
@@ -538,88 +523,83 @@ export const cancelMarketListing = async (params: {
   const listingId = parsePositiveInt(params.listingId);
   if (listingId === null) return { success: false, message: 'listingId参数错误' };
 
-  try {
-    return await withTransaction(async (client) => {
-  await lockCharacterInventoryMutexTx(client, params.characterId);
+  return await withTransaction(async (client) => {
+await lockCharacterInventoryMutexTx(client, params.characterId);
   
-      const listingResult = await client.query(
-        `
-          SELECT id, seller_character_id, item_instance_id, qty, status
-          FROM market_listing
-          WHERE id = $1
-          FOR UPDATE
-        `,
-        [listingId],
-      );
+    const listingResult = await client.query(
+      `
+        SELECT id, seller_character_id, item_instance_id, qty, status
+        FROM market_listing
+        WHERE id = $1
+        FOR UPDATE
+      `,
+      [listingId],
+    );
   
-      if (listingResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '上架记录不存在' };
-      }
+    if (listingResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '上架记录不存在' };
+    }
   
-      const listing = listingResult.rows[0];
-      if (Number(listing.seller_character_id) !== params.characterId) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '无权限操作该上架记录' };
-      }
-      if (String(listing.status) !== 'active') {
-        await client.query('ROLLBACK');
-        return { success: false, message: '该上架记录不可下架' };
-      }
+    const listing = listingResult.rows[0];
+    if (Number(listing.seller_character_id) !== params.characterId) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '无权限操作该上架记录' };
+    }
+    if (String(listing.status) !== 'active') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '该上架记录不可下架' };
+    }
   
-      const itemInstanceId = Number(listing.item_instance_id);
-      const itemResult = await client.query(
-        `
-          SELECT id, owner_character_id, location
-          FROM item_instance
-          WHERE id = $1
-          FOR UPDATE
-        `,
-        [itemInstanceId],
-      );
-      if (itemResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '物品不存在' };
-      }
-      const item = itemResult.rows[0];
-      if (Number(item.owner_character_id) !== params.characterId) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '物品归属异常，无法下架' };
-      }
-      if (String(item.location) !== 'auction') {
-        await client.query('ROLLBACK');
-        return { success: false, message: '物品不在坊市中，无法下架' };
-      }
+    const itemInstanceId = Number(listing.item_instance_id);
+    const itemResult = await client.query(
+      `
+        SELECT id, owner_character_id, location
+        FROM item_instance
+        WHERE id = $1
+        FOR UPDATE
+      `,
+      [itemInstanceId],
+    );
+    if (itemResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '物品不存在' };
+    }
+    const item = itemResult.rows[0];
+    if (Number(item.owner_character_id) !== params.characterId) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '物品归属异常，无法下架' };
+    }
+    if (String(item.location) !== 'auction') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '物品不在坊市中，无法下架' };
+    }
   
-      const slot = await requireBuyerBagSlot(client, params.characterId);
-      if (slot === null) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '背包已满，无法下架' };
-      }
+    const slot = await requireBuyerBagSlot(client, params.characterId);
+    if (slot === null) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '背包已满，无法下架' };
+    }
   
-      await client.query(
-        `
-          UPDATE item_instance
-          SET location = 'bag', location_slot = $1, equipped_slot = NULL, updated_at = NOW()
-          WHERE id = $2
-        `,
-        [slot, itemInstanceId],
-      );
+    await client.query(
+      `
+        UPDATE item_instance
+        SET location = 'bag', location_slot = $1, equipped_slot = NULL, updated_at = NOW()
+        WHERE id = $2
+      `,
+      [slot, itemInstanceId],
+    );
   
-      await client.query(
-        `
-          UPDATE market_listing
-          SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
-          WHERE id = $1
-        `,
-        [listingId],
-      );
-  return { success: true, message: '下架成功' };
-    });
-  } catch (error) {
-console.error('下架失败:', error);
-    return { success: false, message: '下架失败' };
-  }
+    await client.query(
+      `
+        UPDATE market_listing
+        SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
+        WHERE id = $1
+      `,
+      [listingId],
+    );
+return { success: true, message: '下架成功' };
+  });
 };
 
 export const buyMarketListing = async (params: {
@@ -630,205 +610,200 @@ export const buyMarketListing = async (params: {
   const listingId = parsePositiveInt(params.listingId);
   if (listingId === null) return { success: false, message: 'listingId参数错误' };
 
-  try {
-    return await withTransaction(async (client) => {
-  const listingOwnerResult = await client.query(
-        `
-          SELECT seller_character_id
-          FROM market_listing
-          WHERE id = $1
-        `,
-        [listingId],
-      );
-      if (listingOwnerResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '上架记录不存在' };
-      }
-      const sellerCharacterIdFromMeta = Number(listingOwnerResult.rows[0].seller_character_id);
-      if (!Number.isInteger(sellerCharacterIdFromMeta) || sellerCharacterIdFromMeta <= 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '上架数据异常' };
-      }
-      if (sellerCharacterIdFromMeta === params.buyerCharacterId) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '不能购买自己上架的物品' };
-      }
-      await lockCharacterInventoryMutexesTx(client, [params.buyerCharacterId, sellerCharacterIdFromMeta]);
+  return await withTransaction(async (client) => {
+const listingOwnerResult = await client.query(
+      `
+        SELECT seller_character_id
+        FROM market_listing
+        WHERE id = $1
+      `,
+      [listingId],
+    );
+    if (listingOwnerResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '上架记录不存在' };
+    }
+    const sellerCharacterIdFromMeta = Number(listingOwnerResult.rows[0].seller_character_id);
+    if (!Number.isInteger(sellerCharacterIdFromMeta) || sellerCharacterIdFromMeta <= 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '上架数据异常' };
+    }
+    if (sellerCharacterIdFromMeta === params.buyerCharacterId) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '不能购买自己上架的物品' };
+    }
+    await lockCharacterInventoryMutexesTx(client, [params.buyerCharacterId, sellerCharacterIdFromMeta]);
   
-      const listingResult = await client.query(
-        `
-          SELECT
-            ml.id,
-            ml.seller_user_id,
-            ml.seller_character_id,
-            ml.item_instance_id,
-            ml.item_def_id,
-            ml.qty,
-            ml.unit_price_spirit_stones,
-            ml.status
-          FROM market_listing ml
-          WHERE ml.id = $1
-          FOR UPDATE
-        `,
-        [listingId],
-      );
+    const listingResult = await client.query(
+      `
+        SELECT
+          ml.id,
+          ml.seller_user_id,
+          ml.seller_character_id,
+          ml.item_instance_id,
+          ml.item_def_id,
+          ml.qty,
+          ml.unit_price_spirit_stones,
+          ml.status
+        FROM market_listing ml
+        WHERE ml.id = $1
+        FOR UPDATE
+      `,
+      [listingId],
+    );
   
-      if (listingResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '上架记录不存在' };
-      }
+    if (listingResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '上架记录不存在' };
+    }
   
-      const listing = listingResult.rows[0];
-      if (String(listing.status) !== 'active') {
-        await client.query('ROLLBACK');
-        return { success: false, message: '该物品已被购买或下架' };
-      }
+    const listing = listingResult.rows[0];
+    if (String(listing.status) !== 'active') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '该物品已被购买或下架' };
+    }
   
-      const sellerCharacterId = Number(listing.seller_character_id);
-      const sellerUserId = Number(listing.seller_user_id);
-      if (sellerCharacterId !== sellerCharacterIdFromMeta) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '上架数据异常，请刷新后重试' };
-      }
-      if (sellerCharacterId === params.buyerCharacterId) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '不能购买自己上架的物品' };
-      }
+    const sellerCharacterId = Number(listing.seller_character_id);
+    const sellerUserId = Number(listing.seller_user_id);
+    if (sellerCharacterId !== sellerCharacterIdFromMeta) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '上架数据异常，请刷新后重试' };
+    }
+    if (sellerCharacterId === params.buyerCharacterId) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '不能购买自己上架的物品' };
+    }
   
-      const itemInstanceId = Number(listing.item_instance_id);
-      const itemDefId = String(listing.item_def_id);
-      const qty = Number(listing.qty);
-      const unitPrice = BigInt(listing.unit_price_spirit_stones);
-      const totalPrice = unitPrice * BigInt(qty);
+    const itemInstanceId = Number(listing.item_instance_id);
+    const itemDefId = String(listing.item_def_id);
+    const qty = Number(listing.qty);
+    const unitPrice = BigInt(listing.unit_price_spirit_stones);
+    const totalPrice = unitPrice * BigInt(qty);
   
-      const itemRowResult = await client.query(
-        `SELECT id, owner_character_id, location, qty FROM item_instance WHERE id = $1 FOR UPDATE`,
-        [itemInstanceId],
-      );
-      if (itemRowResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '物品不存在' };
-      }
-      const itemRow = itemRowResult.rows[0];
-      if (String(itemRow.location) !== 'auction') {
-        await client.query('ROLLBACK');
-        return { success: false, message: '物品不在坊市中' };
-      }
-      if (Number(itemRow.qty) !== qty) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '物品数量异常，请刷新后重试' };
-      }
-      if (Number(itemRow.owner_character_id) !== sellerCharacterId) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '物品归属异常，请刷新后重试' };
-      }
+    const itemRowResult = await client.query(
+      `SELECT id, owner_character_id, location, qty FROM item_instance WHERE id = $1 FOR UPDATE`,
+      [itemInstanceId],
+    );
+    if (itemRowResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '物品不存在' };
+    }
+    const itemRow = itemRowResult.rows[0];
+    if (String(itemRow.location) !== 'auction') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '物品不在坊市中' };
+    }
+    if (Number(itemRow.qty) !== qty) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '物品数量异常，请刷新后重试' };
+    }
+    if (Number(itemRow.owner_character_id) !== sellerCharacterId) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '物品归属异常，请刷新后重试' };
+    }
   
-      const itemDef = getItemDefinitionById(itemDefId);
-      if (!itemDef) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '物品配置不存在，请稍后重试' };
-      }
-      const taxRate = Number(itemDef.tax_rate) || 0;
-      const taxAmount = getTaxAmount(totalPrice, taxRate);
-      const sellerGain = totalPrice - taxAmount;
+    const itemDef = getItemDefinitionById(itemDefId);
+    if (!itemDef) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '物品配置不存在，请稍后重试' };
+    }
+    const taxRate = Number(itemDef.tax_rate) || 0;
+    const taxAmount = getTaxAmount(totalPrice, taxRate);
+    const sellerGain = totalPrice - taxAmount;
   
-      const buyerCharResult = await client.query(
-        `SELECT spirit_stones FROM characters WHERE id = $1 FOR UPDATE`,
-        [params.buyerCharacterId],
-      );
-      if (buyerCharResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '角色不存在' };
-      }
-      const buyerStones = BigInt(buyerCharResult.rows[0].spirit_stones ?? 0);
-      if (buyerStones < totalPrice) {
-        await client.query('ROLLBACK');
-        return { success: false, message: `灵石不足，需要${totalPrice.toString()}` };
-      }
+    const buyerCharResult = await client.query(
+      `SELECT spirit_stones FROM characters WHERE id = $1 FOR UPDATE`,
+      [params.buyerCharacterId],
+    );
+    if (buyerCharResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '角色不存在' };
+    }
+    const buyerStones = BigInt(buyerCharResult.rows[0].spirit_stones ?? 0);
+    if (buyerStones < totalPrice) {
+      await client.query('ROLLBACK');
+      return { success: false, message: `灵石不足，需要${totalPrice.toString()}` };
+    }
   
-      const slot = await requireBuyerBagSlot(client, params.buyerCharacterId);
-      if (slot === null) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '背包已满，无法购买' };
-      }
+    const slot = await requireBuyerBagSlot(client, params.buyerCharacterId);
+    if (slot === null) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '背包已满，无法购买' };
+    }
   
-      await client.query(
-        `UPDATE characters SET spirit_stones = spirit_stones - $1, updated_at = NOW() WHERE id = $2`,
-        [totalPrice.toString(), params.buyerCharacterId],
-      );
-      await client.query(
-        `UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2`,
-        [sellerGain.toString(), sellerCharacterId],
-      );
+    await client.query(
+      `UPDATE characters SET spirit_stones = spirit_stones - $1, updated_at = NOW() WHERE id = $2`,
+      [totalPrice.toString(), params.buyerCharacterId],
+    );
+    await client.query(
+      `UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2`,
+      [sellerGain.toString(), sellerCharacterId],
+    );
   
-      await client.query(
-        `
-          UPDATE item_instance
-          SET owner_user_id = $1,
-              owner_character_id = $2,
-              location = 'bag',
-              location_slot = $3,
-              equipped_slot = NULL,
-              updated_at = NOW()
-          WHERE id = $4
-        `,
-        [params.buyerUserId, params.buyerCharacterId, slot, itemInstanceId],
-      );
+    await client.query(
+      `
+        UPDATE item_instance
+        SET owner_user_id = $1,
+            owner_character_id = $2,
+            location = 'bag',
+            location_slot = $3,
+            equipped_slot = NULL,
+            updated_at = NOW()
+        WHERE id = $4
+      `,
+      [params.buyerUserId, params.buyerCharacterId, slot, itemInstanceId],
+    );
   
-      await client.query(
-        `
-          UPDATE market_listing
-          SET status = 'sold',
-              buyer_user_id = $1,
-              buyer_character_id = $2,
-              sold_at = NOW(),
-              updated_at = NOW()
-          WHERE id = $3
-        `,
-        [params.buyerUserId, params.buyerCharacterId, listingId],
-      );
+    await client.query(
+      `
+        UPDATE market_listing
+        SET status = 'sold',
+            buyer_user_id = $1,
+            buyer_character_id = $2,
+            sold_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $3
+      `,
+      [params.buyerUserId, params.buyerCharacterId, listingId],
+    );
   
-      await client.query(
-        `
-          INSERT INTO market_trade_record (
-            listing_id,
-            buyer_user_id, buyer_character_id,
-            seller_user_id, seller_character_id,
-            item_def_id,
-            qty,
-            unit_price_spirit_stones,
-            total_price_spirit_stones,
-            tax_spirit_stones
-          ) VALUES (
-            $1,
-            $2, $3,
-            $4, $5,
-            $6,
-            $7,
-            $8,
-            $9,
-            $10
-          )
-        `,
-        [
-          listingId,
-          params.buyerUserId,
-          params.buyerCharacterId,
-          sellerUserId,
-          sellerCharacterId,
-          itemDefId,
+    await client.query(
+      `
+        INSERT INTO market_trade_record (
+          listing_id,
+          buyer_user_id, buyer_character_id,
+          seller_user_id, seller_character_id,
+          item_def_id,
           qty,
-          unitPrice.toString(),
-          totalPrice.toString(),
-          taxAmount.toString(),
-        ],
-      );
-  return { success: true, message: '购买成功' };
-    });
-  } catch (error) {
-console.error('购买失败:', error);
-    return { success: false, message: '购买失败' };
-  }
+          unit_price_spirit_stones,
+          total_price_spirit_stones,
+          tax_spirit_stones
+        ) VALUES (
+          $1,
+          $2, $3,
+          $4, $5,
+          $6,
+          $7,
+          $8,
+          $9,
+          $10
+        )
+      `,
+      [
+        listingId,
+        params.buyerUserId,
+        params.buyerCharacterId,
+        sellerUserId,
+        sellerCharacterId,
+        itemDefId,
+        qty,
+        unitPrice.toString(),
+        totalPrice.toString(),
+        taxAmount.toString(),
+      ],
+    );
+return { success: true, message: '购买成功' };
+  });
 };
 
 export const getMarketTradeRecords = async (params: {
@@ -840,61 +815,56 @@ export const getMarketTradeRecords = async (params: {
   const pageSize = clampInt(parsePositiveInt(params.pageSize) ?? 20, 1, 100);
   const offset = (page - 1) * pageSize;
 
-  try {
-    const listResult = await query(
-      `
-        SELECT
-          tr.id,
-          tr.item_def_id,
-          tr.qty,
-          tr.unit_price_spirit_stones,
-          tr.buyer_character_id,
-          tr.seller_character_id,
-          tr.created_at,
-          cb.nickname AS buyer_name,
-          cs.nickname AS seller_name
-        FROM market_trade_record tr
-        JOIN characters cb ON cb.id = tr.buyer_character_id
-        JOIN characters cs ON cs.id = tr.seller_character_id
-        WHERE tr.buyer_character_id = $1 OR tr.seller_character_id = $1
-        ORDER BY tr.created_at DESC
-        LIMIT $2 OFFSET $3
-      `,
-      [params.characterId, pageSize, offset],
-    );
+  const listResult = await query(
+    `
+      SELECT
+        tr.id,
+        tr.item_def_id,
+        tr.qty,
+        tr.unit_price_spirit_stones,
+        tr.buyer_character_id,
+        tr.seller_character_id,
+        tr.created_at,
+        cb.nickname AS buyer_name,
+        cs.nickname AS seller_name
+      FROM market_trade_record tr
+      JOIN characters cb ON cb.id = tr.buyer_character_id
+      JOIN characters cs ON cs.id = tr.seller_character_id
+      WHERE tr.buyer_character_id = $1 OR tr.seller_character_id = $1
+      ORDER BY tr.created_at DESC
+      LIMIT $2 OFFSET $3
+    `,
+    [params.characterId, pageSize, offset],
+  );
 
-    const countResult = await query(
-      `
-        SELECT COUNT(*)::int AS cnt
-        FROM market_trade_record
-        WHERE buyer_character_id = $1 OR seller_character_id = $1
-      `,
-      [params.characterId],
-    );
+  const countResult = await query(
+    `
+      SELECT COUNT(*)::int AS cnt
+      FROM market_trade_record
+      WHERE buyer_character_id = $1 OR seller_character_id = $1
+    `,
+    [params.characterId],
+  );
 
-    const total = Number(countResult.rows[0]?.cnt ?? 0);
-    const records: MarketTradeRecordDto[] = listResult.rows.map((r) => {
-      const buyerId = Number(r.buyer_character_id);
-      const type: '买入' | '卖出' = params.characterId === buyerId ? '买入' : '卖出';
-      const counterparty = type === '买入' ? String(r.seller_name ?? '') : String(r.buyer_name ?? '');
-      const itemDefId = String(r.item_def_id || '').trim();
-      const itemDef = itemDefId ? getItemDefinitionById(itemDefId) : null;
-      return {
-        id: Number(r.id),
-        type,
-        itemDefId,
-        name: String(itemDef?.name || itemDefId),
-        icon: itemDef?.icon ? String(itemDef.icon) : null,
-        qty: Number(r.qty),
-        unitPriceSpiritStones: Number(r.unit_price_spirit_stones),
-        counterparty,
-        time: new Date(r.created_at).getTime(),
-      };
-    });
+  const total = Number(countResult.rows[0]?.cnt ?? 0);
+  const records: MarketTradeRecordDto[] = listResult.rows.map((r) => {
+    const buyerId = Number(r.buyer_character_id);
+    const type: '买入' | '卖出' = params.characterId === buyerId ? '买入' : '卖出';
+    const counterparty = type === '买入' ? String(r.seller_name ?? '') : String(r.buyer_name ?? '');
+    const itemDefId = String(r.item_def_id || '').trim();
+    const itemDef = itemDefId ? getItemDefinitionById(itemDefId) : null;
+    return {
+      id: Number(r.id),
+      type,
+      itemDefId,
+      name: String(itemDef?.name || itemDefId),
+      icon: itemDef?.icon ? String(itemDef.icon) : null,
+      qty: Number(r.qty),
+      unitPriceSpiritStones: Number(r.unit_price_spirit_stones),
+      counterparty,
+      time: new Date(r.created_at).getTime(),
+    };
+  });
 
-    return { success: true, message: 'ok', data: { records, total } };
-  } catch (error) {
-    console.error('获取交易记录失败:', error);
-    return { success: false, message: '获取交易记录失败' };
-  }
+  return { success: true, message: 'ok', data: { records, total } };
 };

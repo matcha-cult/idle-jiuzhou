@@ -84,22 +84,17 @@ CREATE TABLE IF NOT EXISTS idle_configs (
  * 被调用方：server/src/models/initTables.ts 中的 initTables()
  */
 export const initIdleTables = async (): Promise<void> => {
-  try {
-    // 先建主表，再建依赖主表的子表（外键顺序）
-    await query(idleSessionsTableSQL);
-    console.log('  → 离线挂机会话表检测完成');
+  // 先建主表，再建依赖主表的子表（外键顺序）
+  await query(idleSessionsTableSQL);
+  console.log('  → 离线挂机会话表检测完成');
 
-    await query(idleBattleBatchesTableSQL);
-    console.log('  → 离线挂机战斗批次表检测完成');
+  await query(idleBattleBatchesTableSQL);
+  console.log('  → 离线挂机战斗批次表检测完成');
 
-    await query(idleConfigsTableSQL);
-    // 兼容已有表：新增 target_monster_def_id 列（IF NOT EXISTS 防止重复执行报错）
-    await query(`ALTER TABLE idle_configs ADD COLUMN IF NOT EXISTS target_monster_def_id VARCHAR(100)`);
-    console.log('  → 离线挂机配置表检测完成');
+  await query(idleConfigsTableSQL);
+  // 兼容已有表：新增 target_monster_def_id 列（IF NOT EXISTS 防止重复执行报错）
+  await query(`ALTER TABLE idle_configs ADD COLUMN IF NOT EXISTS target_monster_def_id VARCHAR(100)`);
+  console.log('  → 离线挂机配置表检测完成');
 
-    console.log('✓ 离线挂机表检测完成');
-  } catch (error) {
-    console.error('✗ 离线挂机系统表初始化失败:', error);
-    throw error;
-  }
+  console.log('✓ 离线挂机表检测完成');
 };

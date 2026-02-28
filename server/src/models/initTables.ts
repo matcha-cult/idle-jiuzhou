@@ -55,112 +55,103 @@ const checkAndAddColumns = async () => {
   ];
 
   for (const col of columnsToCheck) {
-    try {
-      // 检查字段是否存在
-      const checkSQL = `
-        SELECT column_name FROM information_schema.columns 
-        WHERE table_name = 'users' AND column_name = $1
-      `;
-      const result = await query(checkSQL, [col.name]);
+    // 检查字段是否存在
+    const checkSQL = `
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_name = 'users' AND column_name = $1
+    `;
+    const result = await query(checkSQL, [col.name]);
       
-      if (result.rows.length === 0) {
-        // 字段不存在，添加字段
-        const addSQL = `ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
-        await query(addSQL);
+    if (result.rows.length === 0) {
+      // 字段不存在，添加字段
+      const addSQL = `ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
+      await query(addSQL);
         
-        // 添加注释
-        const commentSQL = `COMMENT ON COLUMN users.${col.name} IS '${col.comment}'`;
-        await query(commentSQL);
+      // 添加注释
+      const commentSQL = `COMMENT ON COLUMN users.${col.name} IS '${col.comment}'`;
+      await query(commentSQL);
         
-        console.log(`已添加缺失字段: ${col.name}`);
-      }
-    } catch (error) {
-      console.error(`检查字段 ${col.name} 时出错:`, error);
+      console.log(`已添加缺失字段: ${col.name}`);
     }
   }
 };
 
 // 初始化所有表
 export const initTables = async (): Promise<void> => {
-  try {
-    console.log('\n========== 数据库初始化 ==========');
+  console.log('\n========== 数据库初始化 ==========');
     
-    // 创建用户表
-    await query(userTableSQL);
-    console.log('✓ 用户表检测完成');
+  // 创建用户表
+  await query(userTableSQL);
+  console.log('✓ 用户表检测完成');
     
-    // 检查并补齐缺失字段
-    await checkAndAddColumns();
+  // 检查并补齐缺失字段
+  await checkAndAddColumns();
 
-    // 初始化迁移历史表（供一次性数据迁移登记）
-    await ensureMigrationHistoryTable();
+  // 初始化迁移历史表（供一次性数据迁移登记）
+  await ensureMigrationHistoryTable();
     
-    // 初始化角色表
-    await initCharacterTable();
+  // 初始化角色表
+  await initCharacterTable();
     
-    // 初始化签到表
-    await initSignInTable();
+  // 初始化签到表
+  await initSignInTable();
     
-    // 初始化物品系统表
-    await initItemTables();
+  // 初始化物品系统表
+  await initItemTables();
     
-    // 初始化背包系统表
-    await initInventoryTable();
+  // 初始化背包系统表
+  await initInventoryTable();
     
-    // 初始化邮件系统表
-    await initMailTable();
+  // 初始化邮件系统表
+  await initMailTable();
     
-    // 初始化地图表
-    await initMapTable();
+  // 初始化地图表
+  await initMapTable();
     
-    // 初始化功法系统表
-    await initTechniqueTables();
+  // 初始化功法系统表
+  await initTechniqueTables();
     
-    // 初始化组队系统表
-    await initTeamTables();
+  // 初始化组队系统表
+  await initTeamTables();
 
-    // 初始化坊市系统表
-    await initMarketTable();
+  // 初始化坊市系统表
+  await initMarketTable();
 
-    // 初始化副本秘境系统表
-    await initDungeonTables();
+  // 初始化副本秘境系统表
+  await initDungeonTables();
 
-    // 初始化月卡系统表
-    await initMonthCardTables();
+  // 初始化月卡系统表
+  await initMonthCardTables();
 
-    // 初始化宗门系统表
-    await initSectTables();
+  // 初始化宗门系统表
+  await initSectTables();
 
-    // 初始化战令系统表
-    await initBattlePassTables();
+  // 初始化战令系统表
+  await initBattlePassTables();
 
-    // 初始化任务系统表
-    await initTaskTables();
+  // 初始化任务系统表
+  await initTaskTables();
 
-    // 初始化悬赏系统表
-    await initBountyTables();
+  // 初始化悬赏系统表
+  await initBountyTables();
 
-    // 初始化游戏时间表
-    await initGameTimeTable();
+  // 初始化游戏时间表
+  await initGameTimeTable();
 
-    // 初始化主线任务系统表
-    await initMainQuestTables();
+  // 初始化主线任务系统表
+  await initMainQuestTables();
 
-    // 初始化竞技场系统表
-    await initArenaTables();
+  // 初始化竞技场系统表
+  await initArenaTables();
 
-    // 初始化成就与称号系统表
-    await initAchievementTables();
+  // 初始化成就与称号系统表
+  await initAchievementTables();
 
-    // 初始化离线挂机系统表
-    await initIdleTables();
+  // 初始化离线挂机系统表
+  await initIdleTables();
     
-    // 加载种子数据
-    await loadAllSeeds();
+  // 加载种子数据
+  await loadAllSeeds();
     
-    console.log('========== 初始化完成 ==========\n');
-  } catch (error) {
-    console.error('✗ 数据库表初始化失败:', error);
-    throw error;
-  }
+  console.log('========== 初始化完成 ==========\n');
 };

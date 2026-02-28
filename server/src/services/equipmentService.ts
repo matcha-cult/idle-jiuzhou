@@ -708,23 +708,18 @@ export const createEquipmentInstance = async (
     obtainedFrom?: string;
   } = {}
 ): Promise<{ success: boolean; instanceId?: number; message: string }> => {
-  try {
-    return await withTransaction(async (client) => {
-  const txResult = await createEquipmentInstanceTx(client, userId, characterId, generated, options);
-      if (!txResult.success) {
-        await client.query('ROLLBACK');
-        return txResult;
-      }
-  return {
-        success: true,
-        instanceId: txResult.instanceId,
-        message: txResult.message
-      };
-    });
-  } catch (error) {
-console.error('创建装备实例失败:', error);
-    return { success: false, message: '创建装备实例失败' };
-  }
+  return await withTransaction(async (client) => {
+const txResult = await createEquipmentInstanceTx(client, userId, characterId, generated, options);
+    if (!txResult.success) {
+      await client.query('ROLLBACK');
+      return txResult;
+    }
+return {
+      success: true,
+      instanceId: txResult.instanceId,
+      message: txResult.message
+    };
+  });
 };
 
 export const createEquipmentInstanceTx = async (

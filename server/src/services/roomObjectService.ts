@@ -1035,116 +1035,68 @@ export const gatherRoomResource = async (params: {
 
   const actionSec = 5;
 
-  try {
-    return await withTransaction(async (client) => {
-  await lockCharacterInventoryMutexTx(client, characterId);
+  return await withTransaction(async (client) => {
+await lockCharacterInventoryMutexTx(client, characterId);
   
-      const stateRes = await client.query(
-        `
-          SELECT id, used_count, gather_until, cooldown_until
-          FROM character_room_resource_state
-          WHERE character_id = $1 AND map_id = $2 AND room_id = $3 AND resource_id = $4
-          LIMIT 1
-          FOR UPDATE
-        `,
-        [characterId, mapId, roomId, resourceId],
-      );
+    const stateRes = await client.query(
+      `
+        SELECT id, used_count, gather_until, cooldown_until
+        FROM character_room_resource_state
+        WHERE character_id = $1 AND map_id = $2 AND room_id = $3 AND resource_id = $4
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [characterId, mapId, roomId, resourceId],
+    );
   
-      const now = new Date();
-      const row = stateRes.rows[0] as { id?: number; used_count?: unknown; gather_until?: unknown; cooldown_until?: unknown } | undefined;
-      const rowId = row?.id ? Number(row.id) : null;
-      const rowUsed = row?.used_count === null || row?.used_count === undefined ? 0 : Number(row.used_count);
-      const usedCount = Number.isFinite(rowUsed) && rowUsed > 0 ? Math.floor(rowUsed) : 0;
-      const cdUntilMs = row?.cooldown_until ? new Date(row.cooldown_until as any).getTime() : 0;
-      const gatherUntilMs = row?.gather_until ? new Date(row.gather_until as any).getTime() : 0;
+    const now = new Date();
+    const row = stateRes.rows[0] as { id?: number; used_count?: unknown; gather_until?: unknown; cooldown_until?: unknown } | undefined;
+    const rowId = row?.id ? Number(row.id) : null;
+    const rowUsed = row?.used_count === null || row?.used_count === undefined ? 0 : Number(row.used_count);
+    const usedCount = Number.isFinite(rowUsed) && rowUsed > 0 ? Math.floor(rowUsed) : 0;
+    const cdUntilMs = row?.cooldown_until ? new Date(row.cooldown_until as any).getTime() : 0;
+    const gatherUntilMs = row?.gather_until ? new Date(row.gather_until as any).getTime() : 0;
   
-      if (cdUntilMs && Number.isFinite(cdUntilMs) && now.getTime() < cdUntilMs) {
-        const remaining = Math.max(1, Math.ceil((cdUntilMs - now.getTime()) / 1000));
-        await client.query('ROLLBACK');
-        return { success: false, message: `资源尚未刷新，剩余${remaining}秒` };
-      }
+    if (cdUntilMs && Number.isFinite(cdUntilMs) && now.getTime() < cdUntilMs) {
+      const remaining = Math.max(1, Math.ceil((cdUntilMs - now.getTime()) / 1000));
+      await client.query('ROLLBACK');
+      return { success: false, message: `资源尚未刷新，剩余${remaining}秒` };
+    }
   
-      const normalizedUsed = cdUntilMs && now.getTime() >= cdUntilMs ? 0 : usedCount;
-      const remainingBefore = Math.max(0, cfg.collectLimit - normalizedUsed);
-      if (remainingBefore <= 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '资源已耗尽' };
-      }
+    const normalizedUsed = cdUntilMs && now.getTime() >= cdUntilMs ? 0 : usedCount;
+    const remainingBefore = Math.max(0, cfg.collectLimit - normalizedUsed);
+    if (remainingBefore <= 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '资源已耗尽' };
+    }
   
-      if (gatherUntilMs && Number.isFinite(gatherUntilMs) && now.getTime() < gatherUntilMs) {
-        const remainingSec = Math.max(1, Math.ceil((gatherUntilMs - now.getTime()) / 1000));
-  return {
-          success: true,
-          message: '采集中',
-          data: {
-            itemDefId: resourceId,
-            qty: 0,
-            remaining: remainingBefore,
-            cooldownSec: remainingSec,
-            actionSec,
-            gatherUntil: new Date(gatherUntilMs).toISOString(),
-          },
-        };
-      }
+    if (gatherUntilMs && Number.isFinite(gatherUntilMs) && now.getTime() < gatherUntilMs) {
+      const remainingSec = Math.max(1, Math.ceil((gatherUntilMs - now.getTime()) / 1000));
+return {
+        success: true,
+        message: '采集中',
+        data: {
+          itemDefId: resourceId,
+          qty: 0,
+          remaining: remainingBefore,
+          cooldownSec: remainingSec,
+          actionSec,
+          gatherUntil: new Date(gatherUntilMs).toISOString(),
+        },
+      };
+    }
   
-      if (!gatherUntilMs || !Number.isFinite(gatherUntilMs)) {
-        const nextGatherUntil = new Date(now.getTime() + actionSec * 1000);
-        if (rowId && Number.isFinite(rowId)) {
-          await client.query(
-            `
-              UPDATE character_room_resource_state
-              SET gather_until = $1,
-                  updated_at = NOW()
-              WHERE id = $2
-            `,
-            [nextGatherUntil.toISOString(), rowId],
-          );
-        } else {
-          await client.query(
-            `
-              INSERT INTO character_room_resource_state (character_id, map_id, room_id, resource_id, used_count, gather_until, cooldown_until)
-              VALUES ($1, $2, $3, $4, $5, $6, $7)
-              ON CONFLICT (character_id, map_id, room_id, resource_id)
-              DO UPDATE SET gather_until = EXCLUDED.gather_until, updated_at = NOW()
-            `,
-            [characterId, mapId, roomId, resourceId, normalizedUsed, nextGatherUntil.toISOString(), null],
-          );
-        }
-  return {
-          success: true,
-          message: '开始采集',
-          data: {
-            itemDefId: resourceId,
-            qty: 0,
-            remaining: remainingBefore,
-            cooldownSec: actionSec,
-            actionSec,
-            gatherUntil: nextGatherUntil.toISOString(),
-          },
-        };
-      }
-  
-      const nextUsed = normalizedUsed + 1;
-      if (nextUsed > cfg.collectLimit) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '资源已耗尽' };
-      }
-  
-      const willDeplete = nextUsed >= cfg.collectLimit;
-      const cooldownUntil = willDeplete ? new Date(now.getTime() + cfg.respawnSec * 1000) : null;
-      const nextGatherUntil = willDeplete ? null : new Date(now.getTime() + actionSec * 1000);
-  
+    if (!gatherUntilMs || !Number.isFinite(gatherUntilMs)) {
+      const nextGatherUntil = new Date(now.getTime() + actionSec * 1000);
       if (rowId && Number.isFinite(rowId)) {
         await client.query(
           `
             UPDATE character_room_resource_state
-            SET used_count = $1,
-                gather_until = $2,
-                cooldown_until = $3,
+            SET gather_until = $1,
                 updated_at = NOW()
-            WHERE id = $4
+            WHERE id = $2
           `,
-          [nextUsed, nextGatherUntil ? nextGatherUntil.toISOString() : null, cooldownUntil ? cooldownUntil.toISOString() : null, rowId],
+          [nextGatherUntil.toISOString(), rowId],
         );
       } else {
         await client.query(
@@ -1152,54 +1104,89 @@ export const gatherRoomResource = async (params: {
             INSERT INTO character_room_resource_state (character_id, map_id, room_id, resource_id, used_count, gather_until, cooldown_until)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (character_id, map_id, room_id, resource_id)
-            DO UPDATE SET used_count = EXCLUDED.used_count, gather_until = EXCLUDED.gather_until, cooldown_until = EXCLUDED.cooldown_until, updated_at = NOW()
+            DO UPDATE SET gather_until = EXCLUDED.gather_until, updated_at = NOW()
           `,
-          [
-            characterId,
-            mapId,
-            roomId,
-            resourceId,
-            nextUsed,
-            nextGatherUntil ? nextGatherUntil.toISOString() : null,
-            cooldownUntil ? cooldownUntil.toISOString() : null,
-          ],
+          [characterId, mapId, roomId, resourceId, normalizedUsed, nextGatherUntil.toISOString(), null],
         );
       }
-  
-      const addResult = await addItemToInventoryTx(client, characterId, userId, resourceId, 1, {
-        location: 'bag',
-        obtainedFrom: 'gather',
-      });
-      if (!addResult.success) {
-        await client.query('ROLLBACK');
-        return { success: false, message: addResult.message || '采集失败' };
-      }
-  try {
-        await recordGatherResourceEvent(characterId, resourceId, 1);
-      } catch (error) {
-        // 如果是事务中止错误，必须重新抛出
-        if (error && typeof error === 'object' && 'code' in error && error.code === '25P02') {
-          throw error;
-        }
-        console.warn('操作失败（已忽略）:', error);
-      }
-      return {
+return {
         success: true,
-        message: '采集成功',
+        message: '开始采集',
         data: {
           itemDefId: resourceId,
-          qty: 1,
-          remaining: Math.max(0, cfg.collectLimit - nextUsed),
-          cooldownSec: nextGatherUntil ? actionSec : 0,
+          qty: 0,
+          remaining: remainingBefore,
+          cooldownSec: actionSec,
           actionSec,
-          gatherUntil: nextGatherUntil ? nextGatherUntil.toISOString() : null,
+          gatherUntil: nextGatherUntil.toISOString(),
         },
       };
+    }
+  
+    const nextUsed = normalizedUsed + 1;
+    if (nextUsed > cfg.collectLimit) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '资源已耗尽' };
+    }
+  
+    const willDeplete = nextUsed >= cfg.collectLimit;
+    const cooldownUntil = willDeplete ? new Date(now.getTime() + cfg.respawnSec * 1000) : null;
+    const nextGatherUntil = willDeplete ? null : new Date(now.getTime() + actionSec * 1000);
+  
+    if (rowId && Number.isFinite(rowId)) {
+      await client.query(
+        `
+          UPDATE character_room_resource_state
+          SET used_count = $1,
+              gather_until = $2,
+              cooldown_until = $3,
+              updated_at = NOW()
+          WHERE id = $4
+        `,
+        [nextUsed, nextGatherUntil ? nextGatherUntil.toISOString() : null, cooldownUntil ? cooldownUntil.toISOString() : null, rowId],
+      );
+    } else {
+      await client.query(
+        `
+          INSERT INTO character_room_resource_state (character_id, map_id, room_id, resource_id, used_count, gather_until, cooldown_until)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          ON CONFLICT (character_id, map_id, room_id, resource_id)
+          DO UPDATE SET used_count = EXCLUDED.used_count, gather_until = EXCLUDED.gather_until, cooldown_until = EXCLUDED.cooldown_until, updated_at = NOW()
+        `,
+        [
+          characterId,
+          mapId,
+          roomId,
+          resourceId,
+          nextUsed,
+          nextGatherUntil ? nextGatherUntil.toISOString() : null,
+          cooldownUntil ? cooldownUntil.toISOString() : null,
+        ],
+      );
+    }
+  
+    const addResult = await addItemToInventoryTx(client, characterId, userId, resourceId, 1, {
+      location: 'bag',
+      obtainedFrom: 'gather',
     });
-  } catch (error) {
-console.error('采集资源失败:', error);
-    return { success: false, message: '采集失败' };
-  }
+    if (!addResult.success) {
+      await client.query('ROLLBACK');
+      return { success: false, message: addResult.message || '采集失败' };
+    }
+    await recordGatherResourceEvent(characterId, resourceId, 1);
+    return {
+      success: true,
+      message: '采集成功',
+      data: {
+        itemDefId: resourceId,
+        qty: 1,
+        remaining: Math.max(0, cfg.collectLimit - nextUsed),
+        cooldownSec: nextGatherUntil ? actionSec : 0,
+        actionSec,
+        gatherUntil: nextGatherUntil ? nextGatherUntil.toISOString() : null,
+      },
+    };
+  });
 };
 
 function normalizeChance(value: unknown): number {
@@ -1280,75 +1267,62 @@ export const pickupRoomItem = async (params: {
   const willGain = roll <= cfg.chance;
   if (!willGain) return { success: true, message: '什么都没捡到', data: { itemDefId, qty: 0 } };
 
-  try {
-    return await withTransaction(async (client) => {
-  await lockCharacterInventoryMutexTx(client, characterId);
+  return await withTransaction(async (client) => {
+await lockCharacterInventoryMutexTx(client, characterId);
   
-      if (cfg.once) {
-        const stateRes = await client.query(
+    if (cfg.once) {
+      const stateRes = await client.query(
+        `
+          SELECT id, used_count
+          FROM character_room_resource_state
+          WHERE character_id = $1 AND map_id = $2 AND room_id = $3 AND resource_id = $4
+          LIMIT 1
+          FOR UPDATE
+        `,
+        [characterId, mapId, roomId, itemDefId],
+      );
+  
+      const row = stateRes.rows[0] as { id?: unknown; used_count?: unknown } | undefined;
+      const rowId = typeof row?.id === 'number' ? row.id : typeof row?.id === 'string' ? Number(row.id) : NaN;
+      const usedRaw = row?.used_count === null || row?.used_count === undefined ? 0 : Number(row.used_count);
+      const usedCount = Number.isFinite(usedRaw) && usedRaw > 0 ? Math.floor(usedRaw) : 0;
+      if (usedCount >= 1) {
+        await client.query('ROLLBACK');
+        return { success: false, message: '该物品已拾取' };
+      }
+  
+      if (Number.isFinite(rowId) && rowId > 0) {
+        await client.query(
           `
-            SELECT id, used_count
-            FROM character_room_resource_state
-            WHERE character_id = $1 AND map_id = $2 AND room_id = $3 AND resource_id = $4
-            LIMIT 1
-            FOR UPDATE
+            UPDATE character_room_resource_state
+            SET used_count = 1,
+                updated_at = NOW()
+            WHERE id = $1
+          `,
+          [rowId],
+        );
+      } else {
+        await client.query(
+          `
+            INSERT INTO character_room_resource_state (character_id, map_id, room_id, resource_id, used_count, gather_until, cooldown_until)
+            VALUES ($1, $2, $3, $4, 1, NULL, NULL)
+            ON CONFLICT (character_id, map_id, room_id, resource_id)
+            DO UPDATE SET used_count = EXCLUDED.used_count, updated_at = NOW()
           `,
           [characterId, mapId, roomId, itemDefId],
         );
-  
-        const row = stateRes.rows[0] as { id?: unknown; used_count?: unknown } | undefined;
-        const rowId = typeof row?.id === 'number' ? row.id : typeof row?.id === 'string' ? Number(row.id) : NaN;
-        const usedRaw = row?.used_count === null || row?.used_count === undefined ? 0 : Number(row.used_count);
-        const usedCount = Number.isFinite(usedRaw) && usedRaw > 0 ? Math.floor(usedRaw) : 0;
-        if (usedCount >= 1) {
-          await client.query('ROLLBACK');
-          return { success: false, message: '该物品已拾取' };
-        }
-  
-        if (Number.isFinite(rowId) && rowId > 0) {
-          await client.query(
-            `
-              UPDATE character_room_resource_state
-              SET used_count = 1,
-                  updated_at = NOW()
-              WHERE id = $1
-            `,
-            [rowId],
-          );
-        } else {
-          await client.query(
-            `
-              INSERT INTO character_room_resource_state (character_id, map_id, room_id, resource_id, used_count, gather_until, cooldown_until)
-              VALUES ($1, $2, $3, $4, 1, NULL, NULL)
-              ON CONFLICT (character_id, map_id, room_id, resource_id)
-              DO UPDATE SET used_count = EXCLUDED.used_count, updated_at = NOW()
-            `,
-            [characterId, mapId, roomId, itemDefId],
-          );
-        }
       }
+    }
   
-      const addResult = await addItemToInventoryTx(client, characterId, userId, itemDefId, 1, {
-        location: 'bag',
-        obtainedFrom: 'pickup',
-      });
-      if (!addResult.success) {
-        await client.query('ROLLBACK');
-        return { success: false, message: addResult.message || '拾取失败' };
-      }
-  try {
-        await recordGatherResourceEvent(characterId, itemDefId, 1);
-      } catch (error) {
-        // 如果是事务中止错误，必须重新抛出
-        if (error && typeof error === 'object' && 'code' in error && error.code === '25P02') {
-          throw error;
-        }
-        console.warn('操作失败（已忽略）:', error);
-      }
-      return { success: true, message: '拾取成功', data: { itemDefId, qty: 1 } };
+    const addResult = await addItemToInventoryTx(client, characterId, userId, itemDefId, 1, {
+      location: 'bag',
+      obtainedFrom: 'pickup',
     });
-  } catch (error) {
-console.error('拾取房间物品失败:', error);
-    return { success: false, message: '拾取失败' };
-  }
+    if (!addResult.success) {
+      await client.query('ROLLBACK');
+      return { success: false, message: addResult.message || '拾取失败' };
+    }
+    await recordGatherResourceEvent(characterId, itemDefId, 1);
+    return { success: true, message: '拾取成功', data: { itemDefId, qty: 1 } };
+  });
 };

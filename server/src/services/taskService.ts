@@ -710,58 +710,53 @@ export const claimTaskReward = async (
   const tid = asNonEmptyString(taskId);
   if (!tid) return { success: false, message: '任务ID不能为空' };
 
-  try {
-    return await withTransactionAuto(async (client) => {
-  await resetRecurringTaskProgressIfNeeded(cid, client);
+  return await withTransactionAuto(async (client) => {
+await resetRecurringTaskProgressIfNeeded(cid, client);
   
-      const progressRes = await client.query(
-        `SELECT status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 FOR UPDATE`,
-        [cid, tid]
-      );
-      if ((progressRes.rows ?? []).length === 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务未接取' };
-      }
-      const status = asNonEmptyString(progressRes.rows[0]?.status) ?? 'ongoing';
-      if (status !== 'claimable') {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务不可领取' };
-      }
+    const progressRes = await client.query(
+      `SELECT status FROM character_task_progress WHERE character_id = $1 AND task_id = $2 FOR UPDATE`,
+      [cid, tid]
+    );
+    if ((progressRes.rows ?? []).length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务未接取' };
+    }
+    const status = asNonEmptyString(progressRes.rows[0]?.status) ?? 'ongoing';
+    if (status !== 'claimable') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务不可领取' };
+    }
   
-      const taskDef = await getTaskDefinitionById(tid, client);
-      if (!taskDef) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务不存在' };
-      }
+    const taskDef = await getTaskDefinitionById(tid, client);
+    if (!taskDef) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务不存在' };
+    }
   
-      const rewards = parseRewards(taskDef.rewards);
-      const applyResult = await applyTaskRewardsTx(client, uid, cid, rewards);
-      if (!applyResult.success) {
-        await client.query('ROLLBACK');
-        return { success: false, message: applyResult.message };
-      }
+    const rewards = parseRewards(taskDef.rewards);
+    const applyResult = await applyTaskRewardsTx(client, uid, cid, rewards);
+    if (!applyResult.success) {
+      await client.query('ROLLBACK');
+      return { success: false, message: applyResult.message };
+    }
   
-      const bountyRewards = await applyBountyRewardOnTaskClaimTx(client, cid, tid);
-      if (bountyRewards.length > 0) applyResult.rewards.push(...bountyRewards);
+    const bountyRewards = await applyBountyRewardOnTaskClaimTx(client, cid, tid);
+    if (bountyRewards.length > 0) applyResult.rewards.push(...bountyRewards);
   
-      await client.query(
-        `
-          UPDATE character_task_progress
-          SET status = 'claimed',
-              completed_at = COALESCE(completed_at, NOW()),
-              claimed_at = NOW(),
-              tracked = false,
-              updated_at = NOW()
-          WHERE character_id = $1 AND task_id = $2
-        `,
-        [cid, tid]
-      );
-  return { success: true, message: 'ok', data: { taskId: tid, rewards: applyResult.rewards } };
-    });
-  } catch (error) {
-console.error('领取任务奖励失败:', error);
-    return { success: false, message: '服务器错误' };
-  }
+    await client.query(
+      `
+        UPDATE character_task_progress
+        SET status = 'claimed',
+            completed_at = COALESCE(completed_at, NOW()),
+            claimed_at = NOW(),
+            tracked = false,
+            updated_at = NOW()
+        WHERE character_id = $1 AND task_id = $2
+      `,
+      [cid, tid]
+    );
+return { success: true, message: 'ok', data: { taskId: tid, rewards: applyResult.rewards } };
+  });
 };
 
 type TaskProgressStatusDb = 'ongoing' | 'turnin' | 'claimable' | 'claimed';
@@ -1099,23 +1094,11 @@ const recordTalkNpcEvent = async (characterId: number, npcId: string): Promise<v
   const nid = asNonEmptyString(npcId);
   if (!nid) return;
 
-  try {
-    await applyTaskEvent(characterId, { type: 'talk_npc', npcId: nid });
-  } catch (error) {
-    console.error('记录任务事件（对话）失败:', error);
-  }
+  await applyTaskEvent(characterId, { type: 'talk_npc', npcId: nid });
 
-  try {
-    await updateSectionProgress(characterId, { type: 'talk_npc', npcId: nid });
-  } catch (error) {
-    console.error('记录主线事件（对话）失败:', error);
-  }
+  await updateSectionProgress(characterId, { type: 'talk_npc', npcId: nid });
 
-  try {
-    await updateAchievementProgress(characterId, `talk:npc:${nid}`, 1);
-  } catch (error) {
-    console.error('记录成就事件（对话）失败:', error);
-  }
+  await updateAchievementProgress(characterId, `talk:npc:${nid}`, 1);
 };
 
 export const recordKillMonsterEvent = async (characterId: number, monsterId: string, count: number): Promise<void> => {
@@ -1123,23 +1106,11 @@ export const recordKillMonsterEvent = async (characterId: number, monsterId: str
   if (!mid) return;
   const c = normalizePositiveInt(count, 1);
 
-  try {
-    await applyTaskEvent(characterId, { type: 'kill_monster', monsterId: mid, count: c });
-  } catch (error) {
-    console.error('记录任务事件（击杀）失败:', error);
-  }
+  await applyTaskEvent(characterId, { type: 'kill_monster', monsterId: mid, count: c });
 
-  try {
-    await updateSectionProgress(characterId, { type: 'kill_monster', monsterId: mid, count: c });
-  } catch (error) {
-    console.error('记录主线事件（击杀）失败:', error);
-  }
+  await updateSectionProgress(characterId, { type: 'kill_monster', monsterId: mid, count: c });
 
-  try {
-    await updateAchievementProgress(characterId, `kill:monster:${mid}`, c);
-  } catch (error) {
-    console.error('记录成就事件（击杀）失败:', error);
-  }
+  await updateAchievementProgress(characterId, `kill:monster:${mid}`, c);
 };
 
 export const recordGatherResourceEvent = async (characterId: number, resourceId: string, count: number): Promise<void> => {
@@ -1147,25 +1118,13 @@ export const recordGatherResourceEvent = async (characterId: number, resourceId:
   if (!rid) return;
   const c = normalizePositiveInt(count, 1);
 
-  try {
-    await applyTaskEvent(characterId, { type: 'gather_resource', resourceId: rid, count: c });
-  } catch (error) {
-    console.error('记录任务事件（采集）失败:', error);
-  }
+  await applyTaskEvent(characterId, { type: 'gather_resource', resourceId: rid, count: c });
 
-  try {
-    await updateSectionProgress(characterId, { type: 'gather_resource', resourceId: rid, count: c });
-    await updateSectionProgress(characterId, { type: 'collect', itemId: rid, count: c });
-  } catch (error) {
-    console.error('记录主线事件（采集）失败:', error);
-  }
+  await updateSectionProgress(characterId, { type: 'gather_resource', resourceId: rid, count: c });
+  await updateSectionProgress(characterId, { type: 'collect', itemId: rid, count: c });
 
-  try {
-    await updateAchievementProgress(characterId, `gather:resource:${rid}`, c);
-    await updateAchievementProgress(characterId, `item:obtain:${rid}`, c);
-  } catch (error) {
-    console.error('记录成就事件（采集）失败:', error);
-  }
+  await updateAchievementProgress(characterId, `gather:resource:${rid}`, c);
+  await updateAchievementProgress(characterId, `item:obtain:${rid}`, c);
 };
 
 export const recordCollectItemEvent = async (characterId: number, itemId: string, count: number): Promise<void> => {
@@ -1173,17 +1132,9 @@ export const recordCollectItemEvent = async (characterId: number, itemId: string
   if (!iid) return;
   const c = normalizePositiveInt(count, 1);
 
-  try {
-    await updateSectionProgress(characterId, { type: 'collect', itemId: iid, count: c });
-  } catch (error) {
-    console.error('记录主线事件（收集）失败:', error);
-  }
+  await updateSectionProgress(characterId, { type: 'collect', itemId: iid, count: c });
 
-  try {
-    await updateAchievementProgress(characterId, `item:obtain:${iid}`, c);
-  } catch (error) {
-    console.error('记录成就事件（收集）失败:', error);
-  }
+  await updateAchievementProgress(characterId, `item:obtain:${iid}`, c);
 };
 
 export const recordDungeonClearEvent = async (
@@ -1197,24 +1148,12 @@ export const recordDungeonClearEvent = async (
   const diffId = asNonEmptyString(difficultyId) ?? undefined;
   const c = normalizePositiveInt(count, 1);
 
-  try {
-    await resetRecurringTaskProgressIfNeeded(characterId);
-    await applyTaskEvent(characterId, { type: 'dungeon_clear', dungeonId: did, difficultyId: diffId, count: c });
-  } catch (error) {
-    console.error('记录任务事件（秘境通关）失败:', error);
-  }
+  await resetRecurringTaskProgressIfNeeded(characterId);
+  await applyTaskEvent(characterId, { type: 'dungeon_clear', dungeonId: did, difficultyId: diffId, count: c });
 
-  try {
-    await updateSectionProgress(characterId, { type: 'dungeon_clear', dungeonId: did, difficultyId: diffId, count: c });
-  } catch (error) {
-    console.error('记录主线事件（秘境通关）失败:', error);
-  }
+  await updateSectionProgress(characterId, { type: 'dungeon_clear', dungeonId: did, difficultyId: diffId, count: c });
 
-  try {
-    await updateAchievementProgress(characterId, `dungeon:clear:${did}`, c);
-  } catch (error) {
-    console.error('记录成就事件（秘境通关）失败:', error);
-  }
+  await updateAchievementProgress(characterId, `dungeon:clear:${did}`, c);
 };
 
 export const recordCraftItemEvent = async (
@@ -1231,40 +1170,28 @@ export const recordCraftItemEvent = async (
   const rtype = asNonEmptyString(recipeType) ?? undefined;
   const c = normalizePositiveInt(count, 1);
 
-  try {
-    await resetRecurringTaskProgressIfNeeded(characterId);
-    await applyTaskEvent(characterId, {
-      type: 'craft_item',
-      recipeId: rid,
-      recipeType: rtype,
-      craftKind: kind,
-      itemId: iid,
-      count: c,
-    });
-  } catch (error) {
-    console.error('记录任务事件（炼制）失败:', error);
-  }
+  await resetRecurringTaskProgressIfNeeded(characterId);
+  await applyTaskEvent(characterId, {
+    type: 'craft_item',
+    recipeId: rid,
+    recipeType: rtype,
+    craftKind: kind,
+    itemId: iid,
+    count: c,
+  });
 
-  try {
-    await updateSectionProgress(characterId, {
-      type: 'craft_item',
-      recipeId: rid,
-      recipeType: rtype,
-      craftKind: kind,
-      itemId: iid,
-      count: c,
-    });
-  } catch (error) {
-    console.error('记录主线事件（炼制）失败:', error);
-  }
+  await updateSectionProgress(characterId, {
+    type: 'craft_item',
+    recipeId: rid,
+    recipeType: rtype,
+    craftKind: kind,
+    itemId: iid,
+    count: c,
+  });
 
-  try {
-    if (rid) await updateAchievementProgress(characterId, `craft:recipe:${rid}`, c);
-    if (kind) await updateAchievementProgress(characterId, `craft:kind:${kind}`, c);
-    if (iid) await updateAchievementProgress(characterId, `craft:item:${iid}`, c);
-  } catch (error) {
-    console.error('记录成就事件（炼制）失败:', error);
-  }
+  if (rid) await updateAchievementProgress(characterId, `craft:recipe:${rid}`, c);
+  if (kind) await updateAchievementProgress(characterId, `craft:kind:${kind}`, c);
+  if (iid) await updateAchievementProgress(characterId, `craft:item:${iid}`, c);
 };
 
 type NpcTalkTaskOption = {

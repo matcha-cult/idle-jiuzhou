@@ -68,21 +68,16 @@ CREATE INDEX IF NOT EXISTS idx_char_skill_char ON character_skill_slot(character
 `;
 
 export const initTechniqueTables = async (): Promise<void> => {
-  try {
-    console.log('  → 功法/技能/层级定义改为静态JSON加载，跳过建表');
+  console.log('  → 功法/技能/层级定义改为静态JSON加载，跳过建表');
 
-    await query(characterTechniqueTableSQL);
-    await query(characterSkillSlotTableSQL);
+  await query(characterTechniqueTableSQL);
+  await query(characterSkillSlotTableSQL);
 
-    await query('ALTER TABLE character_technique DROP CONSTRAINT IF EXISTS character_technique_technique_id_fkey');
-    await query('ALTER TABLE character_skill_slot DROP CONSTRAINT IF EXISTS character_skill_slot_skill_id_fkey');
+  await query('ALTER TABLE character_technique DROP CONSTRAINT IF EXISTS character_technique_technique_id_fkey');
+  await query('ALTER TABLE character_skill_slot DROP CONSTRAINT IF EXISTS character_skill_slot_skill_id_fkey');
 
-    // 扩展 obtained_from 列长度，兼容 use_item:xxx 等较长来源标识
-    await query('ALTER TABLE character_technique ALTER COLUMN obtained_from TYPE VARCHAR(64)');
+  // 扩展 obtained_from 列长度，兼容 use_item:xxx 等较长来源标识
+  await query('ALTER TABLE character_technique ALTER COLUMN obtained_from TYPE VARCHAR(64)');
 
-    console.log('✓ 功法系统表检测完成');
-  } catch (error) {
-    console.error('✗ 功法系统表初始化失败:', error);
-    throw error;
-  }
+  console.log('✓ 功法系统表检测完成');
 };

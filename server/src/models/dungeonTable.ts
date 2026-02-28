@@ -113,27 +113,22 @@ CREATE INDEX IF NOT EXISTS idx_dungeon_entry_count_dungeon ON dungeon_entry_coun
 `;
 
 export const initDungeonTables = async (): Promise<void> => {
-  try {
-    console.log('  → 副本秘境定义/难度/关卡/波次改为静态JSON加载，跳过建表');
+  console.log('  → 副本秘境定义/难度/关卡/波次改为静态JSON加载，跳过建表');
 
-    await query(dungeonInstanceTableSQL);
-    console.log('  → 副本秘境实例表检测完成');
+  await query(dungeonInstanceTableSQL);
+  console.log('  → 副本秘境实例表检测完成');
 
-    await query(dungeonRecordTableSQL);
-    console.log('  → 副本秘境记录表检测完成');
+  await query(dungeonRecordTableSQL);
+  console.log('  → 副本秘境记录表检测完成');
 
-    await query(dungeonEntryCountTableSQL);
-    console.log('  → 副本秘境次数表检测完成');
+  await query(dungeonEntryCountTableSQL);
+  console.log('  → 副本秘境次数表检测完成');
 
-    await query('ALTER TABLE dungeon_instance DROP CONSTRAINT IF EXISTS dungeon_instance_difficulty_id_fkey');
-    await query('ALTER TABLE dungeon_record DROP CONSTRAINT IF EXISTS dungeon_record_difficulty_id_fkey');
-    await query('ALTER TABLE dungeon_instance DROP CONSTRAINT IF EXISTS dungeon_instance_dungeon_id_fkey');
-    await query('ALTER TABLE dungeon_record DROP CONSTRAINT IF EXISTS dungeon_record_dungeon_id_fkey');
-    await query('ALTER TABLE dungeon_entry_count DROP CONSTRAINT IF EXISTS dungeon_entry_count_dungeon_id_fkey');
+  await query('ALTER TABLE dungeon_instance DROP CONSTRAINT IF EXISTS dungeon_instance_difficulty_id_fkey');
+  await query('ALTER TABLE dungeon_record DROP CONSTRAINT IF EXISTS dungeon_record_difficulty_id_fkey');
+  await query('ALTER TABLE dungeon_instance DROP CONSTRAINT IF EXISTS dungeon_instance_dungeon_id_fkey');
+  await query('ALTER TABLE dungeon_record DROP CONSTRAINT IF EXISTS dungeon_record_dungeon_id_fkey');
+  await query('ALTER TABLE dungeon_entry_count DROP CONSTRAINT IF EXISTS dungeon_entry_count_dungeon_id_fkey');
 
-    console.log('✓ 副本秘境系统表检测完成');
-  } catch (error) {
-    console.error('✗ 副本秘境系统表初始化失败:', error);
-    throw error;
-  }
+  console.log('✓ 副本秘境系统表检测完成');
 };

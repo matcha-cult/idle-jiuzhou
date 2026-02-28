@@ -274,92 +274,88 @@ const getExpireAtByWeekEndTx = async (
 const settleSingleWeek = async (weekStartLocalDate: string): Promise<SettleSingleWeekResult> => {
   const weekEndLocalDate = addDaysToLocalDate(weekStartLocalDate, 7);
 
-  try {
-    return await withTransaction(async (client) => {
-  const existingRes = await client.query(
-        `SELECT 1 FROM arena_weekly_settlement WHERE week_start_local_date = $1::date LIMIT 1 FOR UPDATE`,
-        [weekStartLocalDate],
-      );
+  return await withTransaction(async (client) => {
+const existingRes = await client.query(
+      `SELECT 1 FROM arena_weekly_settlement WHERE week_start_local_date = $1::date LIMIT 1 FOR UPDATE`,
+      [weekStartLocalDate],
+    );
   
-      if ((existingRes.rows?.length ?? 0) > 0) {
-        await client.query('ROLLBACK');
-        return {
-          settled: false,
-          weekStartLocalDate,
-          weekEndLocalDate,
-          topCharacterIds: [],
-          awards: [],
-          expiredEquippedCharacterIds: [],
-        };
-      }
-  
-      const expiredEquippedCharacterIds = await clearExpiredEquippedPvpWeeklyTitlesTx(client);
-      const topCharacterIds = await loadTopThreeCharacterIdsForWeekTx(weekStartLocalDate, weekEndLocalDate, client);
-      const awards: WeeklyAwardInfo[] = [];
-  
-      if (topCharacterIds.length > 0) {
-        const expireAt = await getExpireAtByWeekEndTx(weekEndLocalDate, client);
-        for (let rank = 1; rank <= topCharacterIds.length; rank += 1) {
-          const titleId = getPvpWeeklyTitleIdByRank(rank);
-          if (!titleId) {
-            throw new Error(`PVP周称号配置缺失，rank=${rank}`);
-          }
-          const characterId = topCharacterIds[rank - 1]!;
-          await grantExpiringTitleTx(client, characterId, titleId, expireAt);
-          awards.push({ rank, characterId, titleId });
-        }
-      }
-  
-      const championCharacterId = topCharacterIds[0] ?? null;
-      const runnerupCharacterId = topCharacterIds[1] ?? null;
-      const thirdCharacterId = topCharacterIds[2] ?? null;
-  
-      await client.query(
-        `
-          INSERT INTO arena_weekly_settlement (
-            week_start_local_date,
-            week_end_local_date,
-            window_start_at,
-            window_end_at,
-            champion_character_id,
-            runnerup_character_id,
-            third_character_id,
-            settled_at,
-            updated_at
-          )
-          VALUES (
-            $1::date,
-            $2::date,
-            ($1::date::timestamp AT TIME ZONE $6),
-            ($2::date::timestamp AT TIME ZONE $6),
-            $3,
-            $4,
-            $5,
-            NOW(),
-            NOW()
-          )
-        `,
-        [
-          weekStartLocalDate,
-          weekEndLocalDate,
-          championCharacterId,
-          runnerupCharacterId,
-          thirdCharacterId,
-          SHANGHAI_TIMEZONE,
-        ],
-      );
-  return {
-        settled: true,
+    if ((existingRes.rows?.length ?? 0) > 0) {
+      await client.query('ROLLBACK');
+      return {
+        settled: false,
         weekStartLocalDate,
         weekEndLocalDate,
-        topCharacterIds,
-        awards,
-        expiredEquippedCharacterIds,
+        topCharacterIds: [],
+        awards: [],
+        expiredEquippedCharacterIds: [],
       };
-    });
-  } catch (error) {
-throw error;
-  }
+    }
+  
+    const expiredEquippedCharacterIds = await clearExpiredEquippedPvpWeeklyTitlesTx(client);
+    const topCharacterIds = await loadTopThreeCharacterIdsForWeekTx(weekStartLocalDate, weekEndLocalDate, client);
+    const awards: WeeklyAwardInfo[] = [];
+  
+    if (topCharacterIds.length > 0) {
+      const expireAt = await getExpireAtByWeekEndTx(weekEndLocalDate, client);
+      for (let rank = 1; rank <= topCharacterIds.length; rank += 1) {
+        const titleId = getPvpWeeklyTitleIdByRank(rank);
+        if (!titleId) {
+          throw new Error(`PVP周称号配置缺失，rank=${rank}`);
+        }
+        const characterId = topCharacterIds[rank - 1]!;
+        await grantExpiringTitleTx(client, characterId, titleId, expireAt);
+        awards.push({ rank, characterId, titleId });
+      }
+    }
+  
+    const championCharacterId = topCharacterIds[0] ?? null;
+    const runnerupCharacterId = topCharacterIds[1] ?? null;
+    const thirdCharacterId = topCharacterIds[2] ?? null;
+  
+    await client.query(
+      `
+        INSERT INTO arena_weekly_settlement (
+          week_start_local_date,
+          week_end_local_date,
+          window_start_at,
+          window_end_at,
+          champion_character_id,
+          runnerup_character_id,
+          third_character_id,
+          settled_at,
+          updated_at
+        )
+        VALUES (
+          $1::date,
+          $2::date,
+          ($1::date::timestamp AT TIME ZONE $6),
+          ($2::date::timestamp AT TIME ZONE $6),
+          $3,
+          $4,
+          $5,
+          NOW(),
+          NOW()
+        )
+      `,
+      [
+        weekStartLocalDate,
+        weekEndLocalDate,
+        championCharacterId,
+        runnerupCharacterId,
+        thirdCharacterId,
+        SHANGHAI_TIMEZONE,
+      ],
+    );
+return {
+      settled: true,
+      weekStartLocalDate,
+      weekEndLocalDate,
+      topCharacterIds,
+      awards,
+      expiredEquippedCharacterIds,
+    };
+  });
 };
 
 const invalidateCharacterCaches = async (characterIds: number[]): Promise<void> => {
@@ -378,11 +374,7 @@ const settlePendingWeeks = async (): Promise<void> => {
     if (!result.settled) continue;
 
     idsNeedInvalidate.push(...result.expiredEquippedCharacterIds);
-    try {
-      await sendWeeklyTitleAwardMails(result.weekStartLocalDate, result.weekEndLocalDate, result.awards);
-    } catch (error) {
-      console.warn(`[PVP周结算] 奖励邮件发送异常，weekStart=${result.weekStartLocalDate}`, error);
-    }
+    await sendWeeklyTitleAwardMails(result.weekStartLocalDate, result.weekEndLocalDate, result.awards);
 
     console.log(
       `[PVP周结算] ${result.weekStartLocalDate} 完成，前三角色：${result.topCharacterIds.join(', ') || '无'}`,
@@ -405,15 +397,9 @@ const runWeeklySettlementCheck = async (): Promise<void> => {
       return;
     }
 
-    try {
-      await settlePendingWeeks();
-    } finally {
-      await query(`SELECT pg_advisory_unlock($1, $2)`, [ADVISORY_LOCK_KEY_1, ADVISORY_LOCK_KEY_2]);
-    }
-  } catch (error) {
-    console.error('PVP周结算检查失败:', error);
+    await settlePendingWeeks();
   } finally {
-    inFlight = false;
+    await query(`SELECT pg_advisory_unlock($1, $2)`, [ADVISORY_LOCK_KEY_1, ADVISORY_LOCK_KEY_2]);
   }
 };
 

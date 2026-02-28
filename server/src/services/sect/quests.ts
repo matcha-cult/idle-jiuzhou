@@ -459,36 +459,31 @@ export const acceptSectQuest = async (characterId: number, questIdRaw: string): 
   const questId = questIdRaw.trim();
   if (!questId) return { success: false, message: '任务不存在' };
 
-  try {
-    return await withTransaction(async (client) => {
-  await assertMember(characterId, client);
-      await resetSectQuestProgressIfNeededTx(client, characterId);
+  return await withTransaction(async (client) => {
+await assertMember(characterId, client);
+    await resetSectQuestProgressIfNeededTx(client, characterId);
   
-      const quest = await resolveQuestDefByIdTx(client, characterId, questId);
-      if (!quest) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务不存在' };
-      }
+    const quest = await resolveQuestDefByIdTx(client, characterId, questId);
+    if (!quest) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务不存在' };
+    }
   
-      const existing = await client.query(
-        `SELECT status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 FOR UPDATE`,
-        [characterId, questId]
-      );
-      if (existing.rows.length > 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务已接取' };
-      }
+    const existing = await client.query(
+      `SELECT status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 FOR UPDATE`,
+      [characterId, questId]
+    );
+    if (existing.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务已接取' };
+    }
   
-      await client.query(
-        `INSERT INTO sect_quest_progress (character_id, quest_id, progress, status) VALUES ($1, $2, 0, 'in_progress')`,
-        [characterId, questId]
-      );
-  return { success: true, message: `接取成功：${quest.name}` };
-    });
-  } catch (error) {
-console.error('接取宗门任务失败:', error);
-    return { success: false, message: '接取宗门任务失败' };
-  }
+    await client.query(
+      `INSERT INTO sect_quest_progress (character_id, quest_id, progress, status) VALUES ($1, $2, 0, 'in_progress')`,
+      [characterId, questId]
+    );
+return { success: true, message: `接取成功：${quest.name}` };
+  });
 };
 
 export const submitSectQuest = async (
@@ -499,162 +494,152 @@ export const submitSectQuest = async (
   const questId = questIdRaw.trim();
   if (!questId) return { success: false, message: '任务不存在' };
 
-  try {
-    return await withTransaction(async (client) => {
-  const member = await assertMember(characterId, client);
-      await resetSectQuestProgressIfNeededTx(client, characterId);
+  return await withTransaction(async (client) => {
+const member = await assertMember(characterId, client);
+    await resetSectQuestProgressIfNeededTx(client, characterId);
   
-      const quest = await resolveQuestDefByIdTx(client, characterId, questId);
-      if (!quest) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务不存在' };
-      }
-      if (quest.actionType !== 'submit_item' || !quest.submitRequirement) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '该任务无需提交物品' };
-      }
+    const quest = await resolveQuestDefByIdTx(client, characterId, questId);
+    if (!quest) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务不存在' };
+    }
+    if (quest.actionType !== 'submit_item' || !quest.submitRequirement) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '该任务无需提交物品' };
+    }
   
-      const progressRes = await client.query(
-        `SELECT progress, status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 FOR UPDATE`,
-        [characterId, questId]
+    const progressRes = await client.query(
+      `SELECT progress, status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 FOR UPDATE`,
+      [characterId, questId]
+    );
+    if (progressRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务未接取' };
+    }
+  
+    const status = normalizeQuestStatus(progressRes.rows[0].status);
+    if (status === 'claimed') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '奖励已领取' };
+    }
+    if (status === 'completed') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务已完成，请先领取奖励' };
+    }
+    if (status !== 'in_progress') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务状态异常' };
+    }
+  
+    const currentProgress = Math.max(0, Math.min(quest.required, toNumber(progressRes.rows[0].progress)));
+    const remaining = Math.max(0, quest.required - currentProgress);
+    if (remaining <= 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务已达成，请先领取奖励' };
+    }
+  
+    const requested = typeof quantity === 'number' && Number.isFinite(quantity) ? Math.max(1, Math.floor(quantity)) : remaining;
+    const submitQty = Math.min(remaining, requested);
+    const consumeRes = await consumeItemDefQtyTx(client, characterId, quest.submitRequirement.itemDefId, submitQty);
+    if (!consumeRes.success || consumeRes.consumed <= 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: `${quest.submitRequirement.itemName}数量不足` };
+    }
+  
+    await applyQuestProgressDeltaTx(client, characterId, questId, consumeRes.consumed);
+    const updatedRes = await client.query<{ progress: number; status: string }>(
+      `SELECT progress, status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2`,
+      [characterId, questId]
+    );
+    const updatedProgress = Math.max(0, Math.min(quest.required, toNumber(updatedRes.rows[0]?.progress)));
+    const updatedStatus = normalizeQuestStatus(updatedRes.rows[0]?.status);
+  
+    // 任务在本次提交后已完成时，只保留“领取奖励”日志，避免同一完成动作出现提交+领奖双记录。
+    if (updatedStatus !== 'completed') {
+      await addLogTx(
+        client,
+        member.sectId,
+        'quest_submit',
+        characterId,
+        null,
+        `提交宗门任务物资：${quest.submitRequirement.itemName}×${consumeRes.consumed}（${updatedProgress}/${quest.required}）`
       );
-      if (progressRes.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务未接取' };
-      }
-  
-      const status = normalizeQuestStatus(progressRes.rows[0].status);
-      if (status === 'claimed') {
-        await client.query('ROLLBACK');
-        return { success: false, message: '奖励已领取' };
-      }
-      if (status === 'completed') {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务已完成，请先领取奖励' };
-      }
-      if (status !== 'in_progress') {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务状态异常' };
-      }
-  
-      const currentProgress = Math.max(0, Math.min(quest.required, toNumber(progressRes.rows[0].progress)));
-      const remaining = Math.max(0, quest.required - currentProgress);
-      if (remaining <= 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务已达成，请先领取奖励' };
-      }
-  
-      const requested = typeof quantity === 'number' && Number.isFinite(quantity) ? Math.max(1, Math.floor(quantity)) : remaining;
-      const submitQty = Math.min(remaining, requested);
-      const consumeRes = await consumeItemDefQtyTx(client, characterId, quest.submitRequirement.itemDefId, submitQty);
-      if (!consumeRes.success || consumeRes.consumed <= 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: `${quest.submitRequirement.itemName}数量不足` };
-      }
-  
-      await applyQuestProgressDeltaTx(client, characterId, questId, consumeRes.consumed);
-      const updatedRes = await client.query<{ progress: number; status: string }>(
-        `SELECT progress, status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2`,
-        [characterId, questId]
-      );
-      const updatedProgress = Math.max(0, Math.min(quest.required, toNumber(updatedRes.rows[0]?.progress)));
-      const updatedStatus = normalizeQuestStatus(updatedRes.rows[0]?.status);
-  
-      // 任务在本次提交后已完成时，只保留“领取奖励”日志，避免同一完成动作出现提交+领奖双记录。
-      if (updatedStatus !== 'completed') {
-        await addLogTx(
-          client,
-          member.sectId,
-          'quest_submit',
-          characterId,
-          null,
-          `提交宗门任务物资：${quest.submitRequirement.itemName}×${consumeRes.consumed}（${updatedProgress}/${quest.required}）`
-        );
-      }
-  return {
-        success: true,
-        message: updatedStatus === 'completed' ? '提交成功，任务已完成' : '提交成功',
-        consumed: consumeRes.consumed,
-        progress: updatedProgress,
-        status: updatedStatus,
-      };
-    });
-  } catch (error) {
-console.error('提交宗门任务物品失败:', error);
-    return { success: false, message: '提交宗门任务物品失败' };
-  }
+    }
+return {
+      success: true,
+      message: updatedStatus === 'completed' ? '提交成功，任务已完成' : '提交成功',
+      consumed: consumeRes.consumed,
+      progress: updatedProgress,
+      status: updatedStatus,
+    };
+  });
 };
 
 export const claimSectQuest = async (characterId: number, questIdRaw: string): Promise<ClaimSectQuestResult> => {
   const questId = questIdRaw.trim();
   if (!questId) return { success: false, message: '任务不存在' };
 
-  try {
-    return await withTransaction(async (client) => {
-  const member = await assertMember(characterId, client);
-      await resetSectQuestProgressIfNeededTx(client, characterId);
+  return await withTransaction(async (client) => {
+const member = await assertMember(characterId, client);
+    await resetSectQuestProgressIfNeededTx(client, characterId);
   
-      const quest = await resolveQuestDefByIdTx(client, characterId, questId);
-      if (!quest) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务不存在' };
-      }
+    const quest = await resolveQuestDefByIdTx(client, characterId, questId);
+    if (!quest) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务不存在' };
+    }
   
-      const progressRes = await client.query(
-        `SELECT status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 FOR UPDATE`,
-        [characterId, questId]
-      );
-      if (progressRes.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务未接取' };
-      }
+    const progressRes = await client.query(
+      `SELECT status FROM sect_quest_progress WHERE character_id = $1 AND quest_id = $2 FOR UPDATE`,
+      [characterId, questId]
+    );
+    if (progressRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务未接取' };
+    }
   
-      const status = normalizeQuestStatus(progressRes.rows[0].status);
-      if (status === 'claimed') {
-        await client.query('ROLLBACK');
-        return { success: false, message: '奖励已领取' };
-      }
-      if (status !== 'completed') {
-        await client.query('ROLLBACK');
-        return { success: false, message: '任务未完成' };
-      }
+    const status = normalizeQuestStatus(progressRes.rows[0].status);
+    if (status === 'claimed') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '奖励已领取' };
+    }
+    if (status !== 'completed') {
+      await client.query('ROLLBACK');
+      return { success: false, message: '任务未完成' };
+    }
   
-      await client.query(
-        `UPDATE sect_def SET funds = funds + $2, build_points = build_points + $3, updated_at = NOW() WHERE id = $1`,
-        [member.sectId, quest.reward.funds, quest.reward.buildPoints]
-      );
-      await client.query(
-        `
-          UPDATE sect_member
-          SET contribution = contribution + $2,
-              weekly_contribution = weekly_contribution + $2
-          WHERE character_id = $1
-        `,
-        [characterId, quest.reward.contribution]
-      );
-      await client.query(
-        `
-          UPDATE sect_quest_progress
-          SET status = 'claimed',
-              progress = $3,
-              completed_at = COALESCE(completed_at, NOW())
-          WHERE character_id = $1
-            AND quest_id = $2
-        `,
-        [characterId, questId, quest.required]
-      );
-      await addLogTx(
-        client,
-        member.sectId,
-        'quest_claim',
-        characterId,
-        null,
-        `领取宗门任务：${quest.name}（贡献+${quest.reward.contribution}，建设点+${quest.reward.buildPoints}，资金+${quest.reward.funds}）`
-      );
-  return { success: true, message: '领取成功', reward: quest.reward };
-    });
-  } catch (error) {
-console.error('领取宗门任务失败:', error);
-    return { success: false, message: '领取宗门任务失败' };
-  }
+    await client.query(
+      `UPDATE sect_def SET funds = funds + $2, build_points = build_points + $3, updated_at = NOW() WHERE id = $1`,
+      [member.sectId, quest.reward.funds, quest.reward.buildPoints]
+    );
+    await client.query(
+      `
+        UPDATE sect_member
+        SET contribution = contribution + $2,
+            weekly_contribution = weekly_contribution + $2
+        WHERE character_id = $1
+      `,
+      [characterId, quest.reward.contribution]
+    );
+    await client.query(
+      `
+        UPDATE sect_quest_progress
+        SET status = 'claimed',
+            progress = $3,
+            completed_at = COALESCE(completed_at, NOW())
+        WHERE character_id = $1
+          AND quest_id = $2
+      `,
+      [characterId, questId, quest.required]
+    );
+    await addLogTx(
+      client,
+      member.sectId,
+      'quest_claim',
+      characterId,
+      null,
+      `领取宗门任务：${quest.name}（贡献+${quest.reward.contribution}，建设点+${quest.reward.buildPoints}，资金+${quest.reward.funds}）`
+    );
+return { success: true, message: '领取成功', reward: quest.reward };
+  });
 };
