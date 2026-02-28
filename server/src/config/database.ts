@@ -331,21 +331,23 @@ const decoratePoolClient = (client: PoolClient): PoolClient => {
   }) as PoolClient['query'];
 
   client.release = ((err?: Error | boolean) => {
-    if (state.released) return;
+    if (state.released) {
+      console.warn('警告：尝试重复释放连接', { clientId: state.clientId, depth: state.depth });
+      return;
+    }
 
     // 标记为即将释放，防止并发调用
     state.released = true;
 
     if (state.depth > 0) {
-      // 释放前强制回滚未结束事务，避免连接污染回池。
-      // 必须等待 ROLLBACK 完成后再释放连接，避免时序问题
-      void executeRawQueryAsPromise(rawQuery, 'ROLLBACK')
-        .catch(() => undefined)
-        .finally(() => {
-          resetClientTransactionState(client, state);
-          rawRelease(err);
-        });
-      return;
+      // 如果事务还在进行中就被释放，这是一个错误
+      console.error('错误：事务未结束就释放连接', {
+        clientId: state.clientId,
+        depth: state.depth,
+        savepointStack: state.savepointStack
+      });
+      // 重置状态并释放（不尝试 ROLLBACK，因为 release 必须是同步的）
+      resetClientTransactionState(client, state);
     }
 
     rawRelease(err);
