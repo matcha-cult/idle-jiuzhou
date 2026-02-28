@@ -361,6 +361,7 @@ type ActiveBattleByCharacter = {
  * 关键边界条件与坑点：
  * - characterId 非法（非数字/<=0）时直接返回 null，避免误判。
  * - sourceId 存在字符串数字场景，统一使用 Number(...) 比较，避免类型不一致导致漏命中。
+ * - 战斗已结束（phase === 'finished'）时不算作"活跃战斗"，避免状态残留导致误判。
  */
 function findActiveBattleByCharacterId(characterId: number): ActiveBattleByCharacter | null {
   const normalizedCharacterId = Math.floor(Number(characterId));
@@ -368,6 +369,10 @@ function findActiveBattleByCharacterId(characterId: number): ActiveBattleByChara
 
   for (const [battleId, engine] of activeBattles.entries()) {
     const state = engine.getState();
+
+    // 战斗已结束不算作活跃战斗
+    if (state.phase === 'finished') continue;
+
     const units = [...state.teams.attacker.units, ...state.teams.defender.units];
     for (const unit of units) {
       if (unit.type !== 'player') continue;
