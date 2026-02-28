@@ -14,6 +14,7 @@ import {
   invalidateCharacterComputedCacheByUserId,
 } from '../services/characterComputedService.js';
 import { getRemainingCooldown } from '../services/battle/cooldownManager.js';
+import { syncBattleStateOnReconnect } from '../services/battle/index.js';
 
 // 玩家会话
 interface PlayerSession {
@@ -128,6 +129,9 @@ class GameServer {
           if (character) {
             await this.syncBattleCooldownOnReconnect(socket, character.id);
           }
+
+          // 同步战斗状态（重连时）
+          await syncBattleStateOnReconnect(userId);
 
           this.scheduleEmitOnlinePlayers(true);
         } catch (error) {

@@ -2349,6 +2349,41 @@ export async function onUserJoinTeam(userId: number): Promise<void> {
   }
 }
 
+/**
+ * 玩家重连时同步战斗状态
+ *
+ * 场景：
+ * - 服务器重启后从 Redis 恢复战斗
+ * - 玩家重连时需要知道自己是否还在战斗中
+ *
+ * 数据流：
+ * - 查找玩家的活跃战斗 -> 推送 battle_started 事件 -> 前端恢复战斗界面
+ */
+export async function syncBattleStateOnReconnect(userId: number): Promise<void> {
+  const battleIds = listActiveBattleIdsByUserId(userId);
+  if (battleIds.length === 0) return;
+
+  const gameServer = getGameServer();
+  if (!gameServer) return;
+
+  for (const battleId of battleIds) {
+    const engine = activeBattles.get(battleId);
+    if (!engine) continue;
+
+    const state = engine.getState();
+
+    // 跳过已结束的战斗
+    if (state.phase === 'finished') continue;
+
+    // 推送战斗状态，让前端恢复战斗界面
+    gameServer.emitToUser(userId, 'battle:update', {
+      kind: 'battle_started',
+      battleId,
+      state,
+    });
+  }
+}
+
 export async function onUserLeaveTeam(userId: number): Promise<void> {
   const battleIds = listActiveBattleIdsByUserId(userId);
   if (battleIds.length === 0) return;

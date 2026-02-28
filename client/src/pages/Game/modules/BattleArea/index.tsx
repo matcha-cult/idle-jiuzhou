@@ -834,8 +834,15 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       if (currentId && incomingBattleId !== currentId) return;
       lastSocketBattleUpdateAtRef.current = Date.now();
 
-      if (kind === 'battle_started' && !currentId) {
-        setBattleId(incomingBattleId);
+      if (kind === 'battle_started') {
+        // 重连场景：如果已有 battleId 且与推送的不同，忽略
+        if (currentId && incomingBattleId !== currentId) return;
+
+        // 新战斗或重连恢复
+        if (!currentId) {
+          setBattleId(incomingBattleId);
+        }
+
         const nextState = data?.state as BattleStateDto | undefined;
         if (nextState) {
           setStartupStatus('none');
