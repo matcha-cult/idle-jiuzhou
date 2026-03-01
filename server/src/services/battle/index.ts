@@ -66,8 +66,6 @@ const activeBattles = new Map<string, BattleEngine>();
 const battleParticipants = new Map<string, number[]>();
 const finishedBattleResults = new Map<string, { result: BattleResult; at: number }>();
 const FINISHED_BATTLE_TTL_MS = 2 * 60 * 1000;
-const characterAutoCastCache = new Map<number, { enabled: boolean; at: number }>();
-const CHARACTER_AUTO_CAST_CACHE_TTL_MS = 15000;
 const battleTickers = new Map<string, ReturnType<typeof setInterval>>();
 const battleTickLocks = new Set<string>();
 const characterOwnerCache = new Map<number, { userId: number; at: number }>();
@@ -1201,23 +1199,6 @@ async function getBattleMonsters(engine: BattleEngine): Promise<MonsterData[]> {
   return monsters;
 }
 
-async function getCharacterAutoCastSkillsEnabled(characterId: number): Promise<boolean> {
-  if (!Number.isFinite(characterId) || characterId <= 0) return false;
-  const cached = characterAutoCastCache.get(characterId);
-  const now = Date.now();
-  if (cached && now - cached.at <= CHARACTER_AUTO_CAST_CACHE_TTL_MS) return cached.enabled;
-
-  try {
-    const res = await query('SELECT auto_cast_skills FROM characters WHERE id = $1', [characterId]);
-    const enabled = Boolean(res.rows?.[0]?.auto_cast_skills);
-    characterAutoCastCache.set(characterId, { enabled, at: now });
-    return enabled;
-  } catch {
-    characterAutoCastCache.set(characterId, { enabled: false, at: now });
-    return false;
-  }
-}
-
 async function getUserIdByCharacterId(characterId: number): Promise<number | null> {
   if (!Number.isFinite(characterId) || characterId <= 0) return null;
   const cached = characterOwnerCache.get(characterId);
@@ -1289,27 +1270,12 @@ async function tickBattle(battleId: string): Promise<void> {
 
     if (currentUnit.type === 'player') {
       if (state.currentTeam !== 'attacker') {
-        if (state.battleType === 'pvp' && state.currentTeam === 'defender') {
-          engine.aiAction(true);
-          emitBattleUpdate(battleId, { kind: 'battle_state', battleId, state: engine.getState() });
-        }
-        return;
-      }
-      const characterId = Number(currentUnit.sourceId);
-      const ownerUserId = await getUserIdByCharacterId(characterId);
-      const participants = battleParticipants.get(battleId) || [];
-      if (ownerUserId && !participants.includes(ownerUserId)) {
+        // 防守方玩家单位当前仍由服务端推进，避免 PVP 在 defender 回合卡死。
         engine.aiAction(true);
         emitBattleUpdate(battleId, { kind: 'battle_state', battleId, state: engine.getState() });
         return;
       }
-      const autoEnabled = await getCharacterAutoCastSkillsEnabled(characterId);
-      if (!autoEnabled) {
-        // 玩家回合开始，推送状态通知客户端
-        emitBattleUpdate(battleId, { kind: 'battle_state', battleId, state: engine.getState() });
-        return;
-      }
-      engine.aiAction(true);
+      // 进攻方玩家单位回合统一由客户端驱动：服务端仅推送当前状态，等待客户端发起 playerAction。
       emitBattleUpdate(battleId, { kind: 'battle_state', battleId, state: engine.getState() });
       return;
     }
