@@ -179,10 +179,6 @@ async function flushBuffer(
       newItems,
       bagFullFlag,
     });
-
-    console.log(
-      `[IdleBattleExecutor] 会话 ${sessionId} flush 完成：${batches.length} 场战斗`,
-    );
   } catch (err) {
     console.error(`[IdleBattleExecutor] flush 失败:`, err);
     // flush 失败时将 batches 放回缓冲区（下次重试）
