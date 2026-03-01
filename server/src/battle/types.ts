@@ -175,6 +175,7 @@ export interface DotEffect {
   damage: number;
   damageType: 'physical' | 'magic' | 'true';
   element?: string;
+  bonusTargetMaxQixueRate?: number;
 }
 
 export interface HotEffect {

@@ -773,18 +773,18 @@
       "icon": "/assets/skills/icon_skill_02.png",
       "source_type": "technique",
       "source_id": "tech-tunajue",
-      "cost_lingqi": 15,
-      "cooldown": 3,
+      "cost_lingqi": 18,
+      "cooldown": 5,
       "target_type": "self",
       "damage_type": "none",
       "element": "none",
       "effects": [
         {
           "type": "heal",
-          "value": 80,
+          "value": 10,
           "valueType": "scale",
           "scaleAttr": "max_qixue",
-          "scaleRate": 0.8
+          "scaleRate": 0.1
         }
       ],
       "trigger_type": "active",
@@ -797,10 +797,10 @@
             "effects": [
               {
                 "type": "heal",
-                "value": 110,
+                "value": 15,
                 "valueType": "scale",
                 "scaleAttr": "max_qixue",
-                "scaleRate": 1.1
+                "scaleRate": 0.15
               }
             ]
           }
@@ -827,10 +827,10 @@
         },
         {
           "type": "heal",
-          "value": 50,
+          "value": 10,
           "valueType": "scale",
           "scaleAttr": "max_qixue",
-          "scaleRate": 0.5
+          "scaleRate": 0.1
         }
       ],
       "trigger_type": "active",
@@ -847,10 +847,10 @@
               },
               {
                 "type": "heal",
-                "value": 80,
+                "value": 15,
                 "valueType": "scale",
                 "scaleAttr": "max_qixue",
-                "scaleRate": 0.8
+                "scaleRate": 0.15
               }
             ]
           }

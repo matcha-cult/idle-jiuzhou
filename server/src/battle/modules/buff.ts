@@ -200,6 +200,10 @@ export function processRoundEndBuffs(
 function calculateDotDamage(dot: DotEffect, target: BattleUnit): number {
   // DOT伤害不受防御影响，但受五行抗性影响
   let damage = dot.damage;
+
+  if (dot.bonusTargetMaxQixueRate && dot.bonusTargetMaxQixueRate > 0) {
+    damage += target.currentAttrs.max_qixue * dot.bonusTargetMaxQixueRate;
+  }
   
   if (dot.element && dot.element !== 'none') {
     const resistance = getElementResistanceForDot(target, dot.element);

@@ -30,6 +30,7 @@ interface SkillExecutionResult {
 }
 
 const PERCENT_BUFF_ATTR_SET = new Set(['wugong', 'fagong', 'wufang', 'fafang']);
+const BURN_TARGET_MAX_QIXUE_BONUS_RATE = 0.01;
 const BUFF_ATTR_ALIAS: Record<string, string> = {
   'max-lingqi': 'max_lingqi',
   'kongzhi-kangxing': 'kongzhi_kangxing',
@@ -116,6 +117,7 @@ function buildBuffRuntimeData(
         damage: dotDamage,
         damageType: skill.damageType === 'magic' ? 'magic' : 'physical',
         element: skill.element || 'none',
+        bonusTargetMaxQixueRate: BURN_TARGET_MAX_QIXUE_BONUS_RATE,
       },
     };
   }
