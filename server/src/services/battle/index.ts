@@ -1304,7 +1304,16 @@ function getAttackerPlayerCount(state: BattleState): number {
   return (state.teams?.attacker?.units ?? []).filter((unit) => unit.type === 'player').length;
 }
 
+function hasAnyOnlineUser(userIds: number[], gameServer: ReturnType<typeof getGameServer>): boolean {
+  for (const userId of userIds) {
+    if (!Number.isFinite(userId) || userId <= 0) continue;
+    if (gameServer.isUserOnline(userId)) return true;
+  }
+  return false;
+}
+
 async function shouldServerTakeoverDisconnectedPlayerTurn(
+  battleId: string,
   state: BattleState,
   currentUnit: BattleUnit,
 ): Promise<boolean> {
@@ -1312,13 +1321,15 @@ async function shouldServerTakeoverDisconnectedPlayerTurn(
   if (currentUnit.type !== 'player') return false;
   if (getAttackerPlayerCount(state) <= 1) return false;
 
+  const gameServer = getGameServer();
+  const participants = battleParticipants.get(battleId) || [];
+  if (!hasAnyOnlineUser(participants, gameServer)) return false;
+
   const characterId = Math.floor(Number(currentUnit.sourceId));
   if (!Number.isFinite(characterId) || characterId <= 0) return true;
 
   const ownerUserId = await getUserIdByCharacterId(characterId);
   if (!ownerUserId) return true;
-
-  const gameServer = getGameServer();
   return !gameServer.isUserOnline(ownerUserId);
 }
 
@@ -1386,7 +1397,7 @@ async function tickBattle(battleId: string): Promise<void> {
         emitBattleUpdate(battleId, { kind: 'battle_state', battleId, state: engine.getState() });
         return;
       }
-      if (await shouldServerTakeoverDisconnectedPlayerTurn(state, currentUnit)) {
+      if (await shouldServerTakeoverDisconnectedPlayerTurn(battleId, state, currentUnit)) {
         engine.aiAction(true);
         emitBattleUpdate(battleId, { kind: 'battle_state', battleId, state: engine.getState() });
         return;

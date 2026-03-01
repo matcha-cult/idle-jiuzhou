@@ -54,12 +54,80 @@ interface TeamInfo {
 
 type TeamApplicationStatus = 'pending' | 'approved' | 'rejected' | 'expired';
 
-const isPgUniqueViolation = (error: unknown, constraintName?: string): boolean => {
-  if (!error || typeof error !== 'object') return false;
-  const row = error as { code?: unknown; constraint?: unknown };
-  if (row.code !== '23505') return false;
-  if (!constraintName) return true;
-  return row.constraint === constraintName;
+interface TeamMemberQueryRow {
+  character_id: number;
+  user_id: number;
+  role: string;
+  nickname: string;
+  realm: string;
+  sub_realm: string | null;
+  avatar: string | null;
+}
+
+const toPositiveInt = (value: unknown): number | null => {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+};
+
+const normalizeTeamMemberRole = (value: unknown): TeamMember['role'] => {
+  return value === 'leader' ? 'leader' : 'member';
+};
+
+const resolveTeamMemberOnlineMap = (rows: TeamMemberQueryRow[]): Map<number, boolean> => {
+  const userIds = Array.from(new Set(rows
+    .map((row) => toPositiveInt(row.user_id))
+    .filter((id): id is number => id !== null)));
+  const result = new Map<number, boolean>();
+  if (userIds.length === 0) return result;
+
+  try {
+    const gameServer = getGameServer();
+    for (const userId of userIds) {
+      result.set(userId, gameServer.isUserOnline(userId));
+    }
+  } catch {
+    for (const userId of userIds) {
+      result.set(userId, false);
+    }
+  }
+
+  return result;
+};
+
+const buildTeamMembers = (rows: TeamMemberQueryRow[]): TeamMember[] => {
+  const onlineMap = resolveTeamMemberOnlineMap(rows);
+  const members: TeamMember[] = [];
+
+  for (const row of rows) {
+    const characterId = toPositiveInt(row.character_id);
+    if (!characterId) continue;
+    const userId = toPositiveInt(row.user_id);
+    members.push({
+      id: `tm-${characterId}`,
+      characterId,
+      name: String(row.nickname || ''),
+      role: normalizeTeamMemberRole(row.role),
+      realm: getFullRealm(String(row.realm || ''), row.sub_realm),
+      online: userId ? (onlineMap.get(userId) ?? false) : false,
+      avatar: row.avatar,
+    });
+  }
+
+  return members;
+};
+
+const getTeamMembersByTeamId = async (teamId: string): Promise<TeamMember[]> => {
+  const membersResult = await query(
+    `SELECT tm.character_id, c.user_id, tm.role, c.nickname, c.realm, c.sub_realm, c.avatar
+     FROM team_members tm
+     JOIN characters c ON tm.character_id = c.id
+     WHERE tm.team_id = $1
+     ORDER BY tm.role DESC, tm.joined_at ASC`,
+    [teamId]
+  );
+
+  return buildTeamMembers(membersResult.rows as TeamMemberQueryRow[]);
 };
 
 const emitTeamUpdateToUserIds = (userIds: number[], payload: any) => {
@@ -136,25 +204,7 @@ export const getCharacterTeam = async (characterId: number) => {
 
   const team = teamResult.rows[0];
 
-  // 获取队伍成员
-  const membersResult = await query(
-    `SELECT tm.character_id, tm.role, c.nickname, c.realm, c.sub_realm, c.avatar
-     FROM team_members tm
-     JOIN characters c ON tm.character_id = c.id
-     WHERE tm.team_id = $1
-     ORDER BY tm.role DESC, tm.joined_at ASC`,
-    [teamId]
-  );
-
-  const members: TeamMember[] = membersResult.rows.map((row: any) => ({
-    id: `tm-${row.character_id}`,
-    characterId: row.character_id,
-    name: row.nickname,
-    role: row.role,
-    realm: getFullRealm(row.realm, row.sub_realm),
-    online: true, // TODO: 实现在线状态检测
-    avatar: row.avatar,
-  }));
+  const members = await getTeamMembersByTeamId(teamId);
 
   const teamInfo: TeamInfo = {
     id: team.id,
@@ -193,25 +243,7 @@ export const getTeamById = async (teamId: string) => {
 
   const team = teamResult.rows[0];
 
-  // 获取队伍成员
-  const membersResult = await query(
-    `SELECT tm.character_id, tm.role, c.nickname, c.realm, c.sub_realm, c.avatar
-     FROM team_members tm
-     JOIN characters c ON tm.character_id = c.id
-     WHERE tm.team_id = $1
-     ORDER BY tm.role DESC, tm.joined_at ASC`,
-    [teamId]
-  );
-
-  const members: TeamMember[] = membersResult.rows.map((row: any) => ({
-    id: `tm-${row.character_id}`,
-    characterId: row.character_id,
-    name: row.nickname,
-    role: row.role,
-    realm: getFullRealm(row.realm, row.sub_realm),
-    online: true,
-    avatar: row.avatar,
-  }));
+  const members = await getTeamMembersByTeamId(teamId);
 
   return {
     success: true,
