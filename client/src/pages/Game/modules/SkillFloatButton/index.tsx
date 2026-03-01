@@ -138,13 +138,6 @@ const resolveSkillIcon = (icon: string | null | undefined): string => {
   return FALLBACK_SKILL_ICON;
 };
 
-const computeActualCooldown = (baseCooldownTurns: number, cooldownReductionPercent: number): number => {
-  const base = Math.max(0, Math.floor(Number(baseCooldownTurns) || 0));
-  if (base <= 0) return 0;
-  const cdReduction = Math.min(Math.max(0, Number(cooldownReductionPercent) || 0), 0.5);
-  return Math.max(1, Math.floor(base * (1 - cdReduction)));
-};
-
 const buildSkillItems = (
   equippedSkills: CharacterSkillSlotDto[],
   available: AvailableSkillDto[] | null | undefined,
@@ -401,13 +394,6 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
     return () => window.clearTimeout(t);
   }, [open, refreshSkillConfig]);
 
-  const tickTurns = useCallback((delta: number) => {
-    if (!Number.isFinite(delta) || delta <= 0) return;
-    setSkills((prev) =>
-      prev.map((s) => (s.cooldownLeft > 0 ? { ...s, cooldownLeft: Math.max(0, s.cooldownLeft - delta) } : s))
-    );
-  }, []);
-
   useEffect(() => {
     if (turn == null) {
       lastExternalTurnRef.current = null;
@@ -494,8 +480,7 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
 
   const nextLocalTurn = useCallback(() => {
     setLocalTurn((t) => t + 1);
-    tickTurns(1);
-  }, [tickTurns]);
+  }, []);
 
   const castSkill = useCallback(
     async (skillId: string, notify: boolean): Promise<boolean> => {
@@ -526,26 +511,12 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
             if (notify) message.error('当前无法释放');
             return false;
           }
-          const cdReduction = gameSocket.getCharacter()?.lengque ?? 0;
-          setSkills((prev) =>
-            prev.map((s) =>
-              s.id === skillId
-                ? { ...s, cooldownLeft: computeActualCooldown(s.cooldownTurns, cdReduction) }
-                : s,
-            ),
-          );
           if (notify) message.success(`已释放：${target.name}`);
           return true;
         } finally {
           setIsCasting(false);
         }
       } else {
-        // 非战斗模式
-        setSkills((prev) =>
-          prev.map((s) =>
-            s.id === skillId ? { ...s, cooldownLeft: s.cooldownTurns > 0 ? s.cooldownTurns : 0 } : s,
-          ),
-        );
         if (notify) message.success(`已释放：${target.name}`);
         return true;
       }
@@ -706,8 +677,6 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
         .map((s) => {
           // 禁用条件：冷却中、正在释放、战斗中但不是玩家回合
           const isDisabled = s.cooldownLeft > 0 || isCasting || (turn != null && isBattleRunning && !isMyTurn);
-          const cdReduction = gameSocket.getCharacter()?.lengque ?? 0;
-          const actualCd = computeActualCooldown(s.cooldownTurns, cdReduction);
           const effectLines = formatSkillEffectLines(s.effects, {
             damageType: s.damageType,
             element: s.element,
@@ -733,9 +702,7 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
                 {hasCooldown && (
                   <div className="skill-fab-tooltip-row">
                     <span className="skill-fab-tooltip-label">冷却</span>
-                    <span className="skill-fab-tooltip-value">
-                      {actualCd}回合{actualCd !== s.cooldownTurns ? <span className="skill-fab-tooltip-muted">（基础 {s.cooldownTurns}）</span> : null}
-                    </span>
+                    <span className="skill-fab-tooltip-value">{s.cooldownTurns}回合</span>
                   </div>
                 )}
                 <div className="skill-fab-tooltip-row">
