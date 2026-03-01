@@ -626,7 +626,6 @@ class BattleDropService {
         location: 'bag',
         bindType: drop.bindType,
         obtainedFrom: 'battle_drop',
-        dbClient: client,
       };
       if (sourceMeta.category === 'equipment') {
         createOptions.equipOptions = {
@@ -660,13 +659,12 @@ class BattleDropService {
             obtainedFrom,
             ...(bindType ? { bindType } : {}),
             ...(equipOptions ? { equipOptions } : {}),
-            dbClient: client,
           });
         },
         addSilver: async (ownerCharacterId, silverGain) => {
           const safeSilver = Math.max(0, Math.floor(Number(silverGain) || 0));
           if (safeSilver <= 0) return { success: true, message: '无需增加银两' };
-          const updateResult = await client.query(
+          const updateResult = await query(
             `
               UPDATE characters
               SET silver = silver + $1,

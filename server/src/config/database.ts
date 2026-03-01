@@ -79,6 +79,12 @@ type DecoratedPoolClient = PoolClient & {
   __txRawRelease?: (err?: Error | boolean) => void;
 };
 
+type ErrorChainEntry = {
+  name: string;
+  message: string;
+  stack?: string;
+};
+
 let decoratedClientIdCounter = 0;
 
 const getActiveTransactionContext = (): TransactionContext | null => {
@@ -181,6 +187,42 @@ const isPromiseLike = (value: unknown): value is PromiseLike<unknown> => {
   );
 };
 
+const buildErrorChain = (error: unknown, maxDepth = 8): ErrorChainEntry[] => {
+  const chain: ErrorChainEntry[] = [];
+  let current: unknown = error;
+  let depth = 0;
+
+  while (depth < maxDepth) {
+    if (!(current instanceof Error)) {
+      chain.push({
+        name: 'NonError',
+        message: String(current),
+      });
+      break;
+    }
+
+    chain.push({
+      name: current.name || 'Error',
+      message: current.message,
+      stack: current.stack,
+    });
+
+    const cause = current.cause;
+    if (!cause || cause === current) {
+      break;
+    }
+
+    current = cause;
+    depth += 1;
+  }
+
+  return chain;
+};
+
+const captureCallStack = (label: string): string | undefined => {
+  return new Error(label).stack;
+};
+
 const executeRawQueryAsPromise = (
   rawQuery: QueryCallable,
   sql: string,
@@ -206,6 +248,7 @@ const normalizeClientStateOnCheckout = (state: ClientTransactionState): void => 
       clientId: state.clientId,
       depth: state.depth,
       savepointStack: state.savepointStack,
+      checkoutCallStack: captureCallStack('连接借出时检测到未完成事务状态'),
     });
     resetClientTransactionState(state);
   }
@@ -367,8 +410,14 @@ const decoratePoolClient = (client: PoolClient): PoolClient => {
   }) as PoolClient['query'];
 
   client.release = ((err?: Error | boolean) => {
+    const releaseCallStack = captureCallStack('数据库连接 release 调用栈');
+
     if (state.released) {
-      console.warn('警告：尝试重复释放连接', { clientId: state.clientId, depth: state.depth });
+      console.warn('警告：尝试重复释放连接', {
+        clientId: state.clientId,
+        depth: state.depth,
+        releaseCallStack,
+      });
       return;
     }
 
@@ -380,14 +429,16 @@ const decoratePoolClient = (client: PoolClient): PoolClient => {
       console.error('错误：事务未结束就释放连接', {
         clientId: state.clientId,
         depth: state.depth,
-        savepointStack: state.savepointStack
+        savepointStack: state.savepointStack,
+        releaseCallStack,
       });
       // 尽力先回滚再释放，避免直接断连影响同调用链后续逻辑。
       void executeRawQueryAsPromise(rawQuery, 'ROLLBACK')
         .catch((rollbackError) => {
           console.error('错误：释放连接时回滚失败', {
             clientId: state.clientId,
-            error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+            releaseCallStack,
+            errorChain: buildErrorChain(rollbackError),
           });
         })
         .finally(() => {
@@ -538,9 +589,17 @@ export const withTransaction = async <T>(
       await parentContext.client.query('COMMIT');
       return result;
     } catch (error) {
+      console.error('错误：嵌套事务执行失败，准备回滚到 SAVEPOINT', {
+        errorChain: buildErrorChain(error),
+        callStack: captureCallStack('withTransaction 嵌套事务异常调用栈'),
+      });
       try {
         await parentContext.client.query('ROLLBACK');
-      } catch {
+      } catch (rollbackError) {
+        console.error('错误：嵌套事务回滚失败', {
+          errorChain: buildErrorChain(rollbackError),
+          callStack: captureCallStack('withTransaction 嵌套事务回滚失败调用栈'),
+        });
         // 嵌套回滚失败不覆盖主异常，主异常继续上抛。
       }
       throw error;
@@ -557,9 +616,17 @@ export const withTransaction = async <T>(
     client.release();
     return result;
   } catch (error) {
+    console.error('错误：根事务执行失败，准备回滚并释放连接', {
+      errorChain: buildErrorChain(error),
+      callStack: captureCallStack('withTransaction 根事务异常调用栈'),
+    });
     try {
       await client.query('ROLLBACK');
-    } catch {
+    } catch (rollbackError) {
+      console.error('错误：根事务回滚失败', {
+        errorChain: buildErrorChain(rollbackError),
+        callStack: captureCallStack('withTransaction 根事务回滚失败调用栈'),
+      });
       // 根事务回滚失败不覆盖主异常，主异常继续上抛。
     }
     client.release();
