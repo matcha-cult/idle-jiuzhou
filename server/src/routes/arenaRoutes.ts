@@ -101,7 +101,7 @@ router.post('/match', async (req: Request, res: Response) => {
     const list = oppRes.data ?? [];
     if (list.length === 0) return res.status(400).json({ success: false, message: '暂无可匹配对手' });
 
-    const pick = list[Math.floor(Math.random() * list.length)];
+    const pick = list[0];
     const opponentCharacterId = Number(pick.id);
     if (!Number.isFinite(opponentCharacterId) || opponentCharacterId <= 0) {
       return res.status(400).json({ success: false, message: '匹配对手异常' });

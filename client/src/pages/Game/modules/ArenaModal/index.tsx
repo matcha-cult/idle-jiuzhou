@@ -1,17 +1,13 @@
-import { App, Button, Modal, Progress, Segmented, Table, Tabs, Tag } from 'antd';
+import { App, Button, Modal, Progress } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { gameSocket, type CharacterData } from '../../../../services/gameSocket';
 import {
-  arenaChallenge,
   arenaMatch,
-  getArenaOpponents,
   getArenaRecords,
   getArenaStatus,
-  type ArenaOpponentDto,
   type ArenaRecordDto,
   type ArenaStatusDto,
 } from '../../../../services/api';
-import { useIsMobile } from '../../shared/responsive';
 import './index.scss';
 
 interface ArenaModalProps {
@@ -22,9 +18,26 @@ interface ArenaModalProps {
 }
 
 type ArenaTab = 'match' | 'record' | 'rule';
-const arenaTabKeys: ArenaTab[] = ['match', 'record', 'rule'];
+const ARENA_MATCH_RANGE_TEXT = '±50 → ±100 → ±200 → ±400';
 
-const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+const ARENA_RULE_MATCH_ITEMS = [
+  '系统根据你的积分自动匹配对手',
+  '优先匹配积分接近的对手（±50）',
+  `若无合适对手，逐步扩大范围（${ARENA_MATCH_RANGE_TEXT}）`,
+  '积分差距越小，被匹配概率越高',
+];
+
+interface ArenaRuleSection {
+  heading: string;
+  details: string[];
+}
+
+const ARENA_RULE_SECTIONS: ArenaRuleSection[] = [
+  { heading: '1）今日挑战次数上限：20 次', details: [] },
+  { heading: '2）匹配机制：', details: ARENA_RULE_MATCH_ITEMS },
+  { heading: '3）积分变化：', details: ['胜利 +10 分', '失败 -5 分（最低 0 分）'] },
+  { heading: '4）战斗规则：', details: ['战斗中治疗效果会有一定压制'] },
+];
 
 const calcPower = (c: CharacterData | null): number => {
   if (!c) return 0;
@@ -38,74 +51,69 @@ const calcPower = (c: CharacterData | null): number => {
   return Math.max(1, Math.round(base));
 };
 
-const formatRate = (v: number) => `${Math.round(clamp(v, 0, 1) * 100)}%`;
+const formatArenaRecordTime = (ts: number) => {
+  const d = new Date(ts);
+  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+const formatScoreDelta = (delta: number) => (delta > 0 ? `+${delta}` : String(delta));
+
+const renderResultTag = (result: ArenaRecordDto['result']) => {
+  if (result === 'win') return <span className="ar-result is-win">胜利</span>;
+  if (result === 'lose') return <span className="ar-result is-lose">失败</span>;
+  return <span className="ar-result is-draw">平局</span>;
+};
 
 const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onStartBattle }) => {
   const { message } = App.useApp();
   const [tab, setTab] = useState<ArenaTab>('match');
-  const isMobile = useIsMobile();
   const [matching, setMatching] = useState(false);
   const [matchProgress, setMatchProgress] = useState(0);
   const matchTimerRef = useRef<number | null>(null);
   const progressTimerRef = useRef<number | null>(null);
+  const isMatchingRef = useRef<boolean>(false);
 
   const selfPower = useMemo(() => calcPower(character), [character]);
   const selfName = character?.nickname || '我';
   const selfRealm = character?.realm || '凡人';
 
   const [status, setStatus] = useState<ArenaStatusDto | null>(null);
-  const [opponents, setOpponents] = useState<ArenaOpponentDto[]>([]);
   const [records, setRecords] = useState<ArenaRecordDto[]>([]);
   const score = status?.score ?? 1000;
-
-  const refreshOpponents = useCallback(async () => {
-    try {
-      const res = await getArenaOpponents(10);
-      if (!res.success) {
-        void 0;
-        setOpponents([]);
-        return;
-      }
-      setOpponents(res.data ?? []);
-    } catch (e) {
-      void 0;
-      setOpponents([]);
-    }
-  }, [message]);
+  const winCount = status?.winCount ?? 0;
+  const loseCount = status?.loseCount ?? 0;
+  const todayChallengeText = status ? `${status.todayUsed}/${status.todayLimit}` : '--';
+  const todayRemainingText = status ? String(status.todayRemaining) : '--';
 
   const refreshStatus = useCallback(async () => {
     try {
       const res = await getArenaStatus();
       if (!res.success) {
-        void 0;
         setStatus(null);
         return;
       }
       setStatus(res.data ?? null);
     } catch (e) {
-      void 0;
       setStatus(null);
     }
-  }, [message]);
+  }, []);
 
   const refreshRecords = useCallback(async () => {
     try {
       const res = await getArenaRecords(50);
       if (!res.success) {
-        void 0;
         setRecords([]);
         return;
       }
       setRecords(res.data ?? []);
     } catch (e) {
-      void 0;
       setRecords([]);
     }
-  }, [message]);
+  }, []);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([refreshStatus(), refreshOpponents(), refreshRecords()]);
-  }, [refreshOpponents, refreshRecords, refreshStatus]);
+    await Promise.all([refreshStatus(), refreshRecords()]);
+  }, [refreshRecords, refreshStatus]);
 
   const clearTimers = useCallback(() => {
     if (matchTimerRef.current) {
@@ -119,6 +127,7 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
   }, []);
 
   const stopMatching = useCallback(() => {
+    isMatchingRef.current = false;
     clearTimers();
     setMatching(false);
     setMatchProgress(0);
@@ -148,6 +157,7 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
 
   const startQuickMatch = useCallback(() => {
     if (matching) return;
+    isMatchingRef.current = true;
     setMatching(true);
     setMatchProgress(0);
     if (progressTimerRef.current) window.clearInterval(progressTimerRef.current);
@@ -162,8 +172,8 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
       void (async () => {
         try {
           const res = await arenaMatch();
+          if (!isMatchingRef.current) return;
           if (!res?.success || !res.data?.battleId) {
-            void 0;
             stopMatching();
             return;
           }
@@ -171,40 +181,12 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
           onClose();
           onStartBattle?.(res.data.battleId);
         } catch (e) {
-          void 0;
+          if (!isMatchingRef.current) return;
           stopMatching();
         }
       })();
     }, 900);
-  }, [matching, message, onClose, onStartBattle, stopMatching]);
-
-  const handleChallenge = useCallback(
-    async (opp: ArenaOpponentDto) => {
-      try {
-        const res = await arenaChallenge(opp.id);
-        if (!res?.success || !res.data?.battleId) {
-          void 0;
-          return;
-        }
-        onClose();
-        onStartBattle?.(res.data.battleId);
-      } catch (e) {
-        void 0;
-      }
-    },
-    [message, onClose, onStartBattle],
-  );
-
-  const winRateHint = useCallback(
-    (oppPower: number) => {
-      const sp = Math.max(1, selfPower || 1);
-      const op = Math.max(1, oppPower || 1);
-      const raw = sp / (sp + op);
-      const rate = clamp(0.2 + raw * 0.6, 0.2, 0.8);
-      return formatRate(rate);
-    },
-    [selfPower],
-  );
+  }, [matching, onClose, onStartBattle, stopMatching]);
 
   const tabItems = useMemo(
     () => [
@@ -212,30 +194,53 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
         key: 'match',
         label: '匹配',
         children: (
-          <div className={`arena-match-layout ${isMobile ? 'is-mobile' : ''}`}>
+          <div className="arena-match-layout">
             <div className="arena-self-card">
               <div className="arena-self-head">
                 <div className="arena-self-title">我的信息</div>
-                <Tag color="blue">积分 {score}</Tag>
               </div>
+
+              <div className="arena-self-score">
+                <div className="arena-self-score-label">当前积分</div>
+                <div className="arena-self-score-value">{score}</div>
+              </div>
+
+              <div className="arena-self-metrics">
+                <div className="arena-self-metric">
+                  <span className="arena-self-metric-label">胜场</span>
+                  <span className="arena-self-metric-value is-win">{winCount}</span>
+                </div>
+                <div className="arena-self-metric">
+                  <span className="arena-self-metric-label">负场</span>
+                  <span className="arena-self-metric-value is-lose">{loseCount}</span>
+                </div>
+              </div>
+
               <div className="arena-self-meta">
-                <div>玩家：{selfName}</div>
-                <div>境界：{selfRealm}</div>
-                <div>战力：{selfPower.toLocaleString()}</div>
-                <div className="arena-self-meta-line">
-                  今日挑战：{status ? `${status.todayUsed}/${status.todayLimit}` : '--'}（剩余 {status ? status.todayRemaining : '--'}）
+                <div className="arena-self-meta-row">
+                  <span className="arena-self-meta-key">玩家</span>
+                  <span className="arena-self-meta-value is-highlight">{selfName}</span>
+                </div>
+                <div className="arena-self-meta-row">
+                  <span className="arena-self-meta-key">境界</span>
+                  <span className="arena-self-meta-value is-highlight">{selfRealm}</span>
+                </div>
+                <div className="arena-self-meta-row">
+                  <span className="arena-self-meta-key">战力</span>
+                  <span className="arena-self-meta-value">{selfPower.toLocaleString()}</span>
+                </div>
+                <div className="arena-self-meta-row">
+                  <span className="arena-self-meta-key">今日挑战</span>
+                  <span className="arena-self-meta-value">{todayChallengeText}（剩余 {todayRemainingText}）</span>
                 </div>
               </div>
 
               <div className="arena-self-actions">
-                <Button type="primary" disabled={matching} onClick={startQuickMatch}>
-                  一键匹配
-                </Button>
-                <Button disabled={matching} onClick={() => void refreshOpponents()}>
-                  刷新对手
+                <Button type="primary" size="large" block disabled={matching} onClick={startQuickMatch} className="arena-match-btn">
+                  {matching ? '匹配中...' : '一键匹配'}
                 </Button>
                 {matching ? (
-                  <Button danger onClick={stopMatching}>
+                  <Button danger block onClick={stopMatching} className="arena-cancel-btn">
                     取消匹配
                   </Button>
                 ) : null}
@@ -243,97 +248,24 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
 
               {matching ? (
                 <div className="arena-self-matching">
-                  <div className="arena-self-matching-label">匹配中...</div>
                   <Progress percent={matchProgress} showInfo={false} strokeColor="var(--primary-color)" />
                 </div>
-              ) : (
-                <div className="arena-self-tip">
-                  匹配与挑战将进入真实 PVP 战斗，战斗结束后自动结算积分与战报。
-                </div>
-              )}
-            </div>
-
-            <div className="arena-opponents-pane">
-              {isMobile ? (
-                <div className="arena-mobile-list">
-                  {opponents.map((row) => (
-                    <div key={row.id} className="arena-mobile-card">
-                      <div className="arena-mobile-card-head">
-                        <div className="arena-mobile-title">{row.name}</div>
-                        <Tag color="green">{row.realm}</Tag>
-                      </div>
-                      <div className="arena-mobile-meta">
-                        <span className="arena-mobile-meta-item">
-                          <span className="arena-mobile-meta-k">战力</span>
-                          <span className="arena-mobile-meta-v">{row.power.toLocaleString()}</span>
-                        </span>
-                        <span className="arena-mobile-meta-item">
-                          <span className="arena-mobile-meta-k">预计胜率</span>
-                          <span className="arena-mobile-meta-v">{winRateHint(row.power)}</span>
-                        </span>
-                      </div>
-                      <div className="arena-mobile-actions">
-                        <Button size="small" type="primary" disabled={matching} onClick={() => void handleChallenge(row)}>
-                          挑战
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {!opponents.length ? (
-                    <div className="arena-empty">
-                      <div className="arena-empty-text">暂无可匹配对手，可点击刷新重试</div>
-                      <Button size="small" disabled={matching} onClick={() => void refreshOpponents()}>
-                        刷新对手
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <Table
-                  size="small"
-                  rowKey={(row) => String(row.id)}
-                  pagination={false}
-                  columns={[
-                    { title: '对手', dataIndex: 'name', key: 'name', width: 180 },
-                    { title: '境界', dataIndex: 'realm', key: 'realm', width: 140, render: (v: string) => <Tag color="green">{v}</Tag> },
-                    { title: '战力', dataIndex: 'power', key: 'power', width: 140, render: (v: number) => v.toLocaleString() },
-                    { title: '预计胜率', key: 'rate', width: 120, render: (_: unknown, row: ArenaOpponentDto) => winRateHint(row.power) },
-                    {
-                      title: '操作',
-                      key: 'action',
-                      render: (_: unknown, row: ArenaOpponentDto) => (
-                        <Button size="small" type="primary" disabled={matching} onClick={() => void handleChallenge(row)}>
-                          挑战
-                        </Button>
-                      ),
-                    },
-                  ]}
-                  dataSource={opponents}
-                  locale={{
-                    emptyText: (
-                      <div className="arena-empty">
-                        <div className="arena-empty-text">暂无可匹配对手（已自动扩大战力范围），可点击刷新重试</div>
-                        <Button size="small" disabled={matching} onClick={() => void refreshOpponents()}>
-                          刷新对手
-                        </Button>
-                      </div>
-                    ),
-                  }}
-                />
-              )}
+              ) : null}
             </div>
           </div>
         ),
       },
       {
         key: 'record',
-        label: `战报${records.length ? `(${records.length})` : ''}`,
+        label: '战报',
         children: (
           <div className="arena-record-pane">
             <div className="arena-record-head">
               <div className="arena-record-title">最近战报</div>
               <Button
                 size="small"
+                type="text"
+                className="arena-record-clear-btn"
                 disabled={!records.length}
                 onClick={() => {
                   setRecords([]);
@@ -343,91 +275,42 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
                 清空
               </Button>
             </div>
-            {isMobile ? (
-              <div className="arena-mobile-list">
+            
+            <div className="arena-record-list">
+              <div className="arena-record-list-body">
                 {records.map((row) => (
-                  <div key={row.id} className="arena-mobile-card">
-                    <div className="arena-mobile-card-head">
-                      <div className="arena-mobile-title">{row.opponentName}</div>
-                      <Tag color={row.result === 'win' ? 'green' : row.result === 'lose' ? 'red' : 'default'}>
-                        {row.result === 'win' ? '胜利' : row.result === 'lose' ? '失败' : '平局'}
-                      </Tag>
+                  <div key={row.id} className="arena-record-card">
+                    <div className="arena-record-card-head">
+                      <div className="arena-record-card-title">{row.opponentName}</div>
+                      {renderResultTag(row.result)}
                     </div>
-                    <div className="arena-mobile-meta">
-                      <span className="arena-mobile-meta-item">
-                        <span className="arena-mobile-meta-k">时间</span>
-                        <span className="arena-mobile-meta-v">{new Date(row.ts).toLocaleString()}</span>
-                      </span>
-                      <span className="arena-mobile-meta-item">
-                        <span className="arena-mobile-meta-k">境界</span>
-                        <span className="arena-mobile-meta-v">{row.opponentRealm}</span>
-                      </span>
-                      <span className="arena-mobile-meta-item">
-                        <span className="arena-mobile-meta-k">战力</span>
-                        <span className="arena-mobile-meta-v">{row.opponentPower.toLocaleString()}</span>
-                      </span>
-                      <span className="arena-mobile-meta-item">
-                        <span className="arena-mobile-meta-k">积分变化</span>
-                        <span className="arena-mobile-meta-v">{row.deltaScore >= 0 ? `+${row.deltaScore}` : row.deltaScore}</span>
-                      </span>
-                      <span className="arena-mobile-meta-item">
-                        <span className="arena-mobile-meta-k">当前积分</span>
-                        <span className="arena-mobile-meta-v">{row.scoreAfter}</span>
-                      </span>
+                    <div className="arena-record-card-meta">
+                      <div className="arena-record-card-item">
+                        <span className="ar-k">时间</span>
+                        <span className="ar-v">{formatArenaRecordTime(row.ts)}</span>
+                      </div>
+                      <div className="arena-record-card-item">
+                        <span className="ar-k">境界</span>
+                        <span className="ar-v">{row.opponentRealm}</span>
+                      </div>
+                      <div className="arena-record-card-item">
+                        <span className="ar-k">战力</span>
+                        <span className="ar-v">{row.opponentPower.toLocaleString()}</span>
+                      </div>
+                      <div className="arena-record-card-item">
+                        <span className="ar-k">积分变化</span>
+                        <span className="ar-v">{formatScoreDelta(row.deltaScore)}</span>
+                      </div>
+                      <div className="arena-record-card-item">
+                        <span className="ar-k">当前积分</span>
+                        <span className="ar-v">{row.scoreAfter}</span>
+                      </div>
                     </div>
                   </div>
                 ))}
                 {!records.length ? <div className="arena-empty">暂无战报，去匹配挑战吧。</div> : null}
               </div>
-            ) : (
-              <Table
-                size="small"
-                rowKey={(row) => row.id}
-                pagination={false}
-                columns={[
-                  {
-                    title: '时间',
-                    dataIndex: 'ts',
-                    key: 'ts',
-                    width: 180,
-                    render: (v: number) => new Date(v).toLocaleString(),
-                  },
-                  { title: '对手', dataIndex: 'opponentName', key: 'opponentName', width: 180 },
-                  {
-                    title: '境界',
-                    dataIndex: 'opponentRealm',
-                    key: 'opponentRealm',
-                    width: 140,
-                    render: (v: string) => <Tag color="green">{v}</Tag>,
-                  },
-                  {
-                    title: '战力',
-                    dataIndex: 'opponentPower',
-                    key: 'opponentPower',
-                    width: 140,
-                    render: (v: number) => v.toLocaleString(),
-                  },
-                  {
-                    title: '结果',
-                    dataIndex: 'result',
-                    key: 'result',
-                    width: 120,
-                    render: (v: ArenaRecordDto['result']) =>
-                      v === 'win' ? <Tag color="green">胜利</Tag> : v === 'lose' ? <Tag color="red">失败</Tag> : <Tag>平局</Tag>,
-                  },
-                  {
-                    title: '积分变化',
-                    dataIndex: 'deltaScore',
-                    key: 'deltaScore',
-                    width: 120,
-                    render: (v: number) => (v >= 0 ? `+${v}` : String(v)),
-                  },
-                  { title: '当前积分', dataIndex: 'scoreAfter', key: 'scoreAfter', render: (v: number) => v },
-                ]}
-                dataSource={records}
-                locale={{ emptyText: '暂无战报，去匹配挑战吧。' }}
-              />
-            )}
+            </div>
           </div>
         ),
       },
@@ -436,13 +319,16 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
         label: '规则',
         children: (
           <div className="arena-rule">
-            <div className="arena-rule-title">竞技场</div>
-            <div>1）今日挑战次数上限：20 次。</div>
-            <div>2）匹配对手：按战力区间筛选（约 ±20%）。</div>
-            <div>3）积分变化：胜利 +10，失败 -5（最低 0）。</div>
-            <div className="arena-rule-tip">
-              战斗中治疗效果会有一定压制。
-            </div>
+            {ARENA_RULE_SECTIONS.map((section) => (
+              <div key={section.heading} className="arena-rule-block">
+                <div className="arena-rule-heading">{section.heading}</div>
+                {section.details.map((detail) => (
+                  <div key={`${section.heading}-${detail}`} className="arena-rule-indent">
+                    • {detail}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         ),
       },
@@ -450,30 +336,19 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
     [
       matchProgress,
       matching,
-      handleChallenge,
-      message,
-      opponents,
       records,
-      refreshOpponents,
       score,
       selfName,
       selfPower,
       selfRealm,
       startQuickMatch,
-      status,
       stopMatching,
-      winRateHint,
-      isMobile,
+      winCount,
+      loseCount,
+      todayChallengeText,
+      todayRemainingText,
+      message,
     ],
-  );
-
-  const mobileTabOptions = useMemo(
-    () => [
-      { value: 'match', label: '匹配' },
-      { value: 'record', label: `战报${records.length ? `(${records.length})` : ''}` },
-      { value: 'rule', label: '规则' },
-    ],
-    [records.length],
   );
 
   const activePanel = useMemo(() => tabItems.find((it) => it.key === tab)?.children ?? null, [tab, tabItems]);
@@ -485,7 +360,7 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
       footer={null}
       title={null}
       centered
-      width={980}
+      width={480}
       className="arena-modal"
       destroyOnHidden
       maskClosable
@@ -503,31 +378,19 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
       <div className="arena-shell">
         <div className="arena-head">
           <div className="arena-head-title">竞技场</div>
-          <Tag color="blue">当前积分：{score}</Tag>
         </div>
-        {isMobile ? (
-          <>
-            <div className="arena-segmented-wrap">
-              <Segmented
-                className="arena-segmented"
-                value={tab}
-                options={mobileTabOptions}
-                onChange={(value) => {
-                  if (typeof value !== 'string') return;
-                  if (!arenaTabKeys.includes(value as ArenaTab)) return;
-                  setTab(value as ArenaTab);
-                }}
-              />
+        <div className="arena-tabs">
+          {tabItems.map((item) => (
+            <div
+              key={item.key}
+              className={`arena-tab-item ${tab === item.key ? 'is-active' : ''}`}
+              onClick={() => setTab(item.key as ArenaTab)}
+            >
+              <div className="arena-tab-item-text">{item.label}</div>
             </div>
-            <div className="arena-panel">{activePanel}</div>
-          </>
-        ) : (
-          <Tabs
-            activeKey={tab}
-            onChange={(k) => setTab(k as ArenaTab)}
-            items={tabItems as unknown as Array<{ key: string; label: string; children: React.ReactNode }>}
-          />
-        )}
+          ))}
+        </div>
+        <div className="arena-panel">{activePanel}</div>
       </div>
     </Modal>
   );

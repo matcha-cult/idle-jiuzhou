@@ -1,7 +1,6 @@
 import { query } from '../config/database.js';
 import {
   getCharacterComputedBatchByCharacterIds,
-  getCharacterComputedByCharacterId,
 } from './characterComputedService.js';
 
 const MAX_DAILY_CHALLENGES = 20;
@@ -104,6 +103,16 @@ export type ArenaOpponent = {
   score: number;
 };
 
+/**
+ * 获取竞技场匹配对手（基于积分的加权随机匹配）
+ *
+ * 匹配逻辑：
+ * 1. 动态积分范围：±50 → ±100 → ±200 → ±400 → 无限制
+ * 2. 加权随机选择：积分差距越小，被选中概率越高（线性衰减）
+ * 3. 权重计算：weight = max(0, 1 - scoreDiff / maxRange)
+ *
+ * 复用点：此函数被 arenaRoutes 中的快速匹配接口调用
+ */
 export const getArenaOpponents = async (
   characterId: number,
   limit: number = 10
@@ -112,17 +121,20 @@ export const getArenaOpponents = async (
   if (!Number.isFinite(id) || id <= 0) return { success: false, message: '无效的角色ID' };
 
   const l = Math.max(1, Math.min(50, Math.floor(Number(limit) || 10)));
-  const me = await getCharacterComputedByCharacterId(id);
-  if (!me) return { success: false, message: '角色不存在' };
-  const myPower = Math.max(1, computePower(me));
-  const ranges = [
-    { min: 0.8, max: 1.2 },
-    { min: 0.6, max: 1.4 },
-    { min: 0.4, max: 1.6 },
-    { min: 0.2, max: 2.0 },
-    { min: 0.0, max: 2147483647 },
-  ];
 
+  // 获取我的积分
+  await ensureRatingRow(id);
+  const myRatingRes = await query(
+    `SELECT rating FROM arena_rating WHERE character_id = $1`,
+    [id]
+  );
+  if (myRatingRes.rows.length === 0) return { success: false, message: '竞技场数据异常' };
+  const myScore = Number(myRatingRes.rows[0].rating ?? DEFAULT_RATING) || DEFAULT_RATING;
+
+  // 动态积分范围（保守型）
+  const scoreRanges = [50, 100, 200, 400, Number.MAX_SAFE_INTEGER];
+
+  // 查询所有对手的积分
   const rawOppRes = await query(
     `
       SELECT c.id, COALESCE(ar.rating, $2)::int AS score
@@ -132,50 +144,87 @@ export const getArenaOpponents = async (
     `,
     [id, DEFAULT_RATING],
   );
-  const opponentIds = rawOppRes.rows
-    .map((row) => Number((row as { id?: unknown }).id))
-    .filter((x) => Number.isFinite(x) && x > 0);
-  if (opponentIds.length === 0) return { success: true, message: 'ok', data: [] };
-
-  const scoreMap = new Map<number, number>();
+  
+  type LightweightOpponent = { id: number; score: number };
+  const candidateList: LightweightOpponent[] = [];
   for (const row of rawOppRes.rows as Array<{ id?: unknown; score?: unknown }>) {
     const cid = Number(row.id);
     if (!Number.isFinite(cid) || cid <= 0) continue;
-    scoreMap.set(cid, Number(row.score ?? DEFAULT_RATING) || DEFAULT_RATING);
+    candidateList.push({
+      id: cid,
+      score: Number(row.score ?? DEFAULT_RATING) || DEFAULT_RATING,
+    });
   }
 
-  const computedMap = await getCharacterComputedBatchByCharacterIds(opponentIds);
-  const candidateList: ArenaOpponent[] = [];
-  for (const opponentId of opponentIds) {
-    const snapshot = computedMap.get(opponentId);
+  if (candidateList.length === 0) return { success: true, message: 'ok', data: [] };
+
+  // 按积分范围逐级扩大搜索
+  let matchedCandidates: LightweightOpponent[] = [];
+  let currentRange = 0;
+
+  for (const range of scoreRanges) {
+    currentRange = range;
+    matchedCandidates = candidateList.filter((opp) => {
+      const scoreDiff = Math.abs(opp.score - myScore);
+      return scoreDiff <= range;
+    });
+
+    if (matchedCandidates.length > 0) break;
+  }
+
+  if (matchedCandidates.length === 0) {
+    return { success: true, message: 'ok', data: [] };
+  }
+
+  // 加权随机选择（线性衰减）
+  const weightedCandidates = matchedCandidates.map((opp) => {
+    const scoreDiff = Math.abs(opp.score - myScore);
+    const weight = Math.max(0.01, 1 - scoreDiff / currentRange);
+    return { opponent: opp, weight };
+  });
+
+  // 按权重排序后选择前 limit 个（权重高的优先，但保留随机性）
+  const selectedLightweight: LightweightOpponent[] = [];
+  const remaining = [...weightedCandidates];
+
+  for (let i = 0; i < l && remaining.length > 0; i++) {
+    const currentTotalWeight = remaining.reduce((sum, item) => sum + item.weight, 0);
+    let random = Math.random() * currentTotalWeight;
+
+    let selectedIndex = 0;
+    for (let j = 0; j < remaining.length; j++) {
+      random -= remaining[j].weight;
+      if (random <= 0) {
+        selectedIndex = j;
+        break;
+      }
+    }
+
+    selectedLightweight.push(remaining[selectedIndex].opponent);
+    remaining.splice(selectedIndex, 1);
+  }
+
+  if (selectedLightweight.length === 0) {
+    return { success: true, message: 'ok', data: [] };
+  }
+
+  const selectedIds = selectedLightweight.map((opp) => opp.id);
+  const computedMap = await getCharacterComputedBatchByCharacterIds(selectedIds);
+  
+  const finalSelected: ArenaOpponent[] = [];
+  for (const opp of selectedLightweight) {
+    const snapshot = computedMap.get(opp.id);
     if (!snapshot) continue;
-    candidateList.push({
+    finalSelected.push({
       id: snapshot.id,
       name: String(snapshot.nickname || `修士${snapshot.id}`),
       realm: String(snapshot.realm || '凡人'),
       power: Math.max(0, computePower(snapshot)),
-      score: scoreMap.get(snapshot.id) || DEFAULT_RATING,
+      score: opp.score,
     });
   }
 
-  let data: ArenaOpponent[] = [];
-  for (const r of ranges) {
-    const minPower = Math.max(0, Math.floor(myPower * r.min));
-    const maxPower = Math.max(minPower, Math.min(2147483647, Math.ceil(myPower * r.max)));
-    data = candidateList
-      .filter((x) => x.power >= minPower && x.power <= maxPower)
-      .sort((a, b) => {
-        const distA = Math.abs(a.power - myPower);
-        const distB = Math.abs(b.power - myPower);
-        if (distA !== distB) return distA - distB;
-        if (a.score !== b.score) return b.score - a.score;
-        return a.id - b.id;
-      })
-      .slice(0, l);
-    if (data.length > 0) break;
-  }
-
-  return { success: true, message: 'ok', data };
+  return { success: true, message: 'ok', data: finalSelected };
 };
 
 export type ArenaRecord = {

@@ -1,261 +1,389 @@
+.arena-tabs {
+  display: flex;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border-color-soft);
+  gap: 24px;
+}
+
+.arena-tab-item {
+  cursor: pointer;
+  padding: 12px 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.arena-tab-item.is-active {
+  color: var(--primary-color);
+}
+
+.arena-tab-item.is-active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background-color: var(--primary-color);
+  border-radius: 3px 3px 0 0;
+}
+
+.arena-tab-item:hover:not(.is-active) {
+  color: var(--text-color);
+}
+
+.arena-tab-item-text {
+  position: relative;
+  z-index: 1;
+}
+
 .arena-modal {
   .ant-modal-content {
     padding: 0;
-    border-radius: 14px;
+    border-radius: 12px;
     overflow: hidden;
+    background: var(--panel-bg);
+  }
+
+  .ant-modal-close {
+    top: 16px;
+    inset-inline-end: 16px;
+    color: var(--text-secondary);
+    &:hover {
+      color: var(--text-color);
+      background: transparent;
+    }
   }
 }
 
 .arena-shell {
-  height: 680px;
+  height: min(680px, calc(100dvh - 120px));
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--panel-bg);
-  min-height: 0;
+  border-radius: 12px;
 }
 
 .arena-head {
   flex: 0 0 auto;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border-color-soft);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  padding: 16px 20px 0;
 }
 
 .arena-head-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 900;
   color: var(--text-color);
-}
-
-.arena-shell .ant-tabs {
-  flex: 1;
-  min-height: 0;
-  padding: 0 14px 12px;
-}
-
-.arena-shell .ant-tabs-content-holder {
-  min-height: 0;
-}
-
-.arena-shell .ant-tabs-content,
-.arena-shell .ant-tabs-tabpane {
-  height: 100%;
-  min-height: 0;
+  margin-bottom: 16px;
 }
 
 .arena-panel {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 12px 12px;
+  padding: 16px 20px 20px;
 }
 
 .arena-match-layout {
   display: flex;
+  flex-direction: column;
   gap: 16px;
   min-height: 0;
 }
 
-.arena-match-layout.is-mobile {
-  flex-direction: column;
-  gap: 10px;
-}
-
 .arena-self-card {
-  flex: 0 0 280px;
-  border: 1px solid var(--border-color-soft);
+  width: 100%;
   border-radius: 12px;
   background: var(--panel-bg-soft);
-  padding: 12px;
-}
-
-.arena-match-layout.is-mobile .arena-self-card {
-  flex: 0 0 auto;
-  padding: 10px;
+  padding: 20px;
 }
 
 .arena-self-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: center;
+  margin-bottom: 16px;
 }
 
 .arena-self-title {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 900;
   color: var(--text-color);
 }
 
-.arena-self-meta {
-  margin-top: 10px;
-  display: grid;
-  row-gap: 8px;
-  font-size: 12px;
-  color: var(--text-color);
+.arena-self-score {
+  text-align: center;
+  margin-bottom: 16px;
+  padding: 24px;
+  border-radius: 12px;
+  background: var(--panel-bg);
 }
 
-.arena-self-meta-line {
-  color: var(--text-tertiary);
-  line-height: 1.5;
+.arena-self-score-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.arena-self-score-value {
+  font-size: 48px;
+  line-height: 1;
+  font-weight: 900;
+  color: var(--primary-color);
+}
+
+.arena-self-metrics {
+  margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.arena-self-metric {
+  border-radius: 10px;
+  background: var(--panel-bg);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.arena-self-metric-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.arena-self-metric-value {
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.arena-self-metric-value.is-win {
+  color: var(--success-color);
+}
+
+.arena-self-metric-value.is-lose {
+  color: var(--danger-color);
+}
+
+.arena-self-meta {
+  margin-bottom: 20px;
+  display: grid;
+  row-gap: 12px;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--panel-bg);
+}
+
+.arena-self-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.arena-self-meta-key {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.arena-self-meta-value {
+  font-size: 14px;
+  color: var(--text-color);
+  font-weight: 800;
+  text-align: right;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.arena-self-meta-value.is-highlight {
+  color: var(--primary-color);
 }
 
 .arena-self-actions {
-  margin-top: 12px;
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .arena-self-actions .ant-btn {
-  border-radius: 10px;
+  height: 48px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.arena-match-btn.ant-btn-primary {
+  background: #000;
+  color: #fff;
+  border: none;
+}
+
+.arena-match-btn.ant-btn-primary:hover,
+.arena-match-btn.ant-btn-primary:focus {
+  background: #333;
+  color: #fff;
 }
 
 .arena-self-matching {
   margin-top: 12px;
 }
 
-.arena-self-matching-label {
-  margin-bottom: 6px;
+.arena-rule {
+  line-height: 1.8;
+  font-size: 13px;
+  color: var(--text-color);
+  display: grid;
+  row-gap: 12px;
+}
+
+.arena-rule-title {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--text-color);
+  margin-bottom: 4px;
+}
+
+.arena-rule-block {
+  border-radius: 10px;
+  background: var(--panel-bg-soft);
+  padding: 16px;
+}
+
+.arena-rule-heading {
+  font-weight: 800;
+  color: var(--text-color);
+  margin-bottom: 4px;
+}
+
+.arena-rule-indent {
+  padding-left: 16px;
   color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.arena-self-tip {
-  margin-top: 12px;
-  color: var(--text-tertiary);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.arena-opponents-pane {
-  flex: 1;
-  min-width: 0;
 }
 
 .arena-record-pane {
-  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .arena-record-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 16px;
 }
 
 .arena-record-title {
-  font-size: 14px;
-  font-weight: 900;
-  color: var(--text-color);
-}
-
-.arena-rule {
-  line-height: 1.8;
-  font-size: 12px;
-  color: var(--text-color);
-}
-
-.arena-rule-title {
   font-size: 15px;
   font-weight: 900;
-  margin-bottom: 8px;
+  color: var(--text-color);
 }
 
-.arena-rule-tip {
-  margin-top: 10px;
+.arena-record-clear-btn {
   color: var(--text-secondary);
+  &:hover {
+    color: var(--text-color);
+    background: var(--panel-bg-soft);
+  }
 }
 
-.arena-mobile-list {
+.arena-record-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  flex: 1;
+  min-height: 0;
 }
 
-.arena-mobile-card {
-  border: 1px solid var(--border-color-soft);
-  border-radius: 12px;
+.arena-record-list-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.arena-record-card {
   background: var(--panel-bg-soft);
-  padding: 10px;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid var(--border-color-soft);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
-.arena-mobile-card-head {
+.arena-record-card-head {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  align-items: center;
 }
 
-.arena-mobile-title {
-  min-width: 0;
-  font-size: 13px;
+.arena-record-card-title {
+  font-size: 15px;
   font-weight: 900;
   color: var(--text-color);
 }
 
-.arena-mobile-meta {
+.arena-record-card-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  gap: 12px 24px;
 }
 
-.arena-mobile-meta-item {
-  display: inline-flex;
+.arena-record-card-item {
+  display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
-.arena-mobile-meta-k {
-  font-size: 11px;
-  color: var(--text-tertiary);
+.ar-k {
+  font-size: 12px;
+  color: var(--text-secondary);
   font-weight: 700;
 }
 
-.arena-mobile-meta-v {
-  font-size: 11px;
+.ar-v {
+  font-size: 13px;
   color: var(--text-color);
   font-weight: 800;
-  word-break: break-word;
 }
 
-.arena-mobile-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.arena-mobile-actions .ant-btn {
-  height: 30px;
-  border-radius: 8px;
+.ar-result {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  
+  &.is-win {
+    color: var(--success-color);
+    background: rgba(82, 196, 26, 0.1);
+  }
+  
+  &.is-lose {
+    color: var(--danger-color);
+    background: rgba(255, 77, 79, 0.1);
+  }
+  
+  &.is-draw {
+    color: var(--text-secondary);
+    background: var(--panel-bg);
+  }
 }
 
 .arena-empty {
-  border: 1px dashed var(--border-color);
-  border-radius: 12px;
-  background: var(--panel-bg);
-  padding: 12px;
+  padding: 32px 16px;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: 13px;
   text-align: center;
-}
-
-.arena-empty .ant-btn {
-  margin-top: 8px;
-}
-
-.arena-empty-text {
-  line-height: 1.5;
-}
-
-.arena-segmented-wrap {
-  display: none;
 }
 
 @media screen and (max-width: 768px) {
@@ -266,8 +394,7 @@
     margin: 8px auto;
   }
 
-  .arena-modal .ant-modal-content,
-  .arena-modal .ant-modal-body {
+  .arena-modal .ant-modal-content {
     height: 100%;
     min-height: 0;
   }
@@ -277,47 +404,7 @@
     max-height: calc(100dvh - 16px);
   }
 
-  .arena-head {
-    padding: 10px 12px 8px;
-  }
-
-  .arena-head-title {
-    font-size: 14px;
-  }
-
-  .arena-segmented-wrap {
-    display: block;
-    padding: 0 12px 10px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-  }
-
-  .arena-segmented-wrap .ant-segmented {
-    min-width: 100%;
-  }
-
-  .arena-segmented-wrap .ant-segmented-item-label {
-    min-height: 34px;
-    line-height: 34px;
-    padding-inline: 12px;
-    font-size: 12px;
-    font-weight: 800;
-  }
-
-  .arena-record-head {
-    margin-bottom: 8px;
-  }
-
-  .arena-record-title {
-    font-size: 13px;
-  }
-
-  .arena-mobile-card {
-    padding: 9px;
-  }
-
-  .arena-mobile-actions .ant-btn {
-    height: 28px;
+  .arena-record-list-body {
+    padding-right: 0;
   }
 }
