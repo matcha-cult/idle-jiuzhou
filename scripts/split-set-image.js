@@ -664,6 +664,21 @@ function countVerticalBorderSegment(pixelData, imageWidth, channels, profile, x,
   return borderCount;
 }
 
+function computeTrimLimit(length, ratio, minLimit, maxLimit) {
+  const scaled = Math.round(length * ratio);
+  return Math.max(minLimit, Math.min(maxLimit, scaled));
+}
+
+function shouldFineTrimEdge(edge, minRatio, minPixelRatio, minPixelsFloor) {
+  const minPixels = Math.max(minPixelsFloor, Math.round(edge.total * minPixelRatio));
+  return edge.ratio >= minRatio && edge.borderCount >= minPixels;
+}
+
+function isCornerBorderStrong(borderCount, sampleTotal, minRatio, minPixelsFloor) {
+  const minPixels = Math.max(minPixelsFloor, Math.round(sampleTotal * minRatio));
+  return borderCount >= minPixels;
+}
+
 function estimateBackgroundColor(pixelData, imageWidth, channels, region) {
   const { left, top, width, height } = region;
   const right = left + width - 1;
@@ -744,6 +759,20 @@ function buildForegroundMaskByBackground(pixelData, imageWidth, channels, region
   return mask;
 }
 
+function shouldKeepForegroundComponent(component) {
+  if (component.area < 24) {
+    return false;
+  }
+
+  if (component.touchedEdgeCount === 0) {
+    return true;
+  }
+
+  // 允许“主体轻微擦边”的连通域，避免饰品/特效贴边时被误裁。
+  const edgeTouchRatio = component.edgeTouchCount / component.area;
+  return component.touchedEdgeCount === 1 && component.area >= 120 && edgeTouchRatio <= 0.08;
+}
+
 function isolateInnerContentBounds(pixelData, imageWidth, channels, region) {
   const { width, height } = region;
   if (width <= 4 || height <= 4) {
@@ -760,7 +789,15 @@ function isolateInnerContentBounds(pixelData, imageWidth, channels, region) {
     [-1, 1],  [0, 1],  [1, 1],
   ];
 
-  /** @type {Array<{minX:number; minY:number; maxX:number; maxY:number; area:number; touchesEdge:boolean}>} */
+  /** @type {Array<{
+   *   minX:number;
+   *   minY:number;
+   *   maxX:number;
+   *   maxY:number;
+   *   area:number;
+   *   edgeTouchCount:number;
+   *   touchedEdgeCount:number;
+   * }>} */
   const components = [];
 
   for (let y = 0; y < height; y += 1) {
@@ -773,7 +810,11 @@ function isolateInnerContentBounds(pixelData, imageWidth, channels, region) {
       let maxX = x;
       let maxY = y;
       let area = 0;
-      let touchesEdge = x === 0 || x === width - 1 || y === 0 || y === height - 1;
+      let edgeTouchTop = 0;
+      let edgeTouchBottom = 0;
+      let edgeTouchLeft = 0;
+      let edgeTouchRight = 0;
+      let edgeTouchCount = 0;
 
       /** @type {Array<[number, number]>} */
       const queue = [[x, y]];
@@ -789,8 +830,12 @@ function isolateInnerContentBounds(pixelData, imageWidth, channels, region) {
         if (cx > maxX) maxX = cx;
         if (cy < minY) minY = cy;
         if (cy > maxY) maxY = cy;
+        if (cy === 0) edgeTouchTop += 1;
+        if (cy === height - 1) edgeTouchBottom += 1;
+        if (cx === 0) edgeTouchLeft += 1;
+        if (cx === width - 1) edgeTouchRight += 1;
         if (cx === 0 || cx === width - 1 || cy === 0 || cy === height - 1) {
-          touchesEdge = true;
+          edgeTouchCount += 1;
         }
 
         for (const [dx, dy] of neighbors) {
@@ -806,11 +851,17 @@ function isolateInnerContentBounds(pixelData, imageWidth, channels, region) {
         }
       }
 
-      components.push({ minX, minY, maxX, maxY, area, touchesEdge });
+      const touchedEdgeCount =
+        (edgeTouchTop > 0 ? 1 : 0)
+        + (edgeTouchBottom > 0 ? 1 : 0)
+        + (edgeTouchLeft > 0 ? 1 : 0)
+        + (edgeTouchRight > 0 ? 1 : 0);
+
+      components.push({ minX, minY, maxX, maxY, area, edgeTouchCount, touchedEdgeCount });
     }
   }
 
-  const innerComponents = components.filter((item) => !item.touchesEdge && item.area >= 24);
+  const innerComponents = components.filter(shouldKeepForegroundComponent);
   if (innerComponents.length === 0) {
     return null;
   }
@@ -849,14 +900,15 @@ function refineRegionByBorderEdge(pixelData, imageWidth, imageHeight, channels, 
   let right = initialRegion.left + initialRegion.width - 1;
   let bottom = initialRegion.top + initialRegion.height - 1;
 
-  const maxTrimX = Math.max(4, Math.floor(initialRegion.width * 0.12));
-  const maxTrimY = Math.max(4, Math.floor(initialRegion.height * 0.12));
+  const maxTrimX = computeTrimLimit(initialRegion.width, 0.022, 3, 7);
+  const maxTrimY = computeTrimLimit(initialRegion.height, 0.022, 3, 7);
 
   const coarseBorderThreshold = 0.3;
-  const fineBorderThreshold = 0.002;
-  const fineBorderMinPixels = 2;
-  const fineMaxTrimX = Math.max(4, Math.round(initialRegion.width * 0.06));
-  const fineMaxTrimY = Math.max(4, Math.round(initialRegion.height * 0.06));
+  const fineBorderThreshold = 0.015;
+  const fineBorderMinPixelRatio = 0.015;
+  const fineBorderMinPixelsFloor = 4;
+  const fineMaxTrimX = computeTrimLimit(initialRegion.width, 0.01, 1, 2);
+  const fineMaxTrimY = computeTrimLimit(initialRegion.height, 0.01, 1, 2);
 
   let trimmedLeft = 0;
   while (trimmedLeft < maxTrimX && left < right) {
@@ -894,7 +946,7 @@ function refineRegionByBorderEdge(pixelData, imageWidth, imageHeight, channels, 
   let fineLeft = 0;
   while (fineLeft < fineMaxTrimX && left < right) {
     const edge = measureVerticalBorderEdge(pixelData, imageWidth, channels, profile, left, top, bottom);
-    if (!(edge.ratio >= fineBorderThreshold && edge.borderCount >= fineBorderMinPixels)) break;
+    if (!shouldFineTrimEdge(edge, fineBorderThreshold, fineBorderMinPixelRatio, fineBorderMinPixelsFloor)) break;
     left += 1;
     fineLeft += 1;
   }
@@ -902,7 +954,7 @@ function refineRegionByBorderEdge(pixelData, imageWidth, imageHeight, channels, 
   let fineRight = 0;
   while (fineRight < fineMaxTrimX && left < right) {
     const edge = measureVerticalBorderEdge(pixelData, imageWidth, channels, profile, right, top, bottom);
-    if (!(edge.ratio >= fineBorderThreshold && edge.borderCount >= fineBorderMinPixels)) break;
+    if (!shouldFineTrimEdge(edge, fineBorderThreshold, fineBorderMinPixelRatio, fineBorderMinPixelsFloor)) break;
     right -= 1;
     fineRight += 1;
   }
@@ -910,7 +962,7 @@ function refineRegionByBorderEdge(pixelData, imageWidth, imageHeight, channels, 
   let fineTop = 0;
   while (fineTop < fineMaxTrimY && top < bottom) {
     const edge = measureHorizontalBorderEdge(pixelData, imageWidth, channels, profile, top, left, right);
-    if (!(edge.ratio >= fineBorderThreshold && edge.borderCount >= fineBorderMinPixels)) break;
+    if (!shouldFineTrimEdge(edge, fineBorderThreshold, fineBorderMinPixelRatio, fineBorderMinPixelsFloor)) break;
     top += 1;
     fineTop += 1;
   }
@@ -918,51 +970,57 @@ function refineRegionByBorderEdge(pixelData, imageWidth, imageHeight, channels, 
   let fineBottom = 0;
   while (fineBottom < fineMaxTrimY && top < bottom) {
     const edge = measureHorizontalBorderEdge(pixelData, imageWidth, channels, profile, bottom, left, right);
-    if (!(edge.ratio >= fineBorderThreshold && edge.borderCount >= fineBorderMinPixels)) break;
+    if (!shouldFineTrimEdge(edge, fineBorderThreshold, fineBorderMinPixelRatio, fineBorderMinPixelsFloor)) break;
     bottom -= 1;
     fineBottom += 1;
   }
 
   // 角点清理：处理细小拐角残留。
-  const cornerPassLimit = 3;
-  const cornerMinBorderPixels = 1;
+  const cornerPassLimit = 1;
+  const cornerMinBorderRatio = 0.24;
+  const cornerMinBorderPixelsFloor = 4;
   let cornerPass = 0;
   while (cornerPass < cornerPassLimit && left < right && top < bottom) {
     const spanX = Math.max(6, Math.round((right - left + 1) * 0.08));
     const spanY = Math.max(6, Math.round((bottom - top + 1) * 0.08));
     const rightStartX = Math.max(left, right - spanX + 1);
     const bottomStartY = Math.max(top, bottom - spanY + 1);
+    const leftSpanEndX = Math.min(right, left + spanX - 1);
+    const topSpanEndY = Math.min(bottom, top + spanY - 1);
+
+    const horizontalSampleTotal = (leftSpanEndX - left + 1) + (right - rightStartX + 1);
+    const verticalSampleTotal = (topSpanEndY - top + 1) + (bottom - bottomStartY + 1);
 
     let changed = false;
 
     const topCornerBorder =
-      countHorizontalBorderSegment(pixelData, imageWidth, channels, profile, top, left, Math.min(right, left + spanX - 1))
+      countHorizontalBorderSegment(pixelData, imageWidth, channels, profile, top, left, leftSpanEndX)
       + countHorizontalBorderSegment(pixelData, imageWidth, channels, profile, top, rightStartX, right);
-    if (topCornerBorder >= cornerMinBorderPixels && top < bottom) {
+    if (isCornerBorderStrong(topCornerBorder, horizontalSampleTotal, cornerMinBorderRatio, cornerMinBorderPixelsFloor) && top < bottom) {
       top += 1;
       changed = true;
     }
 
     const bottomCornerBorder =
-      countHorizontalBorderSegment(pixelData, imageWidth, channels, profile, bottom, left, Math.min(right, left + spanX - 1))
+      countHorizontalBorderSegment(pixelData, imageWidth, channels, profile, bottom, left, leftSpanEndX)
       + countHorizontalBorderSegment(pixelData, imageWidth, channels, profile, bottom, rightStartX, right);
-    if (bottomCornerBorder >= cornerMinBorderPixels && top < bottom) {
+    if (isCornerBorderStrong(bottomCornerBorder, horizontalSampleTotal, cornerMinBorderRatio, cornerMinBorderPixelsFloor) && top < bottom) {
       bottom -= 1;
       changed = true;
     }
 
     const leftCornerBorder =
-      countVerticalBorderSegment(pixelData, imageWidth, channels, profile, left, top, Math.min(bottom, top + spanY - 1))
+      countVerticalBorderSegment(pixelData, imageWidth, channels, profile, left, top, topSpanEndY)
       + countVerticalBorderSegment(pixelData, imageWidth, channels, profile, left, bottomStartY, bottom);
-    if (leftCornerBorder >= cornerMinBorderPixels && left < right) {
+    if (isCornerBorderStrong(leftCornerBorder, verticalSampleTotal, cornerMinBorderRatio, cornerMinBorderPixelsFloor) && left < right) {
       left += 1;
       changed = true;
     }
 
     const rightCornerBorder =
-      countVerticalBorderSegment(pixelData, imageWidth, channels, profile, right, top, Math.min(bottom, top + spanY - 1))
+      countVerticalBorderSegment(pixelData, imageWidth, channels, profile, right, top, topSpanEndY)
       + countVerticalBorderSegment(pixelData, imageWidth, channels, profile, right, bottomStartY, bottom);
-    if (rightCornerBorder >= cornerMinBorderPixels && left < right) {
+    if (isCornerBorderStrong(rightCornerBorder, verticalSampleTotal, cornerMinBorderRatio, cornerMinBorderPixelsFloor) && left < right) {
       right -= 1;
       changed = true;
     }
