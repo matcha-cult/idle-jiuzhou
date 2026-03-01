@@ -3081,7 +3081,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/shu_tian_xian_zhang.png",
+      "icon": "/assets/images/set-xuanguang/01-weapon-set-xuanguang-weapon.webp",
       "equip_slot": "weapon",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
@@ -3109,7 +3109,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_Hat_1_16.png",
+      "icon": "/assets/images/set-xuanguang/02-head-set-xuanguang-head.webp",
       "equip_slot": "head",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
@@ -3138,7 +3138,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_clothes_1_16.png",
+      "icon": "/assets/images/set-xuanguang/03-clothes-set-xuanguang-clothes.webp",
       "equip_slot": "clothes",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
@@ -3166,7 +3166,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_shoulder armour_1_16.png",
+      "icon": "/assets/images/set-xuanguang/04-gloves-set-xuanguang-gloves.webp",
       "equip_slot": "gloves",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
@@ -3193,7 +3193,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_pants_1_16.png",
+      "icon": "/assets/images/set-xuanguang/05-pants-set-xuanguang-pants.webp",
       "equip_slot": "pants",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
@@ -3221,7 +3221,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_Jade pendants_1_16.png",
+      "icon": "/assets/images/set-xuanguang/06-necklace-set-xuanguang-necklace.webp",
       "equip_slot": "necklace",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
@@ -3249,7 +3249,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/icon_jiezhi_10010.png",
+      "icon": "/assets/images/set-xuanguang/07-accessory-set-xuanguang-accessory.webp",
       "equip_slot": "accessory",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
@@ -3277,7 +3277,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/items/guan_tian_jing.png",
+      "icon": "/assets/images/set-xuanguang/08-artifact-set-xuanguang-artifact.webp",
       "equip_slot": "artifact",
       "equip_req_realm": "炼炁化神·结胎期",
       "base_attrs": {
