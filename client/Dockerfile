@@ -1,17 +1,16 @@
 # Build stage
-FROM node:22-alpine AS builder
+FROM guergeiro/pnpm:22-10-alpine AS builder
 
 WORKDIR /app
 
 # CDN 静态资源地址（构建时传入，可选）
 ARG VITE_CDN_BASE=""
 
-# 安装 pnpm 并对齐 lockfile 相关配置
+# 配置 pnpm 镜像源与 lockfile 相关配置
 # 说明：
 # 1) auto-install-peers 必须与 pnpm-lock.yaml.settings.autoInstallPeers 一致
 # 否则 --frozen-lockfile 会触发配置不匹配错误并中断构建
-RUN corepack enable && corepack prepare pnpm@latest --activate && \
-    pnpm config set registry https://registry.npmmirror.com && \
+RUN pnpm config set registry https://registry.npmmirror.com && \
     pnpm config set auto-install-peers true
 
 # Copy workspace config

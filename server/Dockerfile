@@ -19,13 +19,12 @@
 # =======================================
 # 基础工具链阶段：统一 pnpm 与镜像源配置
 # =======================================
-FROM node:22-alpine AS base
+FROM guergeiro/pnpm:22-10-alpine AS base
 
 WORKDIR /app
 
-# 固定 pnpm、镜像源和 lockfile 相关配置，保证构建可复现
-RUN corepack enable && corepack prepare pnpm@latest --activate && \
-    pnpm config set registry https://registry.npmmirror.com && \
+# 配置 pnpm 镜像源和 lockfile 相关配置，保证构建可复现
+RUN pnpm config set registry https://registry.npmmirror.com && \
     pnpm config set auto-install-peers true
 
 # =======================================
@@ -64,7 +63,7 @@ RUN pnpm install --prod --frozen-lockfile --filter jiuzhou-server... --package-i
 # =======================================
 # 运行阶段：仅保留运行必需文件
 # =======================================
-FROM node:22-alpine AS runner
+FROM guergeiro/pnpm:22-10-alpine AS runner
 
 WORKDIR /app
 
