@@ -11,22 +11,9 @@ import {
   type InventoryLocation,
   itemService,
 } from '../domains/inventory/index.js';
-import { query } from '../config/database.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
-import {
-  buildEquipmentDisplayBaseAttrs,
-} from '../services/equipmentGrowthRules.js';
-import {
-  enrichAffixesWithRollMeta,
-  getEquipRealmRankForReroll,
-  getQualityMultiplierForReroll,
-  loadAffixPoolForReroll,
-  parseGeneratedAffixesForReroll,
-} from '../services/equipmentAffixRerollService.js';
-import { resolveQualityRankFromName } from '../services/shared/itemQuality.js';
 import { parsePositiveInt } from '../services/shared/httpParam.js';
 import { getCharacterComputedByCharacterId } from '../services/characterComputedService.js';
-import { getItemDefinitionById, getItemDefinitionsByIds, getItemSetDefinitions } from '../services/staticConfigLoader.js';
 
 const router = Router();
 
@@ -93,150 +80,17 @@ router.get('/items', asyncHandler(async (req, res) => {
     const page = parseInt(req.query.page as string) || 1;
     const pageSize = Math.min(parseInt(req.query.pageSize as string) || 100, 200);
 
-    const result = await inventoryService.getInventoryItems(characterId, location, page, pageSize);
+    const result = await inventoryService.getInventoryItemsWithDefs(characterId, location, page, pageSize);
 
-    // 获取物品定义信息
-    if (result.items.length > 0) {
-      const itemDefIds = [...new Set(result.items.map((item) => String(item.item_def_id || '').trim()))]
-        .filter((id) => id.length > 0);
-      const staticDefMap = getItemDefinitionsByIds(itemDefIds);
-
-      const setIds = [...new Set(
-        Array.from(staticDefMap.values())
-          .map((d) => (typeof d.set_id === 'string' ? d.set_id.trim() : ''))
-          .filter((x) => x.length > 0)
-      )];
-
-      const setBonusMap = new Map<string, Array<{ piece_count: number; effect_defs: unknown }>>();
-      const equippedSetCountMap = new Map<string, number>();
-      const setNameMap = new Map<string, string>();
-
-      if (setIds.length > 0) {
-        const setIdSet = new Set(setIds);
-        const staticSetMap = new Map(
-          getItemSetDefinitions()
-            .filter((entry) => entry.enabled !== false)
-            .map((entry) => [entry.id, entry] as const)
-        );
-        for (const setId of setIds) {
-          const setDef = staticSetMap.get(setId);
-          if (!setDef) continue;
-          setNameMap.set(setId, String(setDef.name || setId));
-          const normalizedBonuses = (Array.isArray(setDef.bonuses) ? setDef.bonuses : [])
-            .map((bonus) => ({
-              piece_count: Math.max(1, Math.floor(Number(bonus.piece_count) || 1)),
-              priority: Math.max(0, Math.floor(Number(bonus.priority) || 0)),
-              effect_defs: Array.isArray(bonus.effect_defs) ? bonus.effect_defs : [],
-            }))
-            .sort((left, right) => left.priority - right.priority || left.piece_count - right.piece_count)
-            .map((bonus) => ({
-              piece_count: bonus.piece_count,
-              effect_defs: bonus.effect_defs,
-            }));
-          setBonusMap.set(setId, normalizedBonuses);
-        }
-
-        const equippedResult = await query(
-          `
-            SELECT item_def_id
-            FROM item_instance ii
-            WHERE ii.owner_character_id = $1
-              AND ii.location = 'equipped'
-          `,
-          [characterId]
-        );
-        for (const row of equippedResult.rows as Array<{ item_def_id?: unknown }>) {
-          const equippedItemDefId = String(row.item_def_id || '').trim();
-          if (!equippedItemDefId) continue;
-          const equippedDef = getItemDefinitionById(equippedItemDefId);
-          const setId = String(equippedDef?.set_id || '').trim();
-          if (!setId || !setIdSet.has(setId)) continue;
-          equippedSetCountMap.set(setId, (equippedSetCountMap.get(setId) || 0) + 1);
-        }
-      }
-
-      const defMap = staticDefMap;
-      const affixPoolCache = new Map<string, ReturnType<typeof loadAffixPoolForReroll>>();
-      const itemsWithDef = result.items.map((item: any) => {
-        const def = defMap.get(item.item_def_id) as any;
-        if (!def) return { ...item, def: undefined };
-
-        const setId = typeof def.set_id === 'string' ? def.set_id.trim() : '';
-        const setBonuses = setId ? (setBonusMap.get(setId) || []) : [];
-        const setEquippedCount = setId ? (equippedSetCountMap.get(setId) || 0) : 0;
-        const baseDef = {
-          ...def,
-          set_id: setId || null,
-          set_name: setId ? (setNameMap.get(setId) ?? null) : null,
-          set_bonuses: setBonuses,
-          set_equipped_count: setEquippedCount,
-        };
-
-        if (def.category !== 'equipment') return { ...item, def: baseDef };
-
-        const defQualityRank = resolveQualityRankFromName(def.quality, 1);
-        const resolvedQualityRank = Math.max(1, Math.floor(Number(item.quality_rank) || defQualityRank));
-
-        const displayBaseAttrs = buildEquipmentDisplayBaseAttrs({
-          baseAttrsRaw: def.base_attrs,
-          defQualityRankRaw: defQualityRank,
-          resolvedQualityRankRaw: resolvedQualityRank,
-          strengthenLevelRaw: item.strengthen_level,
-          refineLevelRaw: item.refine_level,
-          socketedGemsRaw: item.socketed_gems,
-        });
-
-        let normalizedAffixes = parseGeneratedAffixesForReroll(item.affixes);
-        const affixPoolId = typeof def.affix_pool_id === 'string' ? def.affix_pool_id.trim() : '';
-        if (normalizedAffixes.length > 0 && affixPoolId) {
-          if (!affixPoolCache.has(affixPoolId)) {
-            affixPoolCache.set(affixPoolId, loadAffixPoolForReroll(affixPoolId));
-          }
-          const affixPool = affixPoolCache.get(affixPoolId);
-          if (affixPool) {
-            const realmRank = getEquipRealmRankForReroll(def.equip_req_realm);
-            const resolvedQualityMultiplier = getQualityMultiplierForReroll(resolvedQualityRank);
-            const defQualityMultiplier = getQualityMultiplierForReroll(defQualityRank);
-            const attrFactor =
-              Number.isFinite(defQualityMultiplier) && defQualityMultiplier > 0
-                ? resolvedQualityMultiplier / defQualityMultiplier
-                : 1;
-            normalizedAffixes = enrichAffixesWithRollMeta({
-              affixes: normalizedAffixes,
-              affixDefs: affixPool.affixes,
-              realmRank,
-              attrFactor,
-            });
-          }
-        }
-        const mergedDef = {
-          ...baseDef,
-          base_attrs_raw: def.base_attrs,
-          base_attrs: displayBaseAttrs,
-        };
-
-        return {
-          ...item,
-          affixes: normalizedAffixes.length > 0 ? normalizedAffixes : item.affixes,
-          def: mergedDef,
-        };
-      });
-
-      res.json({
-        success: true,
-        data: {
-          items: itemsWithDef,
-          total: result.total,
-          page,
-          pageSize
-        }
-      });
-    } else {
-      res.json({
-        success: true,
-        data: { items: [], total: 0, page, pageSize }
-      });
-    }
+    res.json({
+      success: true,
+      data: {
+        items: result.items,
+        total: result.total,
+        page,
+        pageSize,
+      },
+    });
 }));
 
 // ============================================

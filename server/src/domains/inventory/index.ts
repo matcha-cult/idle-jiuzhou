@@ -10,8 +10,10 @@ import {
   equipItem,
   expandInventory,
   findEmptySlots,
+  getEquippedItemDefIds,
   getInventoryInfo,
   getInventoryItems,
+  getInventoryItemsWithDefs,
   getRerollCostPreview,
   moveItem,
   refineEquipment,
@@ -30,6 +32,8 @@ export { gemSynthesisService } from '../../services/gemSynthesisService.js';
 export const inventoryService = {
   getInventoryInfo,
   getInventoryItems,
+  getInventoryItemsWithDefs,
+  getEquippedItemDefIds,
   getRerollCostPreview,
   findEmptySlots,
   addItemToInventory,
@@ -52,11 +56,11 @@ export const inventoryService = {
 export type {
   InventoryInfo,
   InventoryItem,
+  InventoryItemWithDef,
   InventoryLocation,
   SlottedInventoryLocation,
 } from '../../services/inventory/index.js';
 
-export * from '../../services/inventory/index.js';
 export * from '../../services/itemService.js';
 export * from '../../services/craftService.js';
 export * from '../../services/gemSynthesisService.js';
