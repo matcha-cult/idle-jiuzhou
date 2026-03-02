@@ -876,6 +876,27 @@ class CharacterTechniqueService {
       return { success: false, message: '技能槽位必须为1-10' };
     }
 
+    /**
+     * 角色技能槽写入串行化锁（基于角色行锁）
+     *
+     * 作用（做什么 / 不做什么）：
+     * 1) 做什么：在事务内通过 `characters` 主键行 `FOR UPDATE` 将同一角色的技能槽写操作串行化，消除并发装配时的唯一键竞态。
+     * 2) 不做什么：不负责角色存在性报错语义，不改变技能可用性与槽位替换规则。
+     *
+     * 输入/输出：
+     * - 输入：characterId（当前角色ID）
+     * - 输出：无返回值；成功即表示本事务已拿到该角色写锁。
+     *
+     * 数据流/状态流：
+     * - 先拿角色行锁，再做可用技能校验、同技能迁移与槽位 upsert；
+     * - 并发事务会在这里排队，直到前一个事务提交/回滚后再继续。
+     *
+     * 关键边界条件与坑点：
+     * 1) 必须放在 `@Transactional` 方法内部，否则 `FOR UPDATE` 只能在单语句生命周期内生效，无法实现跨语句串行化。
+     * 2) 锁粒度固定为“单角色”，因此只会阻塞同角色并发写，不会放大到全表级别。
+     */
+    await query('SELECT id FROM characters WHERE id = $1 FOR UPDATE', [characterId]);
+
     // 检查技能是否可用（来自已装备功法且已解锁）
     const available = await loadAvailableSkillEntries(characterId);
     if (!available.some((entry) => entry.skillId === skillId)) {
