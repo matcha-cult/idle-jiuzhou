@@ -26,6 +26,29 @@ export const PVP_WEEKLY_TITLE_BY_RANK = {
   3: 'title-pvp-weekly-third',
 } as const;
 
+/**
+ * PVP 周结算称号有效天数（自然日）。
+ *
+ * 作用：
+ * 1. 作为周称号有效期规则的唯一常量来源；
+ * 2. 供“发奖逻辑”和“历史数据修复迁移”共享，避免多处硬编码 7。
+ *
+ * 输入：
+ * - 无（编译期常量）。
+ *
+ * 输出：
+ * - 数值 7，表示称号在结算结束日基础上顺延 7 天到期。
+ *
+ * 数据流：
+ * - arenaWeeklySettlementService：计算新发放称号 expires_at；
+ * - achievementTable 迁移：修复历史错误 expires_at。
+ *
+ * 关键边界条件与坑点：
+ * 1. 修改该值会同时影响新发放规则与迁移修复目标，调整前需确认业务口径。
+ * 2. 该常量是“自然日”含义，不是精确小时；实际落库为上海时区 00:00 时间点。
+ */
+export const PVP_WEEKLY_TITLE_VALID_DAYS = 7;
+
 export type PvpWeeklyRank = keyof typeof PVP_WEEKLY_TITLE_BY_RANK;
 
 export const PVP_WEEKLY_TITLE_IDS = Object.freeze([

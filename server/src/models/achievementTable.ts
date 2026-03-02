@@ -1,5 +1,6 @@
 import { query } from '../config/database.js';
 import { runDbMigrationOnce } from './migrationHistoryTable.js';
+import { PVP_WEEKLY_TITLE_BY_RANK, PVP_WEEKLY_TITLE_VALID_DAYS } from '../services/achievement/pvpWeeklyTitleConfig.js';
 
 const characterAchievementTableSQL = `
 CREATE TABLE IF NOT EXISTS character_achievement (
@@ -95,6 +96,124 @@ const migrateCharacterTitleExpiresAt = async (): Promise<void> => {
   );
 };
 
+/**
+ * 一次性迁移：修复 PVP 周结算称号历史过期时间并向受影响玩家补发说明邮件。
+ *
+ * 作用：
+ * 1. 将旧逻辑误写为“结算周结束日 00:00 过期”的周称号修正为“结束日 + 7 天 00:00（上海时区）”；
+ * 2. 仅对本次命中修复的数据发送补发邮件，避免全量群发造成噪音。
+ *
+ * 输入：
+ * - 无（基于 arena_weekly_settlement 与 character_title 现有数据推导受影响记录）。
+ *
+ * 输出：
+ * - 更新命中记录的 character_title.expires_at；
+ * - 向对应角色插入一封系统说明邮件（mail 表）。
+ *
+ * 数据流：
+ * - initAchievementTables -> runDbMigrationOnce -> 执行本函数；
+ * - weekly_awards 推导“角色-名次称号-周结束日期”；
+ * - fixed_titles 返回被修复记录，再聚合为每角色一封邮件写入 mail。
+ *
+ * 关键边界条件与坑点：
+ * 1. 仅修复 `expires_at` 精确等于“该周 week_end_local_date 00:00（上海时区）”的记录，避免误改已正确数据。
+ * 2. 同角色可能命中多个周称号，邮件按角色聚合为 1 封，避免重复通知刷屏。
+ */
+const migratePvpWeeklyTitleExpireFixAndCompensationMailV1 = async (): Promise<void> => {
+  const timezone = 'Asia/Shanghai';
+  const championTitleId = PVP_WEEKLY_TITLE_BY_RANK[1];
+  const runnerupTitleId = PVP_WEEKLY_TITLE_BY_RANK[2];
+  const thirdTitleId = PVP_WEEKLY_TITLE_BY_RANK[3];
+  const mailSource = 'migration-pvp-weekly-title-expire-fix-v1';
+  const mailTitle = '竞技场周称号有效期修复通知';
+  const mailContent =
+    '因竞技场周结算称号有效期配置异常，系统已为你修复相关称号有效期。' +
+    '请前往“成就-称号”面板查看并手动装备。给你带来的困扰，敬请谅解。';
+
+  await query(
+    `
+      WITH weekly_awards AS (
+        SELECT aws.champion_character_id AS character_id, $1::varchar AS title_id, aws.week_end_local_date
+        FROM arena_weekly_settlement aws
+        WHERE aws.champion_character_id IS NOT NULL
+        UNION ALL
+        SELECT aws.runnerup_character_id AS character_id, $2::varchar AS title_id, aws.week_end_local_date
+        FROM arena_weekly_settlement aws
+        WHERE aws.runnerup_character_id IS NOT NULL
+        UNION ALL
+        SELECT aws.third_character_id AS character_id, $3::varchar AS title_id, aws.week_end_local_date
+        FROM arena_weekly_settlement aws
+        WHERE aws.third_character_id IS NOT NULL
+      ),
+      fixed_titles AS (
+        UPDATE character_title ct
+        SET expires_at = ((wa.week_end_local_date + $4::int)::timestamp AT TIME ZONE $5),
+            updated_at = NOW()
+        FROM weekly_awards wa
+        WHERE ct.character_id = wa.character_id
+          AND ct.title_id = wa.title_id
+          AND ct.expires_at IS NOT NULL
+          AND ct.expires_at = (wa.week_end_local_date::timestamp AT TIME ZONE $5)
+        RETURNING ct.character_id, ct.expires_at
+      ),
+      fixed_character_stats AS (
+        SELECT
+          ft.character_id,
+          COUNT(*)::int AS fixed_title_count,
+          MIN(ft.expires_at) AS earliest_expire_at,
+          MAX(ft.expires_at) AS latest_expire_at
+        FROM fixed_titles ft
+        GROUP BY ft.character_id
+      )
+      INSERT INTO mail (
+        recipient_user_id,
+        recipient_character_id,
+        sender_type,
+        sender_name,
+        mail_type,
+        title,
+        content,
+        expire_at,
+        source,
+        metadata,
+        created_at,
+        updated_at
+      )
+      SELECT
+        c.user_id,
+        fcs.character_id,
+        'system',
+        '系统',
+        'reward',
+        $6,
+        $7,
+        NOW() + INTERVAL '30 day',
+        $8,
+        jsonb_build_object(
+          'migration_key', $9,
+          'fixed_title_count', fcs.fixed_title_count,
+          'earliest_expire_at', fcs.earliest_expire_at,
+          'latest_expire_at', fcs.latest_expire_at
+        ),
+        NOW(),
+        NOW()
+      FROM fixed_character_stats fcs
+      INNER JOIN characters c ON c.id = fcs.character_id
+    `,
+    [
+      championTitleId,
+      runnerupTitleId,
+      thirdTitleId,
+      PVP_WEEKLY_TITLE_VALID_DAYS,
+      timezone,
+      mailTitle,
+      mailContent,
+      mailSource,
+      'character_title_pvp_weekly_expire_fix_and_compensation_mail_v1',
+    ],
+  );
+};
+
 export const initAchievementTables = async (): Promise<void> => {
   await query(characterAchievementTableSQL);
   await query(characterAchievementPointsTableSQL);
@@ -103,6 +222,11 @@ export const initAchievementTables = async (): Promise<void> => {
     migrationKey: 'character_title_expires_at_v1',
     description: '角色称号表增加 expires_at 字段与有效期查询索引',
     execute: migrateCharacterTitleExpiresAt,
+  });
+  await runDbMigrationOnce({
+    migrationKey: 'character_title_pvp_weekly_expire_fix_and_compensation_mail_v1',
+    description: '修复历史PVP周称号有效期并向受影响玩家补发说明邮件',
+    execute: migratePvpWeeklyTitleExpireFixAndCompensationMailV1,
   });
   console.log('✓ 成就与称号系统表检测完成');
 };

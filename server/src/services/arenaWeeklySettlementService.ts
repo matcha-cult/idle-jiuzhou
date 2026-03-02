@@ -1,7 +1,7 @@
 import { query, getTransactionClient } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import { invalidateCharacterComputedCache } from './characterComputedService.js';
-import { getPvpWeeklyTitleIdByRank } from './achievement/pvpWeeklyTitleConfig.js';
+import { getPvpWeeklyTitleIdByRank, PVP_WEEKLY_TITLE_VALID_DAYS } from './achievement/pvpWeeklyTitleConfig.js';
 import { clearExpiredEquippedPvpWeeklyTitlesTx, grantExpiringTitleTx } from './achievement/titleOwnership.js';
 import { sendSystemMail } from './mailService.js';
 import { getTitleDefinitions } from './staticConfigLoader.js';
@@ -88,6 +88,31 @@ class ArenaWeeklySettlementService {
   private initialized = false;
 
   /**
+   * 计算周结算称号的本地过期日期（上海时区日期，不含具体时分秒）。
+   *
+   * 作用：
+   * 1. 统一“称号有效 7 天”的日期推导，避免邮件文案与数据库写入各算一套；
+   * 2. 作为周结算称号有效期的唯一入口，降低后续修改规则时的改动面。
+   *
+   * 输入：
+   * - weekEndLocalDate：本次结算周的结束日期（下周一，YYYY-MM-DD）。
+   *
+   * 输出：
+   * - 过期日期（YYYY-MM-DD），表示该日 00:00（Asia/Shanghai）过期。
+   *
+   * 数据流：
+   * - sendWeeklyTitleAwardMails 读取该值拼接邮件有效期文案；
+   * - getExpireAtByWeekEndTx 基于该值计算数据库 expires_at（UTC 存储）。
+   *
+   * 关键边界条件与坑点：
+   * 1. 结算周结束日本身就是发奖日 00:00，若不额外 +7 天会导致称号“刚发即过期”。
+   * 2. 这里返回的是“本地日期”，数据库落库前必须再通过 SQL + 时区换算为 timestamptz。
+   */
+  private getPvpWeeklyTitleExpireLocalDate(weekEndLocalDate: string): string {
+    return addDaysToLocalDate(weekEndLocalDate, PVP_WEEKLY_TITLE_VALID_DAYS);
+  }
+
+  /**
    * 发送周结算称号邮件通知。
    *
    * 作用：
@@ -141,7 +166,8 @@ class ArenaWeeklySettlementService {
     );
 
     const periodEndLocalDate = addDaysToLocalDate(weekEndLocalDate, -1);
-    const expireAtText = `${weekEndLocalDate} 00:00`;
+    const expireAtLocalDate = this.getPvpWeeklyTitleExpireLocalDate(weekEndLocalDate);
+    const expireAtText = `${expireAtLocalDate} 00:00`;
 
     for (const award of awards) {
       const userId = userIdByCharacterId.get(award.characterId);
@@ -254,11 +280,12 @@ class ArenaWeeklySettlementService {
   }
 
   private async getExpireAtByWeekEndTx(weekEndLocalDate: string): Promise<Date> {
+    const expireAtLocalDate = this.getPvpWeeklyTitleExpireLocalDate(weekEndLocalDate);
     const res = await query(
       `
       SELECT ($1::date::timestamp AT TIME ZONE $2) AS expire_at
     `,
-      [weekEndLocalDate, SHANGHAI_TIMEZONE],
+      [expireAtLocalDate, SHANGHAI_TIMEZONE],
     );
 
     const row = (res.rows?.[0] ?? {}) as Record<string, unknown>;
