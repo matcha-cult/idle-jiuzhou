@@ -1,5 +1,5 @@
-import { Router, Request, Response } from 'express';
-import { withRouteError } from '../middleware/routeError.js';
+import { Router } from 'express';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth, requireCharacter } from '../middleware/auth.js';
 import { bountyService } from '../services/bountyService.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
@@ -7,8 +7,7 @@ import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
 const router = Router();
 
 
-router.get('/board', requireCharacter, async (req: Request, res: Response) => {
-  try {
+router.get('/board', requireCharacter, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -17,13 +16,9 @@ router.get('/board', requireCharacter, async (req: Request, res: Response) => {
     const result = await bountyService.getBountyBoard(characterId, resolvedPool);
     if (!result.success) return res.status(400).json(result);
     return res.json({ success: true, message: 'ok', data: result.data });
-  } catch (error) {
-    return withRouteError(res, 'bountyRoutes 路由异常', error);
-  }
-});
+}));
 
-router.post('/claim', requireCharacter, async (req: Request, res: Response) => {
-  try {
+router.post('/claim', requireCharacter, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -33,13 +28,9 @@ router.post('/claim', requireCharacter, async (req: Request, res: Response) => {
     if (!result.success) return res.status(400).json(result);
     await safePushCharacterUpdate(userId);
     return res.json(result);
-  } catch (error) {
-    return withRouteError(res, 'bountyRoutes 路由异常', error);
-  }
-});
+}));
 
-router.post('/publish', requireCharacter, async (req: Request, res: Response) => {
-  try {
+router.post('/publish', requireCharacter, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -77,25 +68,17 @@ router.post('/publish', requireCharacter, async (req: Request, res: Response) =>
     });
     if (!result.success) return res.status(400).json(result);
     return res.json(result);
-  } catch (error) {
-    return withRouteError(res, 'bountyRoutes 路由异常', error);
-  }
-});
+}));
 
-router.get('/items/search', requireAuth, async (req: Request, res: Response) => {
-  try {
+router.get('/items/search', requireAuth, asyncHandler(async (req, res) => {
     const keyword = typeof req.query.keyword === 'string' ? req.query.keyword : '';
     const limit = Number.isFinite(Number(req.query.limit)) ? Number(req.query.limit) : 20;
     const result = await bountyService.searchItemDefsForBounty(keyword, limit);
     if (!result.success) return res.status(400).json(result);
     return res.json({ success: true, message: 'ok', data: result.data });
-  } catch (error) {
-    return withRouteError(res, 'bountyRoutes 路由异常', error);
-  }
-});
+}));
 
-router.post('/submit-materials', requireCharacter, async (req: Request, res: Response) => {
-  try {
+router.post('/submit-materials', requireCharacter, asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -105,9 +88,6 @@ router.post('/submit-materials', requireCharacter, async (req: Request, res: Res
     if (!result.success) return res.status(400).json(result);
     await safePushCharacterUpdate(userId);
     return res.json(result);
-  } catch (error) {
-    return withRouteError(res, 'bountyRoutes 路由异常', error);
-  }
-});
+}));
 
 export default router;

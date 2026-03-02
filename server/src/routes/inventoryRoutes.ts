@@ -1,5 +1,5 @@
-import { Router, Request, Response } from 'express';
-import { withRouteError } from '../middleware/routeError.js';
+import { Router } from 'express';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 /**
  * 九州修仙录 - 背包路由
  */
@@ -71,25 +71,20 @@ router.use(requireCharacter);
 // 获取背包信息
 // GET /api/inventory/info
 // ============================================
-router.get('/info', async (req: Request, res: Response) => {
-  try {
+router.get('/info', asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const info = await inventoryService.getInventoryInfo(characterId);
     res.json({ success: true, data: info });
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 获取背包物品列表
 // GET /api/inventory/items?location=bag&page=1&pageSize=100
 // ============================================
-router.get('/items', async (req: Request, res: Response) => {
-  try {
+router.get('/items', asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
-    
+
     const locationQuery = req.query.location;
     const location = locationQuery === undefined ? 'bag' : locationQuery;
     if (!isAllowedLocation(location)) {
@@ -97,9 +92,9 @@ router.get('/items', async (req: Request, res: Response) => {
     }
     const page = parseInt(req.query.page as string) || 1;
     const pageSize = Math.min(parseInt(req.query.pageSize as string) || 100, 200);
-    
+
     const result = await inventoryService.getInventoryItems(characterId, location, page, pageSize);
-    
+
     // 获取物品定义信息
     if (result.items.length > 0) {
       const itemDefIds = [...new Set(result.items.map((item) => String(item.item_def_id || '').trim()))]
@@ -159,7 +154,7 @@ router.get('/items', async (req: Request, res: Response) => {
           equippedSetCountMap.set(setId, (equippedSetCountMap.get(setId) || 0) + 1);
         }
       }
-      
+
       const defMap = staticDefMap;
       const affixPoolCache = new Map<string, ReturnType<typeof loadAffixPoolForReroll>>();
       const itemsWithDef = result.items.map((item: any) => {
@@ -226,49 +221,41 @@ router.get('/items', async (req: Request, res: Response) => {
           def: mergedDef,
         };
       });
-      
-      res.json({ 
-        success: true, 
-        data: { 
-          items: itemsWithDef, 
+
+      res.json({
+        success: true,
+        data: {
+          items: itemsWithDef,
           total: result.total,
           page,
           pageSize
-        } 
+        }
       });
     } else {
-      res.json({ 
-        success: true, 
-        data: { items: [], total: 0, page, pageSize } 
+      res.json({
+        success: true,
+        data: { items: [], total: 0, page, pageSize }
       });
     }
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 获取炼制配方列表
 // GET /api/inventory/craft/recipes?recipeType=craft
 // ============================================
-router.get('/craft/recipes', async (req: Request, res: Response) => {
-  try {
+router.get('/craft/recipes', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const recipeType = typeof req.query.recipeType === 'string' ? req.query.recipeType : undefined;
     const result = await craftService.getCraftRecipeList(userId, { recipeType });
     return res.status(result.success ? 200 : 400).json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 执行炼制
 // POST /api/inventory/craft/execute
 // Body: { recipeId: string, times?: number }
 // ============================================
-router.post('/craft/execute', async (req: Request, res: Response) => {
-  try {
+router.post('/craft/execute', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const recipeId = typeof req.body?.recipeId === 'string' ? req.body.recipeId : '';
     const timesRaw = req.body?.times;
@@ -286,33 +273,25 @@ router.post('/craft/execute', async (req: Request, res: Response) => {
       await safePushCharacterUpdate(userId);
     }
     return res.status(result.success ? 200 : 400).json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 获取宝石合成配方列表
 // GET /api/inventory/gem/recipes
 // ============================================
-router.get('/gem/recipes', async (req: Request, res: Response) => {
-  try {
+router.get('/gem/recipes', asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const result = await gemSynthesisService.getGemSynthesisRecipeList(characterId);
     return res.status(result.success ? 200 : 400).json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 执行宝石合成
 // POST /api/inventory/gem/synthesize
 // Body: { recipeId: string, times?: number }
 // ============================================
-router.post('/gem/synthesize', async (req: Request, res: Response) => {
-  try {
+router.post('/gem/synthesize', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -336,18 +315,14 @@ router.post('/gem/synthesize', async (req: Request, res: Response) => {
     }
 
     return res.status(result.success ? 200 : 400).json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 批量宝石合成到目标等级
 // POST /api/inventory/gem/synthesize/batch
 // Body: { gemType: string, targetLevel: number, sourceLevel?: number, seriesKey?: string }
 // ============================================
-router.post('/gem/synthesize/batch', async (req: Request, res: Response) => {
-  try {
+router.post('/gem/synthesize/batch', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -382,21 +357,17 @@ router.post('/gem/synthesize/batch', async (req: Request, res: Response) => {
     }
 
     return res.status(result.success ? 200 : 400).json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 移动物品
 // POST /api/inventory/move
 // ============================================
-router.post('/move', async (req: Request, res: Response) => {
-  try {
+router.post('/move', asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
-    
+
     const { itemId, targetLocation, targetSlot } = req.body;
-    
+
     if (itemId === undefined || targetLocation === undefined) {
       return res.status(400).json({ success: false, message: '参数不完整' });
     }
@@ -418,22 +389,18 @@ router.post('/move', async (req: Request, res: Response) => {
     ) {
       return res.status(400).json({ success: false, message: 'targetSlot参数错误' });
     }
-    
+
     const result = await inventoryService.moveItem(
       characterId,
       parsedItemId,
       targetLocation,
       parsedTargetSlot
     );
-    
-    res.json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
 
-router.post('/use', async (req: Request, res: Response) => {
-  try {
+    res.json(result);
+}));
+
+router.post('/use', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -466,18 +433,14 @@ router.post('/use', async (req: Request, res: Response) => {
     await safePushCharacterUpdate(userId);
 
     return res.json({ ...result, data: { character: result.character, lootResults: result.lootResults } });
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 穿戴装备
 // POST /api/inventory/equip
 // Body: { itemId: number }
 // ============================================
-router.post('/equip', async (req: Request, res: Response) => {
-  try {
+router.post('/equip', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -501,18 +464,14 @@ router.post('/equip', async (req: Request, res: Response) => {
     await safePushCharacterUpdate(userId);
 
     return res.json({ ...result, data: { character } });
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 卸下装备
 // POST /api/inventory/unequip
 // Body: { itemId: number, targetLocation?: 'bag' | 'warehouse' }
 // ============================================
-router.post('/unequip', async (req: Request, res: Response) => {
-  try {
+router.post('/unequip', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -542,18 +501,14 @@ router.post('/unequip', async (req: Request, res: Response) => {
     await safePushCharacterUpdate(userId);
 
     return res.json({ ...result, data: { character } });
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 强化装备
 // POST /api/inventory/enhance
 // Body: { itemId: number }
 // ============================================
-router.post('/enhance', async (req: Request, res: Response) => {
-  try {
+router.post('/enhance', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -591,18 +546,14 @@ router.post('/enhance', async (req: Request, res: Response) => {
         character: null,
       },
     });
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 精炼装备
 // POST /api/inventory/refine
 // Body: { itemId: number }
 // ============================================
-router.post('/refine', async (req: Request, res: Response) => {
-  try {
+router.post('/refine', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -636,18 +587,14 @@ router.post('/refine', async (req: Request, res: Response) => {
         character: null,
       },
     });
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 洗炼消耗预览
 // POST /api/inventory/reroll-affixes/cost-preview
 // Body: { itemId: number }
 // ============================================
-router.post('/reroll-affixes/cost-preview', async (req: Request, res: Response) => {
-  try {
+router.post('/reroll-affixes/cost-preview', asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
     const { itemId } = req.body as { itemId?: unknown };
     if (itemId === undefined || itemId === null) {
@@ -659,18 +606,14 @@ router.post('/reroll-affixes/cost-preview', async (req: Request, res: Response) 
     }
     const result = await inventoryService.getRerollCostPreview(characterId, parsedItemId);
     return res.json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 装备词条洗炼
 // POST /api/inventory/reroll-affixes
 // Body: { itemId: number, lockIndexes?: number[] }
 // ============================================
-router.post('/reroll-affixes', async (req: Request, res: Response) => {
-  try {
+router.post('/reroll-affixes', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -712,18 +655,14 @@ router.post('/reroll-affixes', async (req: Request, res: Response) => {
       message: result.message,
       data: result.data ?? null,
     });
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 镶嵌宝石
 // POST /api/inventory/socket
 // Body: { itemId: number, gemItemId: number, slot?: number }
 // ============================================
-router.post('/socket', async (req: Request, res: Response) => {
-  try {
+router.post('/socket', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -781,18 +720,14 @@ router.post('/socket', async (req: Request, res: Response) => {
       message: result.message,
       data: result.data ?? null,
     });
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 分解物品
 // POST /api/inventory/disassemble
 // Body: { itemId: number, qty: number }
 // ============================================
-router.post('/disassemble', async (req: Request, res: Response) => {
-  try {
+router.post('/disassemble', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -816,18 +751,14 @@ router.post('/disassemble', async (req: Request, res: Response) => {
       await safePushCharacterUpdate(userId);
     }
     return res.json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 批量分解物品
 // POST /api/inventory/disassemble/batch
 // Body: { items: Array<{ itemId: number; qty: number }> }
 // ============================================
-router.post('/disassemble/batch', async (req: Request, res: Response) => {
-  try {
+router.post('/disassemble/batch', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
@@ -854,21 +785,17 @@ router.post('/disassemble/batch', async (req: Request, res: Response) => {
       await safePushCharacterUpdate(userId);
     }
     return res.json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 丢弃/删除物品
 // POST /api/inventory/remove
 // ============================================
-router.post('/remove', async (req: Request, res: Response) => {
-  try {
+router.post('/remove', asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
-    
+
     const { itemId, qty } = req.body;
-    
+
     if (itemId === undefined) {
       return res.status(400).json({ success: false, message: '参数不完整' });
     }
@@ -882,26 +809,22 @@ router.post('/remove', async (req: Request, res: Response) => {
     if (!Number.isInteger(parsedQty) || parsedQty <= 0) {
       return res.status(400).json({ success: false, message: 'qty参数错误' });
     }
-    
+
     const result = await inventoryService.removeItemFromInventory(
       characterId,
       parsedItemId,
       parsedQty
     );
-    
+
     res.json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 批量丢弃/删除物品
 // POST /api/inventory/remove/batch
 // Body: { itemIds: number[] }
 // ============================================
-router.post('/remove/batch', async (req: Request, res: Response) => {
-  try {
+router.post('/remove/batch', asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const { itemIds } = req.body as { itemIds?: unknown };
@@ -916,52 +839,44 @@ router.post('/remove/batch', async (req: Request, res: Response) => {
 
     const result = await inventoryService.removeItemsBatch(characterId, parsedIds);
     return res.json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 整理背包
 // POST /api/inventory/sort
 // ============================================
-router.post('/sort', async (req: Request, res: Response) => {
-  try {
+router.post('/sort', asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
-    
+
     const { location } = req.body;
     const resolvedLocation = location === undefined || location === null ? 'bag' : location;
     if (!isAllowedSlottedLocation(resolvedLocation)) {
       return res.status(400).json({ success: false, message: 'location参数错误' });
     }
     const result = await inventoryService.sortInventory(characterId, resolvedLocation);
-    
+
     res.json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 // ============================================
 // 扩容背包
 // POST /api/inventory/expand
 // ============================================
-router.post('/expand', async (req: Request, res: Response) => {
+router.post('/expand', asyncHandler(async (req, res) => {
   return res
     .status(403)
     .json({ success: false, message: '请通过使用扩容道具进行扩容' });
-});
+}));
 
 // ============================================
 // 锁定/解锁物品
 // POST /api/inventory/lock
 // ============================================
-router.post('/lock', async (req: Request, res: Response) => {
-  try {
+router.post('/lock', asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
-    
+
     const { itemId, locked } = req.body;
-    
+
     if (itemId === undefined || locked === undefined) {
       return res.status(400).json({ success: false, message: '参数不完整' });
     }
@@ -977,9 +892,6 @@ router.post('/lock', async (req: Request, res: Response) => {
 
     const result = await inventoryService.setItemLocked(characterId, parsedItemId, locked);
     return res.json(result);
-  } catch (error) {
-    return withRouteError(res, 'inventoryRoutes 路由异常', error);
-  }
-});
+}));
 
 export default router;

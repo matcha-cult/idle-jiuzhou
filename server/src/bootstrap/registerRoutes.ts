@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from 'express';
+import { errorHandler } from '../middleware/errorHandler.js';
 import authRoutes from '../routes/authRoutes.js';
 import characterRoutes from '../routes/characterRoutes.js';
 import uploadRoutes from '../routes/uploadRoutes.js';
@@ -73,5 +74,8 @@ export const registerRoutes = (app: Express): void => {
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: Date.now() });
   });
+
+  // 全局错误处理中间件（必须注册在所有路由之后）
+  app.use(errorHandler);
 };
 
