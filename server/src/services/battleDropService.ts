@@ -374,34 +374,33 @@ class BattleDropService {
     const pendingMailByReceiver = new Map<number, { userId: number; items: MailAttachItem[] }>();
     const collectCounts = new Map<string, { characterId: number; itemDefId: string; qty: number }>();
 
-    try {
-      const client = getTransactionClient();
-      if (!client) {
-        throw new Error('Transaction client not available');
-      }
+    const client = getTransactionClient();
+    if (!client) {
+      throw new Error('Transaction client not available');
+    }
 
-      const participantCharacterIds = [...new Set(
-        participants
-          .map((p) => Number(p.characterId))
-          .filter((id) => Number.isInteger(id) && id > 0)
-      )].sort((a, b) => a - b);
-      if (participantCharacterIds.length > 0) {
-        // 锁顺序必须统一为”先背包互斥锁，再角色行锁”，否则会与 use/disassemble
-        // 这类”先背包锁再 FOR UPDATE characters”的事务形成环路死锁。
-        await lockCharacterInventoryMutexesTx(client, participantCharacterIds);
+    const participantCharacterIds = [...new Set(
+      participants
+        .map((p) => Number(p.characterId))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    )].sort((a, b) => a - b);
+    if (participantCharacterIds.length > 0) {
+      // 锁顺序必须统一为”先背包互斥锁，再角色行锁”，否则会与 use/disassemble
+      // 这类”先背包锁再 FOR UPDATE characters”的事务形成环路死锁。
+      await lockCharacterInventoryMutexesTx(client, participantCharacterIds);
 
-        // 角色行锁也按升序获取，避免多角色场景下的行锁顺序反转。
-        await client.query(
-          `
-          SELECT id
-          FROM characters
-          WHERE id = ANY($1)
-          ORDER BY id
-          FOR UPDATE
-        `,
-          [participantCharacterIds]
-        );
-      }
+      // 角色行锁也按升序获取，避免多角色场景下的行锁顺序反转。
+      await client.query(
+        `
+        SELECT id
+        FROM characters
+        WHERE id = ANY($1)
+        ORDER BY id
+        FOR UPDATE
+      `,
+        [participantCharacterIds]
+      );
+    }
     
     const stableQualityWeightsKey = (weights?: Record<string, number>): string => {
       if (!weights) return '';
@@ -735,14 +734,6 @@ class BattleDropService {
       },
       perPlayerRewards,
     };
-  } catch (error) {
-    console.error('分发战斗奖励失败:', error);
-    return {
-      success: false,
-      message: '奖励分发失败',
-      rewards: { exp: 0, silver: 0, items: [] },
-    };
-  }
   }
 
   /**

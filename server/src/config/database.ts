@@ -571,6 +571,31 @@ export const query = ((...queryArgs: unknown[]) => {
   return executeQueryWithLogging(runner, queryArgs, sql);
 }) as PgPool['query'];
 
+const markRollbackOnlyIfNeeded = (client: PoolClient, cause: unknown): void => {
+  const state = (client as DecoratedPoolClient).__txState;
+  if (!state || state.rollbackOnly) {
+    return;
+  }
+  state.rollbackOnly = true;
+  state.rollbackCause = cause;
+};
+
+const throwIfRollbackOnly = (client: PoolClient): void => {
+  const state = (client as DecoratedPoolClient).__txState;
+  if (!state?.rollbackOnly) {
+    return;
+  }
+
+  const causeMessage =
+    state.rollbackCause instanceof Error
+      ? `${state.rollbackCause.name}: ${state.rollbackCause.message}`
+      : '未知错误';
+  throw new TransactionRollbackOnlyError(
+    `事务已标记为回滚：调用链中存在失败操作（${causeMessage}）`,
+    state.rollbackCause,
+  );
+};
+
 /**
  * 自动事务执行器。
  *
@@ -586,19 +611,11 @@ export const withTransaction = async <T>(
 
   if (parentContext) {
     // 父上下文有效：直接复用同一事务连接，不创建嵌套事务。
-    const decoratedClient = parentContext.client as DecoratedPoolClient;
-    const state = decoratedClient.__txState;
-    if (!state) {
-      throw new Error('事务状态缺失：无法复用当前事务');
-    }
     try {
       return await callback(parentContext.client);
     } catch (error) {
       // 内层一旦失败，即使上层捕获，也必须阻止根事务提交。
-      if (!state.rollbackOnly) {
-        state.rollbackOnly = true;
-        state.rollbackCause = error;
-      }
+      markRollbackOnlyIfNeeded(parentContext.client, error);
       throw error;
     }
   }
@@ -609,19 +626,8 @@ export const withTransaction = async <T>(
   try {
     await client.query('BEGIN');
     const result = await transactionContextStorage.run(rootContext, async () => callback(client));
-    const state = (client as DecoratedPoolClient).__txState;
-    if (state?.rollbackOnly) {
-      const causeMessage =
-        state.rollbackCause instanceof Error
-          ? `${state.rollbackCause.name}: ${state.rollbackCause.message}`
-          : '未知错误';
-      throw new TransactionRollbackOnlyError(
-        `事务已标记为回滚：调用链中存在失败操作（${causeMessage}）`,
-        state.rollbackCause,
-      );
-    }
+    throwIfRollbackOnly(client);
     await client.query('COMMIT');
-    client.release();
     return result;
   } catch (error) {
     console.error('错误：根事务执行失败，准备回滚并释放连接', {
@@ -637,8 +643,9 @@ export const withTransaction = async <T>(
       });
       // 根事务回滚失败不覆盖主异常，主异常继续上抛。
     }
-    client.release();
     throw error;
+  } finally {
+    safeReleaseClient(client);
   }
 };
 

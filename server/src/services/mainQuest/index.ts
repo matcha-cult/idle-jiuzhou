@@ -180,130 +180,126 @@ const syncCurrentSectionStaticProgress = async (characterId: number): Promise<vo
   const cid = Number(characterId);
   if (!Number.isFinite(cid) || cid <= 0) return;
 
-  try {
-    const progressRes = await query(
-      `SELECT current_section_id, section_status, objectives_progress
-       FROM character_main_quest_progress
-       WHERE character_id = $1 FOR UPDATE`,
-      [cid],
-    );
-    if (!progressRes.rows?.[0]) {
-      return;
+  const progressRes = await query(
+    `SELECT current_section_id, section_status, objectives_progress
+     FROM character_main_quest_progress
+     WHERE character_id = $1 FOR UPDATE`,
+    [cid],
+  );
+  if (!progressRes.rows?.[0]) {
+    return;
+  }
+
+  const progress = progressRes.rows[0] as {
+    current_section_id?: unknown;
+    section_status?: unknown;
+    objectives_progress?: unknown;
+  };
+  if (asString(progress.section_status) !== 'objectives') {
+    return;
+  }
+
+  const sectionId = asString(progress.current_section_id);
+  if (!sectionId) {
+    return;
+  }
+
+  const section = getEnabledMainQuestSectionById(sectionId);
+  if (!section) {
+    return;
+  }
+
+  const objectives = asArray<{ id?: unknown; type?: unknown; target?: unknown; params?: unknown }>(section.objectives);
+  const progressData = asObject(progress.objectives_progress);
+
+  const characterRes = await query(`SELECT realm, sub_realm FROM characters WHERE id = $1 LIMIT 1`, [cid]);
+  const characterRow = characterRes.rows?.[0] as { realm?: unknown; sub_realm?: unknown } | undefined;
+  const currentRealmRank = getRealmRank(characterRow?.realm, characterRow?.sub_realm);
+
+  const techniqueRes = await query(
+    `SELECT technique_id, current_layer FROM character_technique WHERE character_id = $1`,
+    [cid],
+  );
+  const currentTechniqueLayerMap = new Map<string, number>();
+  for (const row of techniqueRes.rows ?? []) {
+    const record = row as { technique_id?: unknown; current_layer?: unknown };
+    const techniqueId = asString(record.technique_id).trim();
+    if (!techniqueId) continue;
+    const currentLayer = Math.max(0, Math.floor(asNumber(record.current_layer, 0)));
+    const prevLayer = currentTechniqueLayerMap.get(techniqueId) ?? 0;
+    if (currentLayer > prevLayer) currentTechniqueLayerMap.set(techniqueId, currentLayer);
+  }
+
+  let updated = false;
+  for (const obj of objectives) {
+    const objId = asString(obj.id);
+    if (!objId) continue;
+    const target = Math.max(1, Math.floor(asNumber(obj.target, 1)));
+    const done = asNumber(progressData[objId], 0);
+    if (done >= target) continue;
+
+    const objType = asString(obj.type);
+    const params = asObject(obj.params);
+
+    if (objType === 'upgrade_realm') {
+      const requiredRealm = asString(params.realm).trim();
+      const requiredRealmRank = getRealmRank(requiredRealm);
+      if (!requiredRealm) continue;
+      if (requiredRealmRank >= 0 && currentRealmRank >= requiredRealmRank) {
+        progressData[objId] = target;
+        updated = true;
+      }
     }
 
-    const progress = progressRes.rows[0] as {
-      current_section_id?: unknown;
-      section_status?: unknown;
-      objectives_progress?: unknown;
-    };
-    if (asString(progress.section_status) !== 'objectives') {
-      return;
-    }
+    if (objType === 'upgrade_technique') {
+      const techniqueId = asString(params.technique_id).trim();
+      const requiredQuality = asString(params.quality).trim();
+      const requiredLayer = Math.max(1, Math.floor(asNumber(params.layer, 1)));
 
-    const sectionId = asString(progress.current_section_id);
-    if (!sectionId) {
-      return;
-    }
-
-    const section = getEnabledMainQuestSectionById(sectionId);
-    if (!section) {
-      return;
-    }
-
-    const objectives = asArray<{ id?: unknown; type?: unknown; target?: unknown; params?: unknown }>(section.objectives);
-    const progressData = asObject(progress.objectives_progress);
-
-    const characterRes = await query(`SELECT realm, sub_realm FROM characters WHERE id = $1 LIMIT 1`, [cid]);
-    const characterRow = characterRes.rows?.[0] as { realm?: unknown; sub_realm?: unknown } | undefined;
-    const currentRealmRank = getRealmRank(characterRow?.realm, characterRow?.sub_realm);
-
-    const techniqueRes = await query(
-      `SELECT technique_id, current_layer FROM character_technique WHERE character_id = $1`,
-      [cid],
-    );
-    const currentTechniqueLayerMap = new Map<string, number>();
-    for (const row of techniqueRes.rows ?? []) {
-      const record = row as { technique_id?: unknown; current_layer?: unknown };
-      const techniqueId = asString(record.technique_id).trim();
-      if (!techniqueId) continue;
-      const currentLayer = Math.max(0, Math.floor(asNumber(record.current_layer, 0)));
-      const prevLayer = currentTechniqueLayerMap.get(techniqueId) ?? 0;
-      if (currentLayer > prevLayer) currentTechniqueLayerMap.set(techniqueId, currentLayer);
-    }
-
-    let updated = false;
-    for (const obj of objectives) {
-      const objId = asString(obj.id);
-      if (!objId) continue;
-      const target = Math.max(1, Math.floor(asNumber(obj.target, 1)));
-      const done = asNumber(progressData[objId], 0);
-      if (done >= target) continue;
-
-      const objType = asString(obj.type);
-      const params = asObject(obj.params);
-
-      if (objType === 'upgrade_realm') {
-        const requiredRealm = asString(params.realm).trim();
-        const requiredRealmRank = getRealmRank(requiredRealm);
-        if (!requiredRealm) continue;
-        if (requiredRealmRank >= 0 && currentRealmRank >= requiredRealmRank) {
+      if (techniqueId) {
+        // 按具体功法 ID 匹配
+        const currentLayer = currentTechniqueLayerMap.get(techniqueId) ?? 0;
+        if (currentLayer >= requiredLayer) {
           progressData[objId] = target;
           updated = true;
         }
-      }
-
-      if (objType === 'upgrade_technique') {
-        const techniqueId = asString(params.technique_id).trim();
-        const requiredQuality = asString(params.quality).trim();
-        const requiredLayer = Math.max(1, Math.floor(asNumber(params.layer, 1)));
-
-        if (techniqueId) {
-          // 按具体功法 ID 匹配
-          const currentLayer = currentTechniqueLayerMap.get(techniqueId) ?? 0;
-          if (currentLayer >= requiredLayer) {
+      } else if (requiredQuality) {
+        // 按品质匹配：玩家拥有任意一门该品质功法且 layer >= 要求即可
+        const qualityTechIds = new Set(
+          getTechniqueDefinitions()
+            .filter((t) => t.enabled !== false && asString(t.quality).trim() === requiredQuality)
+            .map((t) => t.id),
+        );
+        for (const [tid, layer] of currentTechniqueLayerMap) {
+          if (qualityTechIds.has(tid) && layer >= requiredLayer) {
             progressData[objId] = target;
             updated = true;
-          }
-        } else if (requiredQuality) {
-          // 按品质匹配：玩家拥有任意一门该品质功法且 layer >= 要求即可
-          const qualityTechIds = new Set(
-            getTechniqueDefinitions()
-              .filter((t) => t.enabled !== false && asString(t.quality).trim() === requiredQuality)
-              .map((t) => t.id),
-          );
-          for (const [tid, layer] of currentTechniqueLayerMap) {
-            if (qualityTechIds.has(tid) && layer >= requiredLayer) {
-              progressData[objId] = target;
-              updated = true;
-              break;
-            }
+            break;
           }
         }
       }
     }
-
-    if (!updated) {
-      return;
-    }
-
-    const allDone = objectives.every((obj) => {
-      const objId = asString(obj.id);
-      if (!objId) return true;
-      const target = Math.max(1, Math.floor(asNumber(obj.target, 1)));
-      return asNumber(progressData[objId], 0) >= target;
-    });
-    const nextStatus: SectionStatus = allDone ? 'turnin' : 'objectives';
-    await query(
-      `UPDATE character_main_quest_progress
-       SET objectives_progress = $2::jsonb,
-           section_status = $3,
-           updated_at = NOW()
-       WHERE character_id = $1`,
-      [cid, JSON.stringify(progressData), nextStatus],
-    );
-  } catch (error) {
-    console.error('同步主线静态目标失败:', error);
   }
+
+  if (!updated) {
+    return;
+  }
+
+  const allDone = objectives.every((obj) => {
+    const objId = asString(obj.id);
+    if (!objId) return true;
+    const target = Math.max(1, Math.floor(asNumber(obj.target, 1)));
+    return asNumber(progressData[objId], 0) >= target;
+  });
+  const nextStatus: SectionStatus = allDone ? 'turnin' : 'objectives';
+  await query(
+    `UPDATE character_main_quest_progress
+     SET objectives_progress = $2::jsonb,
+         section_status = $3,
+         updated_at = NOW()
+     WHERE character_id = $1`,
+    [cid, JSON.stringify(progressData), nextStatus],
+  );
 };
 
 const getFirstSection = async (): Promise<{ id: string; chapter_id: string } | null> => {
@@ -587,125 +583,94 @@ const advanceDialogueLegacy = async (
   if (!Number.isFinite(uid) || uid <= 0) return { success: false, message: '未登录' };
   if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
 
-  try {
-    const client = getTransactionClient();
-    if (!client) throw new Error('事务上下文不存在');
+  const client = getTransactionClient();
+  if (!client) throw new Error('事务上下文不存在');
 
-    const progressRes = await query(
-      `SELECT dialogue_state, current_section_id, section_status
-       FROM character_main_quest_progress
-       WHERE character_id = $1 FOR UPDATE`,
-      [cid],
-    );
-    if (!progressRes.rows?.[0]) {
-      return { success: false, message: '主线进度不存在' };
+  const progressRes = await query(
+    `SELECT dialogue_state, current_section_id, section_status
+     FROM character_main_quest_progress
+     WHERE character_id = $1 FOR UPDATE`,
+    [cid],
+  );
+  if (!progressRes.rows?.[0]) {
+    return { success: false, message: '主线进度不存在' };
+  }
+
+  const row = progressRes.rows[0] as { dialogue_state?: unknown; current_section_id?: unknown; section_status?: unknown };
+  let dialogueStateRaw = asObject(row.dialogue_state);
+  let dialogueId = asString(dialogueStateRaw.dialogueId);
+  const sectionId = asString(row.current_section_id);
+  const sectionStatus = asString(row.section_status) as SectionStatus;
+
+  if (!dialogueId) {
+    if (!sectionId) {
+      return { success: false, message: '没有进行中的对话' };
     }
 
-    const row = progressRes.rows[0] as { dialogue_state?: unknown; current_section_id?: unknown; section_status?: unknown };
-    let dialogueStateRaw = asObject(row.dialogue_state);
-    let dialogueId = asString(dialogueStateRaw.dialogueId);
-    const sectionId = asString(row.current_section_id);
-    const sectionStatus = asString(row.section_status) as SectionStatus;
+    const section = getEnabledMainQuestSectionById(sectionId);
+    const startDialogueId =
+      sectionStatus === 'turnin' || sectionStatus === 'completed'
+        ? asString(section?.dialogue_complete_id) || asString(section?.dialogue_id)
+        : asString(section?.dialogue_id);
 
-    if (!dialogueId) {
-      if (!sectionId) {
-        return { success: false, message: '没有进行中的对话' };
-      }
-
-      const section = getEnabledMainQuestSectionById(sectionId);
-      const startDialogueId =
-        sectionStatus === 'turnin' || sectionStatus === 'completed'
-          ? asString(section?.dialogue_complete_id) || asString(section?.dialogue_id)
-          : asString(section?.dialogue_id);
-
-      if (!startDialogueId) {
-        return { success: false, message: '没有可用的对话' };
-      }
-
-      const bootstrapDialogue = await loadDialogue(startDialogueId);
-      if (!bootstrapDialogue) {
-        return { success: false, message: '对话不存在' };
-      }
-
-      const bootstrapState = createDialogueState(startDialogueId, bootstrapDialogue.nodes);
-      dialogueStateRaw = bootstrapState as unknown as Record<string, unknown>;
-      dialogueId = startDialogueId;
+    if (!startDialogueId) {
+      return { success: false, message: '没有可用的对话' };
     }
 
-    const dialogue = await loadDialogue(dialogueId);
-    if (!dialogue) {
+    const bootstrapDialogue = await loadDialogue(startDialogueId);
+    if (!bootstrapDialogue) {
       return { success: false, message: '对话不存在' };
     }
 
-    const pendingEffects = asArray<DialogueEffect>(dialogueStateRaw.pendingEffects);
-    let effectResults: unknown[] = [];
-    if (pendingEffects.length > 0) {
-      const applyResult = await applyDialogueEffectsTx(client, uid, cid, pendingEffects);
-      effectResults = applyResult.results;
-    }
+    const bootstrapState = createDialogueState(startDialogueId, bootstrapDialogue.nodes);
+    dialogueStateRaw = bootstrapState as unknown as Record<string, unknown>;
+    dialogueId = startDialogueId;
+  }
 
-    const selectedChoices = asArray<string>(dialogueStateRaw.selectedChoices);
-    const currentNodeIdRaw = asString(dialogueStateRaw.currentNodeId);
-    const currentNode =
-      getDialogueNode(dialogue.nodes, currentNodeIdRaw) ?? createDialogueState(dialogueId, dialogue.nodes).currentNode;
+  const dialogue = await loadDialogue(dialogueId);
+  if (!dialogue) {
+    return { success: false, message: '对话不存在' };
+  }
 
-    if (!currentNode) {
-      return { success: false, message: '对话节点不存在' };
-    }
+  const pendingEffects = asArray<DialogueEffect>(dialogueStateRaw.pendingEffects);
+  let effectResults: unknown[] = [];
+  if (pendingEffects.length > 0) {
+    const applyResult = await applyDialogueEffectsTx(client, uid, cid, pendingEffects);
+    effectResults = applyResult.results;
+  }
 
-    if (currentNode.type === 'choice') {
-      return { success: false, message: '请选择选项' };
-    }
+  const selectedChoices = asArray<string>(dialogueStateRaw.selectedChoices);
+  const currentNodeIdRaw = asString(dialogueStateRaw.currentNodeId);
+  const currentNode =
+    getDialogueNode(dialogue.nodes, currentNodeIdRaw) ?? createDialogueState(dialogueId, dialogue.nodes).currentNode;
 
-    const nextNodeId = asString(currentNode.next);
-    if (!nextNodeId) {
-      const newDialogueState: DialogueState = {
-        dialogueId,
-        currentNodeId: currentNode.id,
-        currentNode,
-        selectedChoices,
-        isComplete: true,
-        pendingEffects: [],
-      };
+  if (!currentNode) {
+    return { success: false, message: '对话节点不存在' };
+  }
 
-      let newSectionStatus: SectionStatus = 'dialogue';
-      if (sectionId) {
-        const section = getEnabledMainQuestSectionById(sectionId);
-        const objectives = asArray(section?.objectives);
-        newSectionStatus = objectives.length > 0 ? 'objectives' : 'turnin';
-      } else {
-        newSectionStatus = 'turnin';
-      }
+  if (currentNode.type === 'choice') {
+    return { success: false, message: '请选择选项' };
+  }
 
-      await query(
-        `UPDATE character_main_quest_progress
-         SET dialogue_state = $2::jsonb,
-             section_status = $3,
-             updated_at = NOW()
-         WHERE character_id = $1`,
-        [cid, JSON.stringify(newDialogueState), newSectionStatus],
-      );
-      if (newSectionStatus === 'objectives') {
-        await syncCurrentSectionStaticProgress(cid);
-      }
-      return { success: true, message: 'ok', data: { dialogueState: newDialogueState, effectResults } };
-    }
-
-    const nextNode = getDialogueNode(dialogue.nodes, nextNodeId);
-    if (!nextNode) {
-      return { success: false, message: `无效的对话节点: ${nextNodeId}` };
-    }
-
+  const nextNodeId = asString(currentNode.next);
+  if (!nextNodeId) {
     const newDialogueState: DialogueState = {
       dialogueId,
-      currentNodeId: nextNodeId,
-      currentNode: nextNode,
+      currentNodeId: currentNode.id,
+      currentNode,
       selectedChoices,
-      isComplete: false,
-      pendingEffects: asArray<DialogueEffect>(nextNode.effects),
+      isComplete: true,
+      pendingEffects: [],
     };
 
-    const newSectionStatus: SectionStatus = 'dialogue';
+    let newSectionStatus: SectionStatus = 'dialogue';
+    if (sectionId) {
+      const section = getEnabledMainQuestSectionById(sectionId);
+      const objectives = asArray(section?.objectives);
+      newSectionStatus = objectives.length > 0 ? 'objectives' : 'turnin';
+    } else {
+      newSectionStatus = 'turnin';
+    }
 
     await query(
       `UPDATE character_main_quest_progress
@@ -715,11 +680,37 @@ const advanceDialogueLegacy = async (
        WHERE character_id = $1`,
       [cid, JSON.stringify(newDialogueState), newSectionStatus],
     );
+    if (newSectionStatus === 'objectives') {
+      await syncCurrentSectionStaticProgress(cid);
+    }
     return { success: true, message: 'ok', data: { dialogueState: newDialogueState, effectResults } };
-  } catch (error) {
-    console.error('推进对话失败:', error);
-    return { success: false, message: '服务器错误' };
   }
+
+  const nextNode = getDialogueNode(dialogue.nodes, nextNodeId);
+  if (!nextNode) {
+    return { success: false, message: `无效的对话节点: ${nextNodeId}` };
+  }
+
+  const newDialogueState: DialogueState = {
+    dialogueId,
+    currentNodeId: nextNodeId,
+    currentNode: nextNode,
+    selectedChoices,
+    isComplete: false,
+    pendingEffects: asArray<DialogueEffect>(nextNode.effects),
+  };
+
+  const newSectionStatus: SectionStatus = 'dialogue';
+
+  await query(
+    `UPDATE character_main_quest_progress
+     SET dialogue_state = $2::jsonb,
+         section_status = $3,
+         updated_at = NOW()
+     WHERE character_id = $1`,
+    [cid, JSON.stringify(newDialogueState), newSectionStatus],
+  );
+  return { success: true, message: 'ok', data: { dialogueState: newDialogueState, effectResults } };
 };
 
 const selectDialogueChoiceLegacy = async (
@@ -735,69 +726,64 @@ const selectDialogueChoiceLegacy = async (
   const ch = typeof choiceId === 'string' ? choiceId.trim() : '';
   if (!ch) return { success: false, message: '选项ID不能为空' };
 
-  try {
-    const client = getTransactionClient();
-    if (!client) throw new Error('事务上下文不存在');
+  const client = getTransactionClient();
+  if (!client) throw new Error('事务上下文不存在');
 
-    const progressRes = await query(
-      `SELECT dialogue_state
-       FROM character_main_quest_progress
-       WHERE character_id = $1 FOR UPDATE`,
-      [cid],
-    );
-    if (!progressRes.rows?.[0]) {
-      return { success: false, message: '主线进度不存在' };
-    }
-
-    const dialogueStateRaw = asObject(progressRes.rows[0].dialogue_state);
-    if (!dialogueStateRaw.dialogueId) {
-      return { success: false, message: '没有进行中的对话' };
-    }
-
-    const dialogue = await loadDialogue(asString(dialogueStateRaw.dialogueId));
-    if (!dialogue) {
-      return { success: false, message: '对话不存在' };
-    }
-
-    const currentNodeId = asString(dialogueStateRaw.currentNodeId);
-    const { nextNodeId, effects } = processChoice(dialogue.nodes, currentNodeId, ch);
-    if (!nextNodeId) {
-      return { success: false, message: '无效的选项' };
-    }
-
-    let effectResults: unknown[] = [];
-    if (effects.length > 0) {
-      const applyResult = await applyDialogueEffectsTx(client, uid, cid, effects);
-      effectResults = applyResult.results;
-    }
-
-    const nextNode = getDialogueNode(dialogue.nodes, nextNodeId);
-    if (!nextNode) {
-      return { success: false, message: `无效的对话节点: ${nextNodeId}` };
-    }
-    const selectedChoices = [...asArray<string>(dialogueStateRaw.selectedChoices), ch];
-
-    const newDialogueState: DialogueState = {
-      dialogueId: asString(dialogueStateRaw.dialogueId),
-      currentNodeId: nextNodeId,
-      currentNode: nextNode,
-      selectedChoices,
-      isComplete: false,
-      pendingEffects: asArray<DialogueEffect>(nextNode.effects),
-    };
-
-    await query(
-      `UPDATE character_main_quest_progress
-       SET dialogue_state = $2::jsonb,
-           updated_at = NOW()
-       WHERE character_id = $1`,
-      [cid, JSON.stringify(newDialogueState)],
-    );
-    return { success: true, message: 'ok', data: { dialogueState: newDialogueState, effectResults } };
-  } catch (error) {
-    console.error('选择对话选项失败:', error);
-    return { success: false, message: '服务器错误' };
+  const progressRes = await query(
+    `SELECT dialogue_state
+     FROM character_main_quest_progress
+     WHERE character_id = $1 FOR UPDATE`,
+    [cid],
+  );
+  if (!progressRes.rows?.[0]) {
+    return { success: false, message: '主线进度不存在' };
   }
+
+  const dialogueStateRaw = asObject(progressRes.rows[0].dialogue_state);
+  if (!dialogueStateRaw.dialogueId) {
+    return { success: false, message: '没有进行中的对话' };
+  }
+
+  const dialogue = await loadDialogue(asString(dialogueStateRaw.dialogueId));
+  if (!dialogue) {
+    return { success: false, message: '对话不存在' };
+  }
+
+  const currentNodeId = asString(dialogueStateRaw.currentNodeId);
+  const { nextNodeId, effects } = processChoice(dialogue.nodes, currentNodeId, ch);
+  if (!nextNodeId) {
+    return { success: false, message: '无效的选项' };
+  }
+
+  let effectResults: unknown[] = [];
+  if (effects.length > 0) {
+    const applyResult = await applyDialogueEffectsTx(client, uid, cid, effects);
+    effectResults = applyResult.results;
+  }
+
+  const nextNode = getDialogueNode(dialogue.nodes, nextNodeId);
+  if (!nextNode) {
+    return { success: false, message: `无效的对话节点: ${nextNodeId}` };
+  }
+  const selectedChoices = [...asArray<string>(dialogueStateRaw.selectedChoices), ch];
+
+  const newDialogueState: DialogueState = {
+    dialogueId: asString(dialogueStateRaw.dialogueId),
+    currentNodeId: nextNodeId,
+    currentNode: nextNode,
+    selectedChoices,
+    isComplete: false,
+    pendingEffects: asArray<DialogueEffect>(nextNode.effects),
+  };
+
+  await query(
+    `UPDATE character_main_quest_progress
+     SET dialogue_state = $2::jsonb,
+         updated_at = NOW()
+     WHERE character_id = $1`,
+    [cid, JSON.stringify(newDialogueState)],
+  );
+  return { success: true, message: 'ok', data: { dialogueState: newDialogueState, effectResults } };
 };
 
 export type MainQuestProgressEvent =
@@ -1099,148 +1085,145 @@ const completeCurrentSectionLegacy = async (
   if (!Number.isFinite(uid) || uid <= 0) return { success: false, message: '未登录' };
   if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
 
-  try {
-    const progressRes = await query(
-      `SELECT current_chapter_id, current_section_id, section_status, completed_chapters, completed_sections
-       FROM character_main_quest_progress
-       WHERE character_id = $1 FOR UPDATE`,
-      [cid],
+  const progressRes = await query(
+    `SELECT current_chapter_id, current_section_id, section_status, completed_chapters, completed_sections
+     FROM character_main_quest_progress
+     WHERE character_id = $1 FOR UPDATE`,
+    [cid],
+  );
+  if (!progressRes.rows?.[0]) {
+    return { success: false, message: '主线进度不存在' };
+  }
+
+  const progress = progressRes.rows[0] as {
+    current_chapter_id?: unknown;
+    current_section_id?: unknown;
+    section_status?: unknown;
+    completed_chapters?: unknown;
+    completed_sections?: unknown;
+  };
+
+  if (asString(progress.section_status) !== 'turnin') {
+    return { success: false, message: '任务未完成，无法领取奖励' };
+  }
+
+  const currentSectionId = asString(progress.current_section_id);
+  if (!currentSectionId) {
+    return { success: false, message: '任务节不存在' };
+  }
+
+  const section = getEnabledMainQuestSectionById(currentSectionId);
+  if (!section) {
+    return { success: false, message: '任务节不存在' };
+  }
+
+  const sectionId = asString(section.id);
+  const chapterId = asString(section.chapter_id);
+  if (!sectionId || !chapterId) {
+    return { success: false, message: '任务节不存在' };
+  }
+
+  const rewardResults = await grantSectionRewards(uid, cid, asObject(section.rewards));
+
+  const completedSections = asArray<string>(progress.completed_sections);
+  if (!completedSections.includes(sectionId)) completedSections.push(sectionId);
+
+  const completedChapters = asArray<string>(progress.completed_chapters);
+  let chapterCompleted = false;
+  let nextSectionDto: SectionDto | undefined;
+
+  if (section.is_chapter_final === true) {
+    chapterCompleted = true;
+    if (!completedChapters.includes(chapterId)) completedChapters.push(chapterId);
+
+    const chapterRewards = asObject(getMainQuestChapterById(chapterId)?.chapter_rewards);
+    const chapterRewardResults = await grantSectionRewards(uid, cid, chapterRewards);
+    rewardResults.push(
+      ...chapterRewardResults.map((r) => {
+        if (r.type === 'exp') return { type: 'chapter_exp', amount: r.amount } as RewardResult;
+        if (r.type === 'silver') return { type: 'chapter_silver', amount: r.amount } as RewardResult;
+        if (r.type === 'spirit_stones') return { type: 'chapter_spirit_stones', amount: r.amount } as RewardResult;
+        return r;
+      }),
     );
-    if (!progressRes.rows?.[0]) {
-      return { success: false, message: '主线进度不存在' };
-    }
 
-    const progress = progressRes.rows[0] as {
-      current_chapter_id?: unknown;
-      current_section_id?: unknown;
-      section_status?: unknown;
-      completed_chapters?: unknown;
-      completed_sections?: unknown;
-    };
+    const currentChapterNum = asNumber(getMainQuestChapterById(chapterId)?.chapter_num, 0);
+    const nextSection = getEnabledMainQuestSectionsSorted().find(
+      (entry) => asNumber(getMainQuestChapterById(entry.chapter_id)?.chapter_num, 0) > currentChapterNum,
+    );
 
-    if (asString(progress.section_status) !== 'turnin') {
-      return { success: false, message: '任务未完成，无法领取奖励' };
-    }
-
-    const currentSectionId = asString(progress.current_section_id);
-    if (!currentSectionId) {
-      return { success: false, message: '任务节不存在' };
-    }
-
-    const section = getEnabledMainQuestSectionById(currentSectionId);
-    if (!section) {
-      return { success: false, message: '任务节不存在' };
-    }
-
-    const sectionId = asString(section.id);
-    const chapterId = asString(section.chapter_id);
-    if (!sectionId || !chapterId) {
-      return { success: false, message: '任务节不存在' };
-    }
-
-    const rewardResults = await grantSectionRewards(uid, cid, asObject(section.rewards));
-
-    const completedSections = asArray<string>(progress.completed_sections);
-    if (!completedSections.includes(sectionId)) completedSections.push(sectionId);
-
-    const completedChapters = asArray<string>(progress.completed_chapters);
-    let chapterCompleted = false;
-    let nextSectionDto: SectionDto | undefined;
-
-    if (section.is_chapter_final === true) {
-      chapterCompleted = true;
-      if (!completedChapters.includes(chapterId)) completedChapters.push(chapterId);
-
-      const chapterRewards = asObject(getMainQuestChapterById(chapterId)?.chapter_rewards);
-      const chapterRewardResults = await grantSectionRewards(uid, cid, chapterRewards);
-      rewardResults.push(
-        ...chapterRewardResults.map((r) => {
-          if (r.type === 'exp') return { type: 'chapter_exp', amount: r.amount } as RewardResult;
-          if (r.type === 'silver') return { type: 'chapter_silver', amount: r.amount } as RewardResult;
-          if (r.type === 'spirit_stones') return { type: 'chapter_spirit_stones', amount: r.amount } as RewardResult;
-          return r;
-        }),
-      );
-
-      const currentChapterNum = asNumber(getMainQuestChapterById(chapterId)?.chapter_num, 0);
-      const nextSection = getEnabledMainQuestSectionsSorted().find(
-        (entry) => asNumber(getMainQuestChapterById(entry.chapter_id)?.chapter_num, 0) > currentChapterNum,
-      );
-
-      if (nextSection) {
-        const nextId = asString(nextSection.id);
-        const nextChapterId = asString(nextSection.chapter_id);
-        if (nextId && nextChapterId) {
-          await query(
-            `UPDATE character_main_quest_progress
-             SET current_chapter_id = $2,
-                 current_section_id = $3,
-                 section_status = 'not_started',
-                 objectives_progress = '{}'::jsonb,
-                 dialogue_state = '{}'::jsonb,
-                 completed_chapters = $4::jsonb,
-                 completed_sections = $5::jsonb,
-                 updated_at = NOW()
-             WHERE character_id = $1`,
-            [cid, nextChapterId, nextId, JSON.stringify(completedChapters), JSON.stringify(completedSections)],
-          );
-        }
-      } else {
+    if (nextSection) {
+      const nextId = asString(nextSection.id);
+      const nextChapterId = asString(nextSection.chapter_id);
+      if (nextId && nextChapterId) {
         await query(
           `UPDATE character_main_quest_progress
-           SET section_status = 'completed',
-               completed_chapters = $2::jsonb,
-               completed_sections = $3::jsonb,
+           SET current_chapter_id = $2,
+               current_section_id = $3,
+               section_status = 'not_started',
+               objectives_progress = '{}'::jsonb,
+               dialogue_state = '{}'::jsonb,
+               completed_chapters = $4::jsonb,
+               completed_sections = $5::jsonb,
                updated_at = NOW()
            WHERE character_id = $1`,
-          [cid, JSON.stringify(completedChapters), JSON.stringify(completedSections)],
+          [cid, nextChapterId, nextId, JSON.stringify(completedChapters), JSON.stringify(completedSections)],
         );
       }
     } else {
-      const currentSectionNum = asNumber(section.section_num, 0);
-      const nextSection = getEnabledMainQuestSectionsSorted().find(
-        (entry) => entry.chapter_id === chapterId && asNumber(entry.section_num, 0) > currentSectionNum,
+      await query(
+        `UPDATE character_main_quest_progress
+         SET section_status = 'completed',
+             completed_chapters = $2::jsonb,
+             completed_sections = $3::jsonb,
+             updated_at = NOW()
+         WHERE character_id = $1`,
+        [cid, JSON.stringify(completedChapters), JSON.stringify(completedSections)],
       );
+    }
 
-      if (nextSection) {
-        const nextId = asString(nextSection.id);
-        if (nextId) {
-          await query(
-            `UPDATE character_main_quest_progress
-             SET current_section_id = $2,
-                 section_status = 'not_started',
-                 objectives_progress = '{}'::jsonb,
-                 dialogue_state = '{}'::jsonb,
-                 completed_sections = $3::jsonb,
-                 updated_at = NOW()
-             WHERE character_id = $1`,
-            [cid, nextId, JSON.stringify(completedSections)],
-          );
+  } else {
+    const currentSectionNum = asNumber(section.section_num, 0);
+    const nextSection = getEnabledMainQuestSectionsSorted().find(
+      (entry) => entry.chapter_id === chapterId && asNumber(entry.section_num, 0) > currentSectionNum,
+    );
 
-          const dbQueryLike = { query };
-          nextSectionDto = {
-            id: nextId,
-            chapterId: asString(nextSection.chapter_id),
-            sectionNum: asNumber(nextSection.section_num, 0),
-            name: asString(nextSection.name),
-            description: asString(nextSection.description),
-            brief: asString(nextSection.brief),
-            npcId: asString(nextSection.npc_id) || null,
-            mapId: asString(nextSection.map_id) || null,
-            roomId: asString(nextSection.room_id) || null,
-            status: 'not_started',
-            objectives: [],
-            rewards: await decorateSectionRewards(dbQueryLike, asObject(nextSection.rewards)),
-            isChapterFinal: nextSection.is_chapter_final === true,
-          };
-        }
+    if (nextSection) {
+      const nextId = asString(nextSection.id);
+      if (nextId) {
+        await query(
+          `UPDATE character_main_quest_progress
+           SET current_section_id = $2,
+               section_status = 'not_started',
+               objectives_progress = '{}'::jsonb,
+               dialogue_state = '{}'::jsonb,
+               completed_sections = $3::jsonb,
+               updated_at = NOW()
+           WHERE character_id = $1`,
+          [cid, nextId, JSON.stringify(completedSections)],
+        );
+
+        const dbQueryLike = { query };
+        nextSectionDto = {
+          id: nextId,
+          chapterId: asString(nextSection.chapter_id),
+          sectionNum: asNumber(nextSection.section_num, 0),
+          name: asString(nextSection.name),
+          description: asString(nextSection.description),
+          brief: asString(nextSection.brief),
+          npcId: asString(nextSection.npc_id) || null,
+          mapId: asString(nextSection.map_id) || null,
+          roomId: asString(nextSection.room_id) || null,
+          status: 'not_started',
+          objectives: [],
+          rewards: await decorateSectionRewards(dbQueryLike, asObject(nextSection.rewards)),
+          isChapterFinal: nextSection.is_chapter_final === true,
+        };
       }
     }
-    return { success: true, message: 'ok', data: { rewards: rewardResults, nextSection: nextSectionDto, chapterCompleted } };
-  } catch (error) {
-    console.error('完成主线任务节失败:', error);
-    return { success: false, message: '服务器错误' };
   }
+
+  return { success: true, message: 'ok', data: { rewards: rewardResults, nextSection: nextSectionDto, chapterCompleted } };
 };
 
 const getChapterListLegacy = async (characterId: number): Promise<{ chapters: ChapterDto[] }> => {
@@ -1414,104 +1397,96 @@ class MainQuestService {
     const cid = Number(characterId);
     if (!Number.isFinite(cid) || cid <= 0) return;
 
-    try {
-      const progressRes = await query(
-        `SELECT current_chapter_id, current_section_id, section_status, completed_chapters, completed_sections
-         FROM character_main_quest_progress
-         WHERE character_id = $1 FOR UPDATE NOWAIT`,
-        [cid],
-      );
+    const progressRes = await query(
+      `SELECT current_chapter_id, current_section_id, section_status, completed_chapters, completed_sections
+       FROM character_main_quest_progress
+       WHERE character_id = $1 FOR UPDATE NOWAIT`,
+      [cid],
+    );
 
-      if (!progressRes.rows?.[0]) {
-        return;
-      }
-
-      const progress = progressRes.rows[0] as {
-        current_chapter_id?: unknown;
-        current_section_id?: unknown;
-        section_status?: unknown;
-        completed_chapters?: unknown;
-        completed_sections?: unknown;
-      };
-
-      if (asString(progress.section_status) !== 'completed') {
-        return;
-      }
-
-      const completedChapters = asStringArray(progress.completed_chapters);
-      const completedSections = asStringArray(progress.completed_sections);
-
-      const chapterIdSet = new Set<string>();
-      for (const chapterId of completedChapters) {
-        chapterIdSet.add(chapterId);
-      }
-
-      const currentChapterId = asString(progress.current_chapter_id).trim();
-      if (currentChapterId) {
-        chapterIdSet.add(currentChapterId);
-      }
-
-      const currentSectionId = asString(progress.current_section_id).trim();
-      if (currentSectionId) {
-        const currentSection = getMainQuestSectionById(currentSectionId);
-        const chapterIdFromCurrentSection = asString(currentSection?.chapter_id).trim();
-        if (chapterIdFromCurrentSection) {
-          chapterIdSet.add(chapterIdFromCurrentSection);
-        }
-      }
-
-      for (const sectionId of completedSections) {
-        const section = getMainQuestSectionById(sectionId);
-        const chapterIdFromSection = asString(section?.chapter_id).trim();
-        if (!chapterIdFromSection) continue;
-        chapterIdSet.add(chapterIdFromSection);
-      }
-
-      let latestCompletedChapterNum = 0;
-      for (const chapterId of chapterIdSet) {
-        const chapterNum = asNumber(getMainQuestChapterById(chapterId)?.chapter_num, 0);
-        if (chapterNum > latestCompletedChapterNum) latestCompletedChapterNum = chapterNum;
-      }
-
-      if (latestCompletedChapterNum <= 0) {
-        return;
-      }
-
-      const nextSection = getEnabledMainQuestSectionsSorted().find((entry) => {
-        const chapterNum = asNumber(getMainQuestChapterById(entry.chapter_id)?.chapter_num, 0);
-        return chapterNum > latestCompletedChapterNum;
-      });
-
-      if (!nextSection) {
-        return;
-      }
-
-      const nextChapterId = asString(nextSection.chapter_id).trim();
-      const nextSectionId = asString(nextSection.id).trim();
-      if (!nextChapterId || !nextSectionId) {
-        return;
-      }
-
-      await query(
-        `UPDATE character_main_quest_progress
-         SET current_chapter_id = $2,
-             current_section_id = $3,
-             section_status = 'not_started',
-             objectives_progress = '{}'::jsonb,
-             dialogue_state = '{}'::jsonb,
-             completed_chapters = $4::jsonb,
-             completed_sections = $5::jsonb,
-             updated_at = NOW()
-         WHERE character_id = $1`,
-        [cid, nextChapterId, nextSectionId, JSON.stringify(completedChapters), JSON.stringify(completedSections)],
-      );
-    } catch (error) {
-      // 如果行被锁定（55P03），说明有其他请求正在处理，直接返回
-      if (error && typeof error === 'object' && 'code' in error && error.code === '55P03') {
-        return;
-      }
-      console.error('修复主线新增章节进度失败:', error);
+    if (!progressRes.rows?.[0]) {
+      return;
     }
+
+    const progress = progressRes.rows[0] as {
+      current_chapter_id?: unknown;
+      current_section_id?: unknown;
+      section_status?: unknown;
+      completed_chapters?: unknown;
+      completed_sections?: unknown;
+    };
+
+    if (asString(progress.section_status) !== 'completed') {
+      return;
+    }
+
+    const completedChapters = asStringArray(progress.completed_chapters);
+    const completedSections = asStringArray(progress.completed_sections);
+
+    const chapterIdSet = new Set<string>();
+    for (const chapterId of completedChapters) {
+      chapterIdSet.add(chapterId);
+    }
+
+    const currentChapterId = asString(progress.current_chapter_id).trim();
+    if (currentChapterId) {
+      chapterIdSet.add(currentChapterId);
+    }
+
+    const currentSectionId = asString(progress.current_section_id).trim();
+    if (currentSectionId) {
+      const currentSection = getMainQuestSectionById(currentSectionId);
+      const chapterIdFromCurrentSection = asString(currentSection?.chapter_id).trim();
+      if (chapterIdFromCurrentSection) {
+        chapterIdSet.add(chapterIdFromCurrentSection);
+      }
+    }
+
+    for (const sectionId of completedSections) {
+      const section = getMainQuestSectionById(sectionId);
+      const chapterIdFromSection = asString(section?.chapter_id).trim();
+      if (!chapterIdFromSection) continue;
+      chapterIdSet.add(chapterIdFromSection);
+    }
+
+    let latestCompletedChapterNum = 0;
+    for (const chapterId of chapterIdSet) {
+      const chapterNum = asNumber(getMainQuestChapterById(chapterId)?.chapter_num, 0);
+      if (chapterNum > latestCompletedChapterNum) latestCompletedChapterNum = chapterNum;
+    }
+
+    if (latestCompletedChapterNum <= 0) {
+      return;
+    }
+
+    const nextSection = getEnabledMainQuestSectionsSorted().find((entry) => {
+      const chapterNum = asNumber(getMainQuestChapterById(entry.chapter_id)?.chapter_num, 0);
+      return chapterNum > latestCompletedChapterNum;
+    });
+
+    if (!nextSection) {
+      return;
+    }
+
+    const nextChapterId = asString(nextSection.chapter_id).trim();
+    const nextSectionId = asString(nextSection.id).trim();
+    if (!nextChapterId || !nextSectionId) {
+      return;
+    }
+
+    await query(
+      `UPDATE character_main_quest_progress
+       SET current_chapter_id = $2,
+           current_section_id = $3,
+           section_status = 'not_started',
+           objectives_progress = '{}'::jsonb,
+           dialogue_state = '{}'::jsonb,
+           completed_chapters = $4::jsonb,
+           completed_sections = $5::jsonb,
+           updated_at = NOW()
+       WHERE character_id = $1`,
+      [cid, nextChapterId, nextSectionId, JSON.stringify(completedChapters), JSON.stringify(completedSections)],
+    );
   }
 
   async getProgress(characterId: number): Promise<MainQuestProgressDto> {

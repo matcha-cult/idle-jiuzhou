@@ -78,14 +78,6 @@ class AchievementClaimService {
     return out;
   }
 
-  private extractClaimBusinessErrorMessage(error: unknown): string | null {
-    if (!(error instanceof Error)) return null;
-    const message = asNonEmptyString(error.message);
-    if (!message) return null;
-    if (message === '背包已满' || message === '仓库已满' || message === '背包数据异常') return message;
-    return null;
-  }
-
   private async applyRewardsTx(
     userId: number,
     characterId: number,
@@ -354,72 +346,63 @@ class AchievementClaimService {
     if (!cid) return { success: false, message: '角色不存在' };
     if (th < 0) return { success: false, message: '阈值无效' };
 
-    try {
-      await ensureCharacterAchievementPoints(cid);
+    await ensureCharacterAchievementPoints(cid);
 
-      const pointsRes = await query(
-        `
-          SELECT total_points, claimed_thresholds
-          FROM character_achievement_points
-          WHERE character_id = $1
-          FOR UPDATE
-        `,
-        [cid],
-      );
+    const pointsRes = await query(
+      `
+        SELECT total_points, claimed_thresholds
+        FROM character_achievement_points
+        WHERE character_id = $1
+        FOR UPDATE
+      `,
+      [cid],
+    );
 
-      const pointRow = (pointsRes.rows?.[0] ?? {}) as Record<string, unknown>;
-      const totalPoints = asFiniteNonNegativeInt(pointRow.total_points, 0);
-      const claimedThresholds = parseClaimedThresholds(pointRow.claimed_thresholds);
+    const pointRow = (pointsRes.rows?.[0] ?? {}) as Record<string, unknown>;
+    const totalPoints = asFiniteNonNegativeInt(pointRow.total_points, 0);
+    const claimedThresholds = parseClaimedThresholds(pointRow.claimed_thresholds);
 
-      if (claimedThresholds.includes(th)) {
-        return { success: false, message: '该点数奖励已领取' };
-      }
-
-      if (totalPoints < th) {
-        return { success: false, message: '成就点数不足' };
-      }
-
-      const defRow = getAchievementPointsRewardDefinitions().find(
-        (entry) => entry.enabled !== false && asFiniteNonNegativeInt(entry.points_threshold, -1) === th,
-      );
-
-      if (!defRow) {
-        return { success: false, message: '点数奖励不存在' };
-      }
-
-      const rewards = normalizeRewards(defRow.rewards);
-      const rewardViews = await this.applyRewardsTx(uid, cid, rewards, 'achievement_points_reward');
-      const title = await this.grantTitleTx(cid, asNonEmptyString(defRow.title_id));
-
-      const nextThresholds = Array.from(new Set([...claimedThresholds, th])).sort((a, b) => a - b);
-
-      await query(
-        `
-          UPDATE character_achievement_points
-          SET claimed_thresholds = $2::jsonb,
-              updated_at = NOW()
-          WHERE character_id = $1
-        `,
-        [cid, JSON.stringify(nextThresholds)],
-      );
-
-      return {
-        success: true,
-        message: 'ok',
-        data: {
-          threshold: th,
-          rewards: rewardViews,
-          ...(title ? { title } : {}),
-        },
-      };
-    } catch (error) {
-      const businessMessage = this.extractClaimBusinessErrorMessage(error);
-      if (businessMessage) {
-        return { success: false, message: businessMessage };
-      }
-      console.error('领取成就点奖励失败:', error);
-      return { success: false, message: '领取成就点奖励失败' };
+    if (claimedThresholds.includes(th)) {
+      return { success: false, message: '该点数奖励已领取' };
     }
+
+    if (totalPoints < th) {
+      return { success: false, message: '成就点数不足' };
+    }
+
+    const defRow = getAchievementPointsRewardDefinitions().find(
+      (entry) => entry.enabled !== false && asFiniteNonNegativeInt(entry.points_threshold, -1) === th,
+    );
+
+    if (!defRow) {
+      return { success: false, message: '点数奖励不存在' };
+    }
+
+    const rewards = normalizeRewards(defRow.rewards);
+    const rewardViews = await this.applyRewardsTx(uid, cid, rewards, 'achievement_points_reward');
+    const title = await this.grantTitleTx(cid, asNonEmptyString(defRow.title_id));
+
+    const nextThresholds = Array.from(new Set([...claimedThresholds, th])).sort((a, b) => a - b);
+
+    await query(
+      `
+        UPDATE character_achievement_points
+        SET claimed_thresholds = $2::jsonb,
+            updated_at = NOW()
+        WHERE character_id = $1
+      `,
+      [cid, JSON.stringify(nextThresholds)],
+    );
+
+    return {
+      success: true,
+      message: 'ok',
+      data: {
+        threshold: th,
+        rewards: rewardViews,
+        ...(title ? { title } : {}),
+      },
+    };
   }
 }
 

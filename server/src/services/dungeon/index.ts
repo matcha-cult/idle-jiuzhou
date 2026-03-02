@@ -1430,14 +1430,13 @@ export const startDungeonInstance = async (
   const user = await getUserAndCharacter(userId);
   if (!user.ok) return { success: false, message: user.message };
   const client = getTransactionClient();
-  if (!client) return { success: false, message: '事务上下文缺失' };
+  if (!client) throw new Error('事务上下文缺失');
 
-  try {
-    const instRes = await query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
-    if (instRes.rows.length === 0) {
-      return { success: false, message: '秘境实例不存在' };
-    }
-    const inst = instRes.rows[0] as DungeonInstanceRow;
+  const instRes = await query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
+  if (instRes.rows.length === 0) {
+    return { success: false, message: '秘境实例不存在' };
+  }
+  const inst = instRes.rows[0] as DungeonInstanceRow;
 
     if (inst.status !== 'preparing') {
       return { success: false, message: '秘境已开始或已结束' };
@@ -1496,46 +1495,42 @@ export const startDungeonInstance = async (
       return { success: false, message: '该波次未配置怪物' };
     }
 
-    return runDungeonStartFlow({
-      startBattle: () => startDungeonPVEBattle(userId, monsterDefIds, { skipCooldown: true }),
-      commitOnBattleStarted: async ({ battleId, state }) => {
-        for (const p of participants) {
-          await incEntryCount(p.characterId, inst.dungeon_id);
-        }
+  return runDungeonStartFlow({
+    startBattle: () => startDungeonPVEBattle(userId, monsterDefIds, { skipCooldown: true }),
+    commitOnBattleStarted: async ({ battleId, state }) => {
+      for (const p of participants) {
+        await incEntryCount(p.characterId, inst.dungeon_id);
+      }
 
-        if (staminaCost > 0) {
-          for (const p of participants) {
-            const participantLabel = buildParticipantLabel(p, participantNicknameMap);
-            const updRes = await query(
-              `UPDATE characters
-                  SET stamina = stamina - $1,
-                      stamina_recover_at = CASE WHEN stamina >= $3 THEN NOW() ELSE stamina_recover_at END,
-                      updated_at = CURRENT_TIMESTAMP
-                WHERE id = $2 AND stamina >= $1`,
-              [staminaCost, p.characterId, STAMINA_MAX]
-            );
-            if ((updRes.rowCount ?? 0) === 0) {
-              return { success: false, message: `${participantLabel}体力扣除失败` };
-            }
+      if (staminaCost > 0) {
+        for (const p of participants) {
+          const participantLabel = buildParticipantLabel(p, participantNicknameMap);
+          const updRes = await query(
+            `UPDATE characters
+                SET stamina = stamina - $1,
+                    stamina_recover_at = CASE WHEN stamina >= $3 THEN NOW() ELSE stamina_recover_at END,
+                    updated_at = CURRENT_TIMESTAMP
+              WHERE id = $2 AND stamina >= $1`,
+            [staminaCost, p.characterId, STAMINA_MAX]
+          );
+          if ((updRes.rowCount ?? 0) === 0) {
+            return { success: false, message: `${participantLabel}体力扣除失败` };
           }
         }
+      }
 
-        await query(
-          `UPDATE dungeon_instance SET status = 'running', start_time = NOW(), current_stage = 1, current_wave = 1 WHERE id = $1`,
-          [instanceId]
-        );
+      await query(
+        `UPDATE dungeon_instance SET status = 'running', start_time = NOW(), current_stage = 1, current_wave = 1 WHERE id = $1`,
+        [instanceId]
+      );
 
-        await query(
-          `UPDATE dungeon_instance SET instance_data = jsonb_set(COALESCE(instance_data, '{}'::jsonb), '{currentBattleId}', to_jsonb($1::text), true) WHERE id = $2`,
-          [battleId, instanceId]
-        );
-        return { success: true, data: { instanceId, status: 'running', battleId, state } };
-      },
-    });
-  } catch (error) {
-    console.error('开始秘境失败:', error);
-    return { success: false, message: '开始秘境失败' };
-  }
+      await query(
+        `UPDATE dungeon_instance SET instance_data = jsonb_set(COALESCE(instance_data, '{}'::jsonb), '{currentBattleId}', to_jsonb($1::text), true) WHERE id = $2`,
+        [battleId, instanceId]
+      );
+      return { success: true, data: { instanceId, status: 'running', battleId, state } };
+    },
+  });
 };
 
 export const nextDungeonInstance = async (
@@ -1554,13 +1549,12 @@ export const nextDungeonInstance = async (
   }
   | { success: false; message: string }
 > => {
-  try {
-    const user = await getUserAndCharacter(userId);
-    if (!user.ok) return { success: false, message: user.message };
+  const user = await getUserAndCharacter(userId);
+  if (!user.ok) return { success: false, message: user.message };
 
-    const instRes = await query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1`, [instanceId]);
-    if (instRes.rows.length === 0) return { success: false, message: '秘境实例不存在' };
-    const inst = instRes.rows[0] as DungeonInstanceRow;
+  const instRes = await query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1`, [instanceId]);
+  if (instRes.rows.length === 0) return { success: false, message: '秘境实例不存在' };
+  const inst = instRes.rows[0] as DungeonInstanceRow;
 
     if (inst.status !== 'running') return { success: false, message: '秘境未在进行中' };
     if (inst.creator_id !== user.characterId) return { success: false, message: '只有创建者可以推进秘境' };
@@ -1605,19 +1599,17 @@ export const nextDungeonInstance = async (
       const totalDamage = Math.floor(asNumber(attackerStats.damageDealt, 0));
       const timeSpentSec = Math.max(0, Math.floor((Date.now() - new Date(inst.start_time || inst.created_at).getTime()) / 1000));
       const pendingMailByCharacter = new Map<number, { userId: number; items: MailAttachItem[] }>();
-      try {
-
-        const instLockRes = await query(`SELECT status FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
-        if (instLockRes.rows.length === 0) {
-          return { success: false, message: '秘境实例不存在' };
+      const instLockRes = await query(`SELECT status FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
+      if (instLockRes.rows.length === 0) {
+        return { success: false, message: '秘境实例不存在' };
+      }
+      const lockedStatus = asString(instLockRes.rows[0]?.status, '');
+      if (lockedStatus !== 'running') {
+        if (lockedStatus === 'cleared' || lockedStatus === 'failed' || lockedStatus === 'abandoned') {
+          return { success: true, data: { instanceId, status: lockedStatus as DungeonInstanceStatus, finished: true } };
         }
-        const lockedStatus = asString(instLockRes.rows[0]?.status, '');
-        if (lockedStatus !== 'running') {
-          if (lockedStatus === 'cleared' || lockedStatus === 'failed' || lockedStatus === 'abandoned') {
-            return { success: true, data: { instanceId, status: lockedStatus as DungeonInstanceStatus, finished: true } };
-          }
-          return { success: false, message: '秘境状态异常，无法结算' };
-        }
+        return { success: false, message: '秘境状态异常，无法结算' };
+      }
 
         await query(
           `UPDATE dungeon_instance SET status = 'cleared', end_time = NOW(), time_spent_sec = $2, total_damage = $3, death_count = $4 WHERE id = $1`,
@@ -1883,19 +1875,13 @@ export const nextDungeonInstance = async (
           }
         }
 
-        try {
-          for (const p of participants) {
-            const characterId = Number(p.characterId);
-            if (!Number.isFinite(characterId) || characterId <= 0) continue;
-            await recordDungeonClearEvent(characterId, inst.dungeon_id, 1, inst.difficulty_id);
-          }
-        } catch { }
-
-          return { success: true, data: { instanceId, status: 'cleared', finished: true } };
-      } catch (error) {
-        console.error('秘境结算失败:', error);
-        return { success: false, message: '秘境结算失败' };
+      for (const p of participants) {
+        const characterId = Number(p.characterId);
+        if (!Number.isFinite(characterId) || characterId <= 0) continue;
+        await recordDungeonClearEvent(characterId, inst.dungeon_id, 1, inst.difficulty_id);
       }
+
+      return { success: true, data: { instanceId, status: 'cleared', finished: true } };
     }
 
     const nextStageWave = await getStageAndWave(inst.difficulty_id, nextStage, nextWave);
@@ -1919,11 +1905,7 @@ export const nextDungeonInstance = async (
       [battleId, instanceId]
     );
 
-    return { success: true, data: { instanceId, status: 'running', battleId, state: battleRes.data.state } };
-  } catch (error) {
-    console.error('推进秘境失败:', error);
-    return { success: false, message: '推进秘境失败' };
-  }
+  return { success: true, data: { instanceId, status: 'running', battleId, state: battleRes.data.state } };
 };
 
 /**
