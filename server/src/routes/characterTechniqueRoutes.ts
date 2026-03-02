@@ -14,6 +14,8 @@ import type {
 import { query } from '../config/database.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
 import { getSingleParam, parsePositiveInt } from '../services/shared/httpParam.js';
+import { sendResult } from '../middleware/response.js';
+import { BusinessError } from '../middleware/BusinessError.js';
 
 const router = Router();
 
@@ -59,12 +61,11 @@ router.use('/:characterId', requireAuth, characterOwnershipMiddleware);
 router.get('/:characterId/technique/status', asyncHandler(async (req, res) => {
   const characterId = parseCharacterIdParam(req);
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const result = await characterTechniqueService.getCharacterTechniqueStatus(characterId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // ============================================
@@ -74,12 +75,11 @@ router.get('/:characterId/technique/status', asyncHandler(async (req, res) => {
 router.get('/:characterId/techniques', asyncHandler(async (req, res) => {
   const characterId = parseCharacterIdParam(req);
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const result = await characterTechniqueService.getCharacterTechniques(characterId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // ============================================
@@ -89,12 +89,11 @@ router.get('/:characterId/techniques', asyncHandler(async (req, res) => {
 router.get('/:characterId/techniques/equipped', asyncHandler(async (req, res) => {
   const characterId = parseCharacterIdParam(req);
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const result = await characterTechniqueService.getEquippedTechniques(characterId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // ============================================
@@ -105,14 +104,12 @@ router.get('/:characterId/techniques/equipped', asyncHandler(async (req, res) =>
 router.post('/:characterId/technique/learn', asyncHandler(async (req, res) => {
   const characterId = parseCharacterIdParam(req);
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const { techniqueId, obtainedFrom, obtainedRefId } = req.body;
   if (!techniqueId) {
-    res.status(400).json({ success: false, message: '缺少功法ID' });
-    return;
+    throw new BusinessError('缺少功法ID');
   }
   const result = await characterTechniqueService.learnTechnique(characterId, techniqueId, obtainedFrom, obtainedRefId);
 
@@ -123,7 +120,7 @@ router.post('/:characterId/technique/learn', asyncHandler(async (req, res) => {
     }
   }
 
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // ============================================
@@ -135,12 +132,11 @@ router.get('/:characterId/technique/:techniqueId/upgrade-cost', asyncHandler(asy
   const techniqueId = getSingleParam(req.params.techniqueId);
 
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const result = await characterTechniqueService.getTechniqueUpgradeCost(characterId, techniqueId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 
@@ -153,14 +149,12 @@ router.post('/:characterId/technique/:techniqueId/upgrade', asyncHandler(async (
   const techniqueId = getSingleParam(req.params.techniqueId);
 
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const userId = req.userId! || 0;
   if (!userId) {
-    res.status(401).json({ success: false, message: '登录状态无效，请重新登录' });
-    return;
+    throw new BusinessError('登录状态无效，请重新登录', 401);
   }
   const result = await characterTechniqueService.upgradeTechnique(characterId, techniqueId);
 
@@ -168,7 +162,7 @@ router.post('/:characterId/technique/:techniqueId/upgrade', asyncHandler(async (
     await safePushCharacterUpdate(userId);
   }
 
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // ============================================
@@ -179,19 +173,16 @@ router.post('/:characterId/technique/:techniqueId/upgrade', asyncHandler(async (
 router.post('/:characterId/technique/equip', asyncHandler(async (req, res) => {
   const characterId = parseCharacterIdParam(req);
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const { techniqueId, slotType, slotIndex } = req.body;
   if (!techniqueId || !slotType) {
-    res.status(400).json({ success: false, message: '缺少必要参数' });
-    return;
+    throw new BusinessError('缺少必要参数');
   }
 
   if (slotType !== 'main' && slotType !== 'sub') {
-    res.status(400).json({ success: false, message: '无效的槽位类型' });
-    return;
+    throw new BusinessError('无效的槽位类型');
   }
   const result = await characterTechniqueService.equipTechnique(characterId, techniqueId, slotType, slotIndex);
 
@@ -202,7 +193,7 @@ router.post('/:characterId/technique/equip', asyncHandler(async (req, res) => {
     }
   }
 
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // ============================================
@@ -213,14 +204,12 @@ router.post('/:characterId/technique/equip', asyncHandler(async (req, res) => {
 router.post('/:characterId/technique/unequip', asyncHandler(async (req, res) => {
   const characterId = parseCharacterIdParam(req);
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const { techniqueId } = req.body;
   if (!techniqueId) {
-    res.status(400).json({ success: false, message: '缺少功法ID' });
-    return;
+    throw new BusinessError('缺少功法ID');
   }
   const result = await characterTechniqueService.unequipTechnique(characterId, techniqueId);
 
@@ -231,7 +220,7 @@ router.post('/:characterId/technique/unequip', asyncHandler(async (req, res) => 
     }
   }
 
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // ============================================
@@ -241,12 +230,11 @@ router.post('/:characterId/technique/unequip', asyncHandler(async (req, res) => 
 router.get('/:characterId/skills/available', asyncHandler(async (req, res) => {
   const characterId = parseCharacterIdParam(req);
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const result = await characterTechniqueService.getAvailableSkills(characterId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // ============================================
@@ -256,12 +244,11 @@ router.get('/:characterId/skills/available', asyncHandler(async (req, res) => {
 router.get('/:characterId/skills/equipped', asyncHandler(async (req, res) => {
   const characterId = parseCharacterIdParam(req);
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const result = await characterTechniqueService.getEquippedSkills(characterId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 
@@ -273,18 +260,16 @@ router.get('/:characterId/skills/equipped', asyncHandler(async (req, res) => {
 router.post('/:characterId/skill/equip', asyncHandler(async (req, res) => {
   const characterId = parseCharacterIdParam(req);
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const { skillId, slotIndex } = req.body;
   if (!skillId || slotIndex === undefined) {
-    res.status(400).json({ success: false, message: '缺少必要参数' });
-    return;
+    throw new BusinessError('缺少必要参数');
   }
 
   const result = await characterTechniqueService.equipSkill(characterId, skillId, slotIndex);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // ============================================
@@ -295,18 +280,16 @@ router.post('/:characterId/skill/equip', asyncHandler(async (req, res) => {
 router.post('/:characterId/skill/unequip', asyncHandler(async (req, res) => {
   const characterId = parseCharacterIdParam(req);
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const { slotIndex } = req.body;
   if (slotIndex === undefined) {
-    res.status(400).json({ success: false, message: '缺少槽位索引' });
-    return;
+    throw new BusinessError('缺少槽位索引');
   }
 
   const result = await characterTechniqueService.unequipSkill(characterId, slotIndex);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // ============================================
@@ -316,12 +299,11 @@ router.post('/:characterId/skill/unequip', asyncHandler(async (req, res) => {
 router.get('/:characterId/technique/passives', asyncHandler(async (req, res) => {
   const characterId = parseCharacterIdParam(req);
   if (characterId === null) {
-    res.status(400).json({ success: false, message: '无效的角色ID' });
-    return;
+    throw new BusinessError('无效的角色ID');
   }
 
   const result = await characterTechniqueService.calculateTechniquePassives(characterId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 export default router;

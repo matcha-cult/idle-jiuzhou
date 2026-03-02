@@ -4,6 +4,8 @@ import { requireCharacter } from '../middleware/auth.js';
 import { query } from '../config/database.js';
 import { canChallengeToday, getArenaOpponents, getArenaRecords, getArenaStatus } from '../services/arenaService.js';
 import { startPVPBattle } from '../domains/battle/index.js';
+import { sendSuccess, sendResult } from '../middleware/response.js';
+import { BusinessError } from '../middleware/BusinessError.js';
 
 const router = Router();
 
@@ -13,7 +15,7 @@ router.get('/status', asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const characterId = req.characterId!;
   const result = await getArenaStatus(characterId);
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 router.get('/opponents', asyncHandler(async (req, res) => {
@@ -21,7 +23,7 @@ router.get('/opponents', asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
   const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
   const result = await getArenaOpponents(characterId, Number.isFinite(limit as number) ? (limit as number) : 10);
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 router.get('/records', asyncHandler(async (req, res) => {
@@ -29,7 +31,7 @@ router.get('/records', asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
   const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
   const result = await getArenaRecords(characterId, Number.isFinite(limit as number) ? (limit as number) : 50);
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 router.post('/challenge', asyncHandler(async (req, res) => {
@@ -38,25 +40,25 @@ router.post('/challenge', asyncHandler(async (req, res) => {
 
   const opponentCharacterId = Number((req.body as { opponentCharacterId?: unknown })?.opponentCharacterId);
   if (!Number.isFinite(opponentCharacterId) || opponentCharacterId <= 0) {
-    return res.status(400).json({ success: false, message: '对手参数错误' });
+    throw new BusinessError('对手参数错误');
   }
   if (opponentCharacterId === characterId) {
-    return res.status(400).json({ success: false, message: '不能挑战自己' });
+    throw new BusinessError('不能挑战自己');
   }
 
   const limitResult = await canChallengeToday(characterId);
   if (!limitResult.allowed) {
-    return res.status(400).json({ success: false, message: '今日挑战次数已用完' });
+    throw new BusinessError('今日挑战次数已用完');
   }
 
   const existsRes = await query('SELECT id FROM characters WHERE id = $1 LIMIT 1', [opponentCharacterId]);
   if (existsRes.rows.length === 0) {
-    return res.status(404).json({ success: false, message: '对手不存在' });
+    throw new BusinessError('对手不存在', 404);
   }
 
   const battleId = `arena-battle-${characterId}-${opponentCharacterId}-${Date.now()}`;
   const startRes = await startPVPBattle(userId, opponentCharacterId, battleId);
-  if (!startRes.success || !startRes.data?.battleId) return res.status(400).json(startRes);
+  if (!startRes.success || !startRes.data?.battleId) return sendResult(res, startRes);
 
   await query(
     `
@@ -67,7 +69,7 @@ router.post('/challenge', asyncHandler(async (req, res) => {
     [battleId, characterId, opponentCharacterId]
   );
 
-  return res.json({ success: true, message: 'ok', data: { battleId } });
+  return sendSuccess(res, { battleId });
 }));
 
 router.post('/match', asyncHandler(async (req, res) => {
@@ -76,23 +78,23 @@ router.post('/match', asyncHandler(async (req, res) => {
 
   const limitResult = await canChallengeToday(characterId);
   if (!limitResult.allowed) {
-    return res.status(400).json({ success: false, message: '今日挑战次数已用完' });
+    throw new BusinessError('今日挑战次数已用完');
   }
 
   const oppRes = await getArenaOpponents(characterId, 20);
-  if (!oppRes.success) return res.status(400).json(oppRes);
+  if (!oppRes.success) return sendResult(res, oppRes);
   const list = oppRes.data ?? [];
-  if (list.length === 0) return res.status(400).json({ success: false, message: '暂无可匹配对手' });
+  if (list.length === 0) throw new BusinessError('暂无可匹配对手');
 
   const pick = list[0];
   const opponentCharacterId = Number(pick.id);
   if (!Number.isFinite(opponentCharacterId) || opponentCharacterId <= 0) {
-    return res.status(400).json({ success: false, message: '匹配对手异常' });
+    throw new BusinessError('匹配对手异常');
   }
 
   const battleId = `arena-battle-${characterId}-${opponentCharacterId}-${Date.now()}`;
   const startRes = await startPVPBattle(userId, opponentCharacterId, battleId);
-  if (!startRes.success || !startRes.data?.battleId) return res.status(400).json(startRes);
+  if (!startRes.success || !startRes.data?.battleId) return sendResult(res, startRes);
 
   await query(
     `
@@ -103,10 +105,9 @@ router.post('/match', asyncHandler(async (req, res) => {
     [battleId, characterId, opponentCharacterId]
   );
 
-  return res.json({
-    success: true,
-    message: 'ok',
-    data: { battleId, opponent: { id: pick.id, name: pick.name, realm: pick.realm, power: pick.power, score: pick.score } },
+  return sendSuccess(res, {
+    battleId,
+    opponent: { id: pick.id, name: pick.name, realm: pick.realm, power: pick.power, score: pick.score },
   });
 }));
 

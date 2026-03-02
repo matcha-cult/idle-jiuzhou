@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 import { signInService } from '../services/signInService.js';
+import { sendResult } from '../middleware/response.js';
 
 const router = Router();
 
@@ -14,13 +15,13 @@ router.get('/overview', requireAuth, asyncHandler(async (req, res) => {
   const month = monthRaw || fallbackMonth;
 
   const result = await signInService.getOverview(userId, month);
-  res.status(result.success ? 200 : 400).json(result);
+  sendResult(res, result);
 }));
 
 router.post('/do', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const result = await signInService.doSignIn(userId);
-  res.status(result.success ? 200 : 400).json(result);
+  sendResult(res, result);
 }));
 
 export default router;

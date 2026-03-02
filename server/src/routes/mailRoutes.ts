@@ -5,6 +5,8 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireCharacter } from '../middleware/auth.js';
 import { mailService } from '../services/mailService.js';
+import { sendSuccess, sendResult } from '../middleware/response.js';
+import { BusinessError } from '../middleware/BusinessError.js';
 
 const router = Router();
 
@@ -29,16 +31,13 @@ router.get('/list', asyncHandler(async (req, res) => {
 
     const result = await mailService.getMailList(userId, characterId, page, pageSize);
 
-    return res.json({
-      success: true,
-      data: {
-        mails: result.mails,
-        total: result.total,
-        unreadCount: result.unreadCount,
-        unclaimedCount: result.unclaimedCount,
-        page,
-        pageSize
-      }
+    return sendSuccess(res, {
+      mails: result.mails,
+      total: result.total,
+      unreadCount: result.unreadCount,
+      unclaimedCount: result.unclaimedCount,
+      page,
+      pageSize
     });
 }));
 
@@ -51,10 +50,7 @@ router.get('/unread', asyncHandler(async (req, res) => {
 
     const result = await mailService.getUnreadCount(userId, characterId);
 
-    return res.json({
-      success: true,
-      data: result
-    });
+    return sendSuccess(res, result);
 }));
 
 // ============================================
@@ -66,11 +62,11 @@ router.post('/read', asyncHandler(async (req, res) => {
 
     const parsedMailId = parseMailId((req.body as { mailId?: unknown })?.mailId);
     if (!parsedMailId) {
-      return res.status(400).json({ success: false, message: '参数错误' });
+      throw new BusinessError('参数错误');
     }
 
     const result = await mailService.readMail(userId, characterId, parsedMailId);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 // ============================================
@@ -82,11 +78,11 @@ router.post('/claim', asyncHandler(async (req, res) => {
 
     const parsedMailId = parseMailId((req.body as { mailId?: unknown })?.mailId);
     if (!parsedMailId) {
-      return res.status(400).json({ success: false, message: '参数错误' });
+      throw new BusinessError('参数错误');
     }
 
     const result = await mailService.claimAttachments(userId, characterId, parsedMailId);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 // ============================================
@@ -97,7 +93,7 @@ router.post('/claim-all', asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const result = await mailService.claimAllAttachments(userId, characterId);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 // ============================================
@@ -109,11 +105,11 @@ router.post('/delete', asyncHandler(async (req, res) => {
 
     const parsedMailId = parseMailId((req.body as { mailId?: unknown })?.mailId);
     if (!parsedMailId) {
-      return res.status(400).json({ success: false, message: '参数错误' });
+      throw new BusinessError('参数错误');
     }
 
     const result = await mailService.deleteMail(userId, characterId, parsedMailId);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 // ============================================
@@ -125,7 +121,7 @@ router.post('/delete-all', asyncHandler(async (req, res) => {
 
     const { onlyRead } = req.body;
     const result = await mailService.deleteAllMails(userId, characterId, !!onlyRead);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 // ============================================
@@ -136,7 +132,7 @@ router.post('/read-all', asyncHandler(async (req, res) => {
     const characterId = req.characterId!;
 
     const result = await mailService.markAllRead(userId, characterId);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 export default router;

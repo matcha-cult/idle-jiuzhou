@@ -10,6 +10,8 @@ import {
   updateCharacterPosition,
 } from '../domains/character/index.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
+import { sendResult } from '../middleware/response.js';
+import { BusinessError } from '../middleware/BusinessError.js';
 
 const router = Router();
 
@@ -17,7 +19,7 @@ const router = Router();
 router.get('/check', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const result = await checkCharacter(userId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // 创建角色
@@ -27,29 +29,26 @@ router.post('/create', requireAuth, asyncHandler(async (req, res) => {
 
   // 参数验证
   if (!nickname || !gender) {
-    res.status(400).json({ success: false, message: '道号和性别不能为空' });
-    return;
+    throw new BusinessError('道号和性别不能为空');
   }
 
   if (nickname.length < 2 || nickname.length > 12) {
-    res.status(400).json({ success: false, message: '道号长度需在2-12个字符之间' });
-    return;
+    throw new BusinessError('道号长度需在2-12个字符之间');
   }
 
   if (!['male', 'female'].includes(gender)) {
-    res.status(400).json({ success: false, message: '性别参数错误' });
-    return;
+    throw new BusinessError('性别参数错误');
   }
 
   const result = await createCharacter(userId, nickname, gender);
-  res.status(result.success ? 200 : 400).json(result);
+  sendResult(res, result);
 }));
 
 // 获取角色信息
 router.get('/info', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const result = await getCharacter(userId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 // 更新玩家位置
@@ -63,7 +62,7 @@ router.post('/updatePosition', requireAuth, asyncHandler(async (req, res) => {
     await safePushCharacterUpdate(userId);
   }
 
-  res.status(result.success ? 200 : 400).json(result);
+  sendResult(res, result);
 }));
 
 router.post('/updateAutoCastSkills', requireAuth, asyncHandler(async (req, res) => {
@@ -76,7 +75,7 @@ router.post('/updateAutoCastSkills', requireAuth, asyncHandler(async (req, res) 
     await safePushCharacterUpdate(userId);
   }
 
-  res.status(result.success ? 200 : 400).json(result);
+  sendResult(res, result);
 }));
 
 router.post('/updateAutoDisassemble', requireAuth, asyncHandler(async (req, res) => {
@@ -87,13 +86,13 @@ router.post('/updateAutoDisassemble', requireAuth, asyncHandler(async (req, res)
   const parsedRules = body?.rules;
 
   if (parsedRules !== undefined && !Array.isArray(parsedRules)) {
-    return res.status(400).json({ success: false, message: 'rules参数错误，需为数组' });
+    throw new BusinessError('rules参数错误，需为数组');
   }
   if (
     Array.isArray(parsedRules) &&
     parsedRules.some((rule) => rule === null || typeof rule !== 'object' || Array.isArray(rule))
   ) {
-    return res.status(400).json({ success: false, message: 'rules参数错误，规则项需为对象' });
+    throw new BusinessError('rules参数错误，规则项需为对象');
   }
 
   const result = await updateCharacterAutoDisassembleSettings(userId, enabled, parsedRules);
@@ -102,7 +101,7 @@ router.post('/updateAutoDisassemble', requireAuth, asyncHandler(async (req, res)
     await safePushCharacterUpdate(userId);
   }
 
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 export default router;

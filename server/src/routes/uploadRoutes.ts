@@ -20,6 +20,7 @@ import { Router, NextFunction, Request, Response } from "express";
  * 1) presign 端点同时返回 cosEnabled 标记，客户端据此决定走直传还是 FormData
  * 2) confirm 端点校验 avatarUrl 域名，防止客户端伪造任意 URL
  */
+import { asyncHandler } from "../middleware/asyncHandler.js";
 import { requireAuth } from "../middleware/auth.js";
 import {
   ALLOWED_MIME_TYPES,
@@ -31,6 +32,8 @@ import {
   deleteAvatar,
 } from "../services/uploadService.js";
 import { safePushCharacterUpdate } from "../middleware/pushUpdate.js";
+import { sendSuccess, sendResult } from "../middleware/response.js";
+import { BusinessError } from "../middleware/BusinessError.js";
 
 const router = Router();
 
@@ -39,31 +42,20 @@ const router = Router();
 router.post(
   "/avatar/presign",
   requireAuth,
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     if (!COS_ENABLED) {
-      res.json({ success: true, cosEnabled: false });
+      sendSuccess(res, { cosEnabled: false });
       return;
     }
 
-    try {
-      const { contentType } = req.body as { contentType?: string };
-      if (!contentType || !ALLOWED_MIME_TYPES.includes(contentType)) {
-        res
-          .status(400)
-          .json({
-            success: false,
-            message: "只支持 JPG、PNG、GIF、WEBP 格式的图片",
-          });
-        return;
-      }
-
-      const { presignUrl, avatarUrl } = await generatePresignUrl(contentType);
-      res.json({ success: true, cosEnabled: true, presignUrl, avatarUrl });
-    } catch (error) {
-      console.error("生成预签名 URL 失败:", error);
-      res.status(500).json({ success: false, message: "生成上传地址失败" });
+    const { contentType } = req.body as { contentType?: string };
+    if (!contentType || !ALLOWED_MIME_TYPES.includes(contentType)) {
+      throw new BusinessError("只支持 JPG、PNG、GIF、WEBP 格式的图片");
     }
-  },
+
+    const { presignUrl, avatarUrl } = await generatePresignUrl(contentType);
+    sendSuccess(res, { cosEnabled: true, presignUrl, avatarUrl });
+  }),
 );
 
 // ─── COS 直传：确认上传完成 ───
@@ -71,28 +63,22 @@ router.post(
 router.post(
   "/avatar/confirm",
   requireAuth,
-  async (req: Request, res: Response) => {
-    try {
-      const userId = req.userId!;
-      const { avatarUrl } = req.body as { avatarUrl?: string };
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = req.userId!;
+    const { avatarUrl } = req.body as { avatarUrl?: string };
 
-      if (!avatarUrl) {
-        res.status(400).json({ success: false, message: "缺少 avatarUrl" });
-        return;
-      }
-
-      const result = await confirmAvatar(userId, avatarUrl);
-
-      if (result.success) {
-        await safePushCharacterUpdate(userId);
-      }
-
-      res.json(result);
-    } catch (error) {
-      console.error("确认头像上传失败:", error);
-      res.status(500).json({ success: false, message: "确认上传失败" });
+    if (!avatarUrl) {
+      throw new BusinessError("缺少 avatarUrl");
     }
-  },
+
+    const result = await confirmAvatar(userId, avatarUrl);
+
+    if (result.success) {
+      await safePushCharacterUpdate(userId);
+    }
+
+    sendResult(res, result);
+  }),
 );
 
 // ─── 本地回退：multipart 上传 ───
@@ -136,52 +122,35 @@ router.post(
   "/avatar",
   requireAuth,
   avatarUploadMiddleware,
-  async (req: Request, res: Response) => {
-    try {
-      const userId = req.userId!;
-      const file = req.file;
-
-      if (!file) {
-        res.status(400).json({ success: false, message: "请选择图片文件" });
-        return;
-      }
-
-      const result = await updateAvatarLocal(userId, file);
-
-      if (result.success) {
-        await safePushCharacterUpdate(userId);
-      }
-
-      res.json(result);
-    } catch (error) {
-      console.error("上传头像错误:", error);
-      if ((error as Error).message?.includes("只支持")) {
-        res
-          .status(400)
-          .json({ success: false, message: (error as Error).message });
-      } else {
-        res.status(500).json({ success: false, message: "上传失败" });
-      }
-    }
-  },
-);
-
-// ─── 删除头像（通用） ───
-
-router.delete("/avatar", requireAuth, async (req: Request, res: Response) => {
-  try {
+  asyncHandler(async (req: Request, res: Response) => {
     const userId = req.userId!;
-    const result = await deleteAvatar(userId);
+    const file = req.file;
+
+    if (!file) {
+      throw new BusinessError("请选择图片文件");
+    }
+
+    const result = await updateAvatarLocal(userId, file);
 
     if (result.success) {
       await safePushCharacterUpdate(userId);
     }
 
-    res.json(result);
-  } catch (error) {
-    console.error("删除头像错误:", error);
-    res.status(500).json({ success: false, message: "删除失败" });
+    sendResult(res, result);
+  }),
+);
+
+// ─── 删除头像（通用） ───
+
+router.delete("/avatar", requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const result = await deleteAvatar(userId);
+
+  if (result.success) {
+    await safePushCharacterUpdate(userId);
   }
-});
+
+  sendResult(res, result);
+}));
 
 export default router;

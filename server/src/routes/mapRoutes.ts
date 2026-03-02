@@ -6,31 +6,32 @@ import { roomObjectService } from '../services/roomObjectService.js';
 import { getMonsterDefinitions } from '../services/staticConfigLoader.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
 import { getSingleParam } from '../services/shared/httpParam.js';
+import { sendSuccess, sendResult } from '../middleware/response.js';
+import { BusinessError } from '../middleware/BusinessError.js';
 
 const router = Router();
 
 router.get('/world', asyncHandler(async (_req, res) => {
   const data = await getWorldMap();
-  res.json({ success: true, data });
+  sendSuccess(res, data);
 }));
 
 router.get('/area/:area/objects', asyncHandler(async (req, res) => {
   const area = getSingleParam(req.params.area) as Parameters<typeof roomObjectService.getAreaObjects>[0];
   const objects = await roomObjectService.getAreaObjects(area);
-  res.json({ success: true, data: { area, objects } });
+  sendSuccess(res, { area, objects });
 }));
 
 router.get('/maps', asyncHandler(async (_req, res) => {
   const maps = await getEnabledMaps();
-  res.json({ success: true, data: { maps } });
+  sendSuccess(res, { maps });
 }));
 
 router.get('/:mapId', asyncHandler(async (req, res) => {
   const mapId = getSingleParam(req.params.mapId);
   const map = await getMapDefById(mapId);
   if (!map || map.enabled !== true) {
-    res.status(404).json({ success: false, message: '地图不存在' });
-    return;
+    throw new BusinessError('地图不存在', 404);
   }
   const rooms = await getRoomsInMap(mapId);
 
@@ -45,7 +46,7 @@ router.get('/:mapId', asyncHandler(async (req, res) => {
     })),
   }));
 
-  res.json({ success: true, data: { map, rooms: enrichedRooms } });
+  sendSuccess(res, { map, rooms: enrichedRooms });
 }));
 
 router.get('/:mapId/rooms/:roomId', asyncHandler(async (req, res) => {
@@ -53,10 +54,9 @@ router.get('/:mapId/rooms/:roomId', asyncHandler(async (req, res) => {
   const roomId = getSingleParam(req.params.roomId);
   const room = await getRoomInMap(mapId, roomId);
   if (!room) {
-    res.status(404).json({ success: false, message: '房间不存在' });
-    return;
+    throw new BusinessError('房间不存在', 404);
   }
-  res.json({ success: true, data: { mapId, room } });
+  sendSuccess(res, { mapId, room });
 }));
 
 router.get('/:mapId/rooms/:roomId/objects', asyncHandler(async (req, res) => {
@@ -64,7 +64,7 @@ router.get('/:mapId/rooms/:roomId/objects', asyncHandler(async (req, res) => {
   const roomId = getSingleParam(req.params.roomId);
   const userId = getOptionalUserId(req);
   const objects = await roomObjectService.getRoomObjects(mapId, roomId, userId);
-  res.json({ success: true, data: { mapId, roomId, objects } });
+  sendSuccess(res, { mapId, roomId, objects });
 }));
 
 router.post('/:mapId/rooms/:roomId/resources/:resourceId/gather', requireCharacter, asyncHandler(async (req, res) => {
@@ -81,7 +81,7 @@ router.post('/:mapId/rooms/:roomId/resources/:resourceId/gather', requireCharact
     await safePushCharacterUpdate(userId);
   }
 
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 router.post('/:mapId/rooms/:roomId/items/:itemDefId/pickup', requireCharacter, asyncHandler(async (req, res) => {
@@ -98,7 +98,7 @@ router.post('/:mapId/rooms/:roomId/items/:itemDefId/pickup', requireCharacter, a
     await safePushCharacterUpdate(userId);
   }
 
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 export default router;

@@ -26,7 +26,8 @@
  *   4. GET /progress 返回活跃会话 + 最新批次列表，供断线重连后补全进度
  */
 
-import { Router, type Request, type Response } from 'express';
+import { Router } from 'express';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireCharacter } from '../middleware/auth.js';
 import { idleSessionService } from '../services/idle/idleSessionService.js';
 import {
@@ -38,6 +39,8 @@ import { query } from '../config/database.js';
 import { getRoomInMap } from '../services/mapService.js';
 import { getMonsterDefinitions } from '../services/staticConfigLoader.js';
 import type { IdleConfigDto, IdleSessionRow } from '../services/idle/types.js';
+import { sendSuccess, sendOk } from '../middleware/response.js';
+import { BusinessError } from '../middleware/BusinessError.js';
 
 // ============================================
 // 常量
@@ -79,31 +82,24 @@ function sessionToDto(session: IdleSessionRow): Record<string, unknown> {
 // POST /start — 启动挂机会话
 // ============================================
 
-router.post('/start', requireCharacter, async (req: Request, res: Response): Promise<void> => {
+router.post('/start', requireCharacter, asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
   const userId = req.userId!;
 
   const { mapId, roomId, maxDurationMs, autoSkillPolicy, targetMonsterDefId } = req.body as Partial<IdleConfigDto>;
 
   if (!mapId || typeof mapId !== 'string') {
-    res.status(400).json({ success: false, message: '缺少 mapId' });
-    return;
+    throw new BusinessError('缺少 mapId');
   }
   if (!roomId || typeof roomId !== 'string') {
-    res.status(400).json({ success: false, message: '缺少 roomId' });
-    return;
+    throw new BusinessError('缺少 roomId');
   }
   if (!targetMonsterDefId || typeof targetMonsterDefId !== 'string') {
-    res.status(400).json({ success: false, message: '缺少 targetMonsterDefId' });
-    return;
+    throw new BusinessError('缺少 targetMonsterDefId');
   }
   const durationMs = Number(maxDurationMs);
   if (!Number.isFinite(durationMs) || durationMs < MIN_DURATION_MS || durationMs > MAX_DURATION_MS) {
-    res.status(400).json({
-      success: false,
-      message: `maxDurationMs 必须在 ${MIN_DURATION_MS} ~ ${MAX_DURATION_MS} 之间`,
-    });
-    return;
+    throw new BusinessError(`maxDurationMs 必须在 ${MIN_DURATION_MS} ~ ${MAX_DURATION_MS} 之间`);
   }
 
   // 校验 autoSkillPolicy
@@ -116,13 +112,11 @@ router.post('/start', requireCharacter, async (req: Request, res: Response): Pro
   // 校验 targetMonsterDefId 属于目标房间
   const room = await getRoomInMap(mapId, roomId);
   if (!room) {
-    res.status(400).json({ success: false, message: '房间不存在' });
-    return;
+    throw new BusinessError('房间不存在');
   }
   const monsterInRoom = (room.monsters ?? []).some((m) => m.monster_def_id === targetMonsterDefId);
   if (!monsterInRoom) {
-    res.status(400).json({ success: false, message: '所选怪物不属于该房间' });
-    return;
+    throw new BusinessError('所选怪物不属于该房间');
   }
 
   const config: IdleConfigDto = {
@@ -152,21 +146,20 @@ router.post('/start', requireCharacter, async (req: Request, res: Response): Pro
     startExecutionLoop(session, userId);
   }
 
-  res.json({ success: true, sessionId: result.sessionId });
-});
+  sendSuccess(res, { sessionId: result.sessionId });
+}));
 
 // ============================================
 // POST /stop — 停止挂机会话
 // ============================================
 
-router.post('/stop', requireCharacter, async (req: Request, res: Response): Promise<void> => {
+router.post('/stop', requireCharacter, asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
 
   const result = await idleSessionService.stopIdleSession(characterId);
 
   if (!result.success) {
-    res.status(400).json({ success: false, message: result.error });
-    return;
+    throw new BusinessError(result.error ?? '停止挂机失败');
   }
 
   // 立即唤醒执行循环做终止检查，避免等待下一次长延迟 tick。
@@ -174,87 +167,85 @@ router.post('/stop', requireCharacter, async (req: Request, res: Response): Prom
     requestImmediateStop(sessionId);
   }
 
-  res.json({ success: true });
-});
+  sendOk(res);
+}));
 
 // ============================================
 // GET /status — 查询当前活跃会话
 // ============================================
 
-router.get('/status', requireCharacter, async (req: Request, res: Response): Promise<void> => {
+router.get('/status', requireCharacter, asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
 
   const session = await idleSessionService.getActiveIdleSession(characterId);
-  res.json({ success: true, session: session ? sessionToDto(session) : null });
-});
+  sendSuccess(res, { session: session ? sessionToDto(session) : null });
+}));
 
 // ============================================
 // GET /history — 查询历史记录
 // ============================================
 
-router.get('/history', requireCharacter, async (req: Request, res: Response): Promise<void> => {
+router.get('/history', requireCharacter, asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
 
   const history = await idleSessionService.getIdleHistory(characterId);
-  res.json({ success: true, history: history.map(sessionToDto) });
-});
+  sendSuccess(res, { history: history.map(sessionToDto) });
+}));
 
 // ============================================
 // GET /history/:id/batches — 查询会话战斗批次（回放）
 // ============================================
 
-router.get('/history/:id/batches', requireCharacter, async (req: Request, res: Response): Promise<void> => {
+router.get('/history/:id/batches', requireCharacter, asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
   const sessionId = String(req.params.id || '');
 
   if (!sessionId) {
-    res.status(400).json({ success: false, message: '缺少 sessionId' });
-    return;
+    throw new BusinessError('缺少 sessionId');
   }
 
   const batches = await idleSessionService.getSessionBatches(sessionId, characterId);
-  res.json({ success: true, batches });
-});
+  sendSuccess(res, { batches });
+}));
 
 // ============================================
 // POST /history/:id/viewed — 标记会话已查看
 // ============================================
 
-router.post('/history/:id/viewed', requireCharacter, async (req: Request, res: Response): Promise<void> => {
+router.post('/history/:id/viewed', requireCharacter, asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
   const sessionId = String(req.params.id || '');
 
   if (!sessionId) {
-    res.status(400).json({ success: false, message: '缺少 sessionId' });
-    return;
+    throw new BusinessError('缺少 sessionId');
   }
 
   await idleSessionService.markSessionViewed(sessionId, characterId);
-  res.json({ success: true });
-});
+  sendOk(res);
+}));
 
 // ============================================
 // GET /progress — 断线补全（活跃会话 + 最新批次）
 // ============================================
 
-router.get('/progress', requireCharacter, async (req: Request, res: Response): Promise<void> => {
+router.get('/progress', requireCharacter, asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
 
   const session = await idleSessionService.getActiveIdleSession(characterId);
   if (!session) {
-    res.json({ success: true, session: null, batches: [] });
+    sendSuccess(res, { session: null, batches: [] });
     return;
   }
 
   const batches = await idleSessionService.getSessionBatches(session.id, characterId);
-  res.json({ success: true, session: sessionToDto(session), batches });
-});
+  sendSuccess(res, { session: sessionToDto(session), batches });
+}));
 
 // ============================================
 // GET /config — 读取挂机配置
 // ============================================
 
-router.get('/config', requireCharacter, async (req: Request, res: Response): Promise<void> => {
+router.get('/config', requireCharacter, asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
 
   const res2 = await query(
@@ -265,8 +256,7 @@ router.get('/config', requireCharacter, async (req: Request, res: Response): Pro
 
   if (res2.rows.length === 0) {
     // 未配置时返回默认值
-    res.json({
-      success: true,
+    sendSuccess(res, {
       config: {
         mapId: null,
         roomId: null,
@@ -286,8 +276,7 @@ router.get('/config', requireCharacter, async (req: Request, res: Response): Pro
     target_monster_def_id: string | null;
   };
 
-  res.json({
-    success: true,
+  sendSuccess(res, {
     config: {
       mapId: row.map_id,
       roomId: row.room_id,
@@ -296,13 +285,13 @@ router.get('/config', requireCharacter, async (req: Request, res: Response): Pro
       targetMonsterDefId: row.target_monster_def_id,
     },
   });
-});
+}));
 
 // ============================================
 // PUT /config — 更新挂机配置
 // ============================================
 
-router.put('/config', requireCharacter, async (req: Request, res: Response): Promise<void> => {
+router.put('/config', requireCharacter, asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
 
   const { mapId, roomId, maxDurationMs, autoSkillPolicy, targetMonsterDefId } = req.body as Partial<IdleConfigDto>;
@@ -319,11 +308,7 @@ router.put('/config', requireCharacter, async (req: Request, res: Response): Pro
   if (maxDurationMs !== undefined) {
     const durationMs = Number(maxDurationMs);
     if (!Number.isFinite(durationMs) || durationMs < MIN_DURATION_MS || durationMs > MAX_DURATION_MS) {
-      res.status(400).json({
-        success: false,
-        message: `maxDurationMs 必须在 ${MIN_DURATION_MS} ~ ${MAX_DURATION_MS} 之间`,
-      });
-      return;
+      throw new BusinessError(`maxDurationMs 必须在 ${MIN_DURATION_MS} ~ ${MAX_DURATION_MS} 之间`);
     }
     validatedDurationMs = durationMs;
   }
@@ -350,7 +335,7 @@ router.put('/config', requireCharacter, async (req: Request, res: Response): Pro
     ],
   );
 
-  res.json({ success: true });
-});
+  sendOk(res);
+}));
 
 export default router;

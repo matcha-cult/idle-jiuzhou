@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth, requireCharacter } from '../middleware/auth.js';
 import { marketService, type MarketSort } from '../services/marketService.js';
+import { sendResult } from '../middleware/response.js';
 
 const router = Router();
 
@@ -36,8 +37,7 @@ router.get('/listings', requireAuth, asyncHandler(async (req, res) => {
       pageSize,
     });
 
-    if (!result.success) return res.status(400).json(result);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 router.get('/my-listings', requireCharacter, asyncHandler(async (req, res) => {
@@ -49,8 +49,7 @@ router.get('/my-listings', requireCharacter, asyncHandler(async (req, res) => {
     const pageSize = parseQueryNumber(req.query.pageSize);
 
     const result = await marketService.getMyMarketListings({ characterId, status, page, pageSize });
-    if (!result.success) return res.status(400).json(result);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 router.get('/records', requireCharacter, asyncHandler(async (req, res) => {
@@ -60,8 +59,7 @@ router.get('/records', requireCharacter, asyncHandler(async (req, res) => {
     const page = parseQueryNumber(req.query.page);
     const pageSize = parseQueryNumber(req.query.pageSize);
     const result = await marketService.getMarketTradeRecords({ characterId, page, pageSize });
-    if (!result.success) return res.status(400).json(result);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 router.post('/list', requireCharacter, asyncHandler(async (req, res) => {
@@ -82,8 +80,7 @@ router.post('/list', requireCharacter, asyncHandler(async (req, res) => {
       unitPriceSpiritStones: Number(unitPriceSpiritStones),
     });
 
-    if (!result.success) return res.status(400).json(result);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 router.post('/cancel', requireCharacter, asyncHandler(async (req, res) => {
@@ -92,8 +89,7 @@ router.post('/cancel', requireCharacter, asyncHandler(async (req, res) => {
 
     const { listingId } = req.body as { listingId?: unknown };
     const result = await marketService.cancelMarketListing({ userId, characterId, listingId: Number(listingId) });
-    if (!result.success) return res.status(400).json(result);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 router.post('/buy', requireCharacter, asyncHandler(async (req, res) => {
@@ -102,9 +98,7 @@ router.post('/buy', requireCharacter, asyncHandler(async (req, res) => {
 
     const { listingId } = req.body as { listingId?: unknown };
     const result = await marketService.buyMarketListing({ buyerUserId: userId, buyerCharacterId: characterId, listingId: Number(listingId) });
-    if (!result.success) return res.status(400).json(result);
-    return res.json(result);
+    return sendResult(res, result);
 }));
 
 export default router;
-

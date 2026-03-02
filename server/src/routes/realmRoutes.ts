@@ -3,6 +3,7 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 import { realmService } from '../services/realmService.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
+import { sendResult } from '../middleware/response.js';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ router.use(requireAuth);
 router.get('/overview', asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const result = await realmService.getOverview(userId);
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 router.post('/breakthrough', asyncHandler(async (req, res) => {
@@ -31,7 +32,7 @@ router.post('/breakthrough', asyncHandler(async (req, res) => {
     await safePushCharacterUpdate(userId);
   }
 
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 export default router;

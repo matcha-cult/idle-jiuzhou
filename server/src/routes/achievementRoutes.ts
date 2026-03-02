@@ -10,6 +10,8 @@ import {
   type AchievementListStatusFilter,
 } from '../services/achievementService.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
+import { sendSuccess, sendResult } from '../middleware/response.js';
+import { BusinessError } from '../middleware/BusinessError.js';
 
 const router = Router();
 
@@ -24,7 +26,7 @@ router.get('/list', requireCharacter, asyncHandler(async (req, res) => {
   const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
 
   const data = await getAchievementList(characterId, { category, status, page, limit });
-  return res.json({ success: true, message: 'ok', data });
+  return sendSuccess(res, data);
 }));
 
 router.get('/:achievementId', requireCharacter, asyncHandler(async (req, res) => {
@@ -33,9 +35,9 @@ router.get('/:achievementId', requireCharacter, asyncHandler(async (req, res) =>
 
   const achievementId = typeof req.params.achievementId === 'string' ? req.params.achievementId : '';
   const achievement = await getAchievementDetail(characterId, achievementId);
-  if (!achievement) return res.status(404).json({ success: false, message: '成就不存在' });
+  if (!achievement) throw new BusinessError('成就不存在', 404);
 
-  return res.json({ success: true, message: 'ok', data: { achievement, progress: achievement.progress } });
+  return sendSuccess(res, { achievement, progress: achievement.progress });
 }));
 
 router.post('/claim', requireCharacter, asyncHandler(async (req, res) => {
@@ -51,11 +53,11 @@ router.post('/claim', requireCharacter, asyncHandler(async (req, res) => {
         : '';
 
   const result = await claimAchievement(userId, characterId, achievementId);
-  if (!result.success) return res.status(400).json(result);
+  if (!result.success) return sendResult(res, result);
 
   await safePushCharacterUpdate(userId);
 
-  return res.json(result);
+  return sendResult(res, result);
 }));
 
 router.get('/points/rewards', requireCharacter, asyncHandler(async (req, res) => {
@@ -63,7 +65,7 @@ router.get('/points/rewards', requireCharacter, asyncHandler(async (req, res) =>
   const characterId = req.characterId!;
 
   const data = await getAchievementPointsRewards(characterId);
-  return res.json({ success: true, message: 'ok', data });
+  return sendSuccess(res, data);
 }));
 
 router.post('/points/claim', requireCharacter, asyncHandler(async (req, res) => {
@@ -83,11 +85,11 @@ router.post('/points/claim', requireCharacter, asyncHandler(async (req, res) => 
             : NaN;
 
   const result = await claimAchievementPointsReward(userId, characterId, threshold);
-  if (!result.success) return res.status(400).json(result);
+  if (!result.success) return sendResult(res, result);
 
   await safePushCharacterUpdate(userId);
 
-  return res.json(result);
+  return sendResult(res, result);
 }));
 
 export default router;

@@ -1,16 +1,17 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import { asyncHandler } from '../middleware/asyncHandler.js';
 import { getGameTimeSnapshot } from '../services/gameTimeService.js';
+import { sendSuccess } from '../middleware/response.js';
+import { BusinessError } from '../middleware/BusinessError.js';
 
 const router = Router();
 
-router.get('/', (_req: Request, res: Response) => {
+router.get('/', asyncHandler(async (_req, res) => {
   const snap = getGameTimeSnapshot();
   if (!snap) {
-    res.status(503).json({ success: false, message: '游戏时间未初始化' });
-    return;
+    throw new BusinessError('游戏时间未初始化', 503);
   }
-  res.json({ success: true, message: 'ok', data: snap });
-});
+  sendSuccess(res, snap);
+}));
 
 export default router;
-

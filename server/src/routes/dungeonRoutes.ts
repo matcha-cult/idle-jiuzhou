@@ -6,6 +6,8 @@ import {
   type DungeonType,
 } from '../domains/dungeon/index.js';
 import { getSingleParam, getSingleQueryValue } from '../services/shared/httpParam.js';
+import { sendSuccess, sendResult } from '../middleware/response.js';
+import { BusinessError } from '../middleware/BusinessError.js';
 
 const router = Router();
 
@@ -18,7 +20,7 @@ const toType = (v: unknown): DungeonType | undefined => {
 
 router.get('/categories', asyncHandler(async (_req, res) => {
   const categories = await dungeonService.getDungeonCategories();
-  res.json({ success: true, data: { categories } });
+  sendSuccess(res, { categories });
 }));
 
 router.get('/list', asyncHandler(async (req, res) => {
@@ -28,7 +30,7 @@ router.get('/list', asyncHandler(async (req, res) => {
   const q = qValue || undefined;
   const realm = realmValue || undefined;
   const dungeons = await dungeonService.getDungeonList({ type, q, realm });
-  res.json({ success: true, data: { dungeons } });
+  sendSuccess(res, { dungeons });
 }));
 
 router.get('/preview/:id', asyncHandler(async (req, res) => {
@@ -39,16 +41,15 @@ router.get('/preview/:id', asyncHandler(async (req, res) => {
   const userId = getOptionalUserId(req);
   const preview = await dungeonService.getDungeonPreview(id, rank, userId);
   if (!preview) {
-    res.status(404).json({ success: false, message: '秘境不存在' });
-    return;
+    throw new BusinessError('秘境不存在', 404);
   }
-  res.json({ success: true, data: preview });
+  sendSuccess(res, preview);
 }));
 
 router.get('/weekly-targets', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const result = await dungeonService.getDungeonWeeklyTargets(userId);
-  res.status(result.success ? 200 : 400).json(result);
+  sendResult(res, result);
 }));
 
 router.post('/instance/create', requireAuth, asyncHandler(async (req, res) => {
@@ -57,59 +58,54 @@ router.post('/instance/create', requireAuth, asyncHandler(async (req, res) => {
   const difficultyRankRaw = req.body?.difficultyRank;
   const difficultyRank = typeof difficultyRankRaw === 'number' ? difficultyRankRaw : Number(difficultyRankRaw ?? 1);
   if (!dungeonId) {
-    res.status(400).json({ success: false, message: '缺少秘境ID' });
-    return;
+    throw new BusinessError('缺少秘境ID');
   }
   const result = await dungeonService.createDungeonInstance(
     userId,
     dungeonId,
     Number.isFinite(difficultyRank) ? difficultyRank : 1
   );
-  res.json(result);
+  sendResult(res, result);
 }));
 
 router.post('/instance/join', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const instanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId : '';
   if (!instanceId) {
-    res.status(400).json({ success: false, message: '缺少实例ID' });
-    return;
+    throw new BusinessError('缺少实例ID');
   }
   const result = await dungeonService.joinDungeonInstance(userId, instanceId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 router.post('/instance/start', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const instanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId : '';
   if (!instanceId) {
-    res.status(400).json({ success: false, message: '缺少实例ID' });
-    return;
+    throw new BusinessError('缺少实例ID');
   }
   const result = await dungeonService.startDungeonInstance(userId, instanceId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 router.post('/instance/next', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const instanceId = typeof req.body?.instanceId === 'string' ? req.body.instanceId : '';
   if (!instanceId) {
-    res.status(400).json({ success: false, message: '缺少实例ID' });
-    return;
+    throw new BusinessError('缺少实例ID');
   }
   const result = await dungeonService.nextDungeonInstance(userId, instanceId);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 router.get('/instance/:id', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const id = getSingleParam(req.params.id);
   if (!id) {
-    res.status(400).json({ success: false, message: '缺少实例ID' });
-    return;
+    throw new BusinessError('缺少实例ID');
   }
   const result = await dungeonService.getDungeonInstance(userId, id);
-  res.json(result);
+  sendResult(res, result);
 }));
 
 export default router;

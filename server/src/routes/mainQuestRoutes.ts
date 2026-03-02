@@ -12,6 +12,8 @@ import {
   setMainQuestTracked
 } from '../domains/mainQuest/index.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
+import { sendSuccess, sendResult } from '../middleware/response.js';
+import { BusinessError } from '../middleware/BusinessError.js';
 
 const router = Router();
 
@@ -21,7 +23,7 @@ router.get('/progress', requireCharacter, asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
 
   const data = await getMainQuestProgress(characterId);
-  return res.json({ success: true, message: 'ok', data });
+  return sendSuccess(res, data);
 }));
 
 // 获取章节列表
@@ -30,7 +32,7 @@ router.get('/chapters', requireCharacter, asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
 
   const data = await getChapterList(characterId);
-  return res.json({ success: true, message: 'ok', data });
+  return sendSuccess(res, data);
 }));
 
 // 获取章节下的任务节列表
@@ -40,7 +42,7 @@ router.get('/chapters/:chapterId/sections', requireCharacter, asyncHandler(async
 
   const chapterId = typeof req.params.chapterId === 'string' ? req.params.chapterId : '';
   const data = await getSectionList(characterId, chapterId);
-  return res.json({ success: true, message: 'ok', data });
+  return sendSuccess(res, data);
 }));
 
 // 开始对话
@@ -52,7 +54,7 @@ router.post('/dialogue/start', requireCharacter, asyncHandler(async (req, res) =
   const dialogueId = typeof body?.dialogueId === 'string' ? body.dialogueId : undefined;
 
   const result = await startDialogue(characterId, dialogueId);
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 // 推进对话
@@ -64,7 +66,7 @@ router.post('/dialogue/advance', requireCharacter, asyncHandler(async (req, res)
   if (result.success) {
     await safePushCharacterUpdate(userId);
   }
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 // 选择对话选项
@@ -76,14 +78,14 @@ router.post('/dialogue/choice', requireCharacter, asyncHandler(async (req, res) 
   const choiceId = typeof body?.choiceId === 'string' ? body.choiceId : '';
 
   if (!choiceId) {
-    return res.status(400).json({ success: false, message: '选项ID不能为空' });
+    throw new BusinessError('选项ID不能为空');
   }
 
   const result = await selectDialogueChoice(userId, characterId, choiceId);
   if (result.success) {
     await safePushCharacterUpdate(userId);
   }
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 // 完成任务节并领取奖励
@@ -95,7 +97,7 @@ router.post('/section/complete', requireCharacter, asyncHandler(async (req, res)
   if (result.success) {
     await safePushCharacterUpdate(userId);
   }
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 // 设置主线任务追踪状态
@@ -107,7 +109,7 @@ router.post('/track', requireCharacter, asyncHandler(async (req, res) => {
   const tracked = body?.tracked === true;
 
   const result = await setMainQuestTracked(characterId, tracked);
-  return res.status(result.success ? 200 : 400).json(result);
+  return sendResult(res, result);
 }));
 
 export default router;

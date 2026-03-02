@@ -3,6 +3,7 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/auth.js';
 import { monthCardService } from '../services/monthCardService.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
+import { sendResult } from '../middleware/response.js';
 
 const router = Router();
 
@@ -13,7 +14,7 @@ router.get('/status', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const monthCardId = typeof req.query.monthCardId === 'string' ? req.query.monthCardId : defaultMonthCardId;
   const result = await monthCardService.getMonthCardStatus(userId, monthCardId);
-  res.status(result.success ? 200 : 400).json(result);
+  sendResult(res, result);
 }));
 
 router.post('/buy', requireAuth, asyncHandler(async (req, res) => {
@@ -24,7 +25,7 @@ router.post('/buy', requireAuth, asyncHandler(async (req, res) => {
   if (result.success) {
     await safePushCharacterUpdate(userId);
   }
-  res.status(result.success ? 200 : 400).json(result);
+  sendResult(res, result);
 }));
 
 router.post('/use-item', requireAuth, asyncHandler(async (req, res) => {
@@ -41,7 +42,7 @@ router.post('/use-item', requireAuth, asyncHandler(async (req, res) => {
   if (result.success) {
     await safePushCharacterUpdate(userId);
   }
-  res.status(result.success ? 200 : 400).json(result);
+  sendResult(res, result);
 }));
 
 router.post('/claim', requireAuth, asyncHandler(async (req, res) => {
@@ -52,7 +53,7 @@ router.post('/claim', requireAuth, asyncHandler(async (req, res) => {
   if (result.success) {
     await safePushCharacterUpdate(userId);
   }
-  res.status(result.success ? 200 : 400).json(result);
+  sendResult(res, result);
 }));
 
 export default router;
