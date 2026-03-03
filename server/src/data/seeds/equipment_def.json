@@ -298,6 +298,7 @@
         "shanbi_rating": 141
       },
       "affix_pool_id": "ap-artifact-uncommon",
+      "set_id": "set-duanbei",
       "tags": [
         "法宝",
         "飞行"
@@ -1234,6 +1235,7 @@
         "baoji_rating": 84
       },
       "affix_pool_id": "ap-weapon-uncommon",
+      "set_id": "set-duanbei",
       "tags": [
         "武器",
         "剑",
@@ -1261,9 +1263,94 @@
         "shanbi_rating": 113
       },
       "affix_pool_id": "ap-armor-uncommon",
+      "set_id": "set-duanbei",
       "tags": [
         "防具",
         "头部",
+        "风岭",
+        "通脉期"
+      ]
+    },
+    {
+      "id": "equip-clothes-004",
+      "name": "断碑战衣",
+      "category": "equipment",
+      "sub_category": "robe",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/items/icon_clothes_1_03.png",
+      "equip_slot": "clothes",
+      "equip_req_realm": "炼精化炁·通脉期",
+      "base_attrs": {
+        "wufang": 9,
+        "fafang": 7
+      },
+      "implicit_attrs": {
+        "max_qixue": 75,
+        "kongzhi_kangxing_rating": 128
+      },
+      "affix_pool_id": "ap-armor-uncommon",
+      "set_id": "set-duanbei",
+      "tags": [
+        "防具",
+        "衣服",
+        "遗迹",
+        "通脉期"
+      ]
+    },
+    {
+      "id": "equip-gloves-002",
+      "name": "符纹护手",
+      "category": "equipment",
+      "sub_category": "gloves",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/items/icon_shoulder armour_1_13.png",
+      "equip_slot": "gloves",
+      "equip_req_realm": "炼精化炁·通脉期",
+      "base_attrs": {
+        "wugong": 6,
+        "wufang": 4
+      },
+      "implicit_attrs": {
+        "baoji_rating": 68,
+        "mingzhong_rating": 78
+      },
+      "affix_pool_id": "ap-armor-uncommon",
+      "set_id": "set-duanbei",
+      "tags": [
+        "防具",
+        "手部",
+        "符纹",
+        "通脉期"
+      ]
+    },
+    {
+      "id": "equip-pants-002",
+      "name": "裂风护腿",
+      "category": "equipment",
+      "sub_category": "pants",
+      "stack_max": 1,
+      "bind_type": "equip",
+      "tradeable": true,
+      "icon": "/assets/items/icon_pants_1_13.png",
+      "equip_slot": "pants",
+      "equip_req_realm": "炼精化炁·通脉期",
+      "base_attrs": {
+        "wufang": 8,
+        "fafang": 7
+      },
+      "implicit_attrs": {
+        "max_qixue": 90,
+        "sudu": 1
+      },
+      "affix_pool_id": "ap-armor-uncommon",
+      "set_id": "set-duanbei",
+      "tags": [
+        "防具",
+        "腿部",
         "风岭",
         "通脉期"
       ]
@@ -1315,6 +1402,7 @@
         "baoji_rating": 63
       },
       "affix_pool_id": "ap-accessory-uncommon",
+      "set_id": "set-duanbei",
       "tags": [
         "饰品",
         "项链",
@@ -1342,6 +1430,7 @@
         "baoshang_rating": 79
       },
       "affix_pool_id": "ap-accessory-uncommon",
+      "set_id": "set-duanbei",
       "tags": [
         "饰品",
         "戒指",

@@ -796,6 +796,161 @@
       ]
     },
     {
+      "id": "set-duanbei",
+      "name": "断碑套装",
+      "description": "断碑遗迹流传的古战套装，兼顾攻防与续战能力，适配通脉期进阶构筑。",
+      "quality_rank": 2,
+      "min_realm": "炼精化炁·通脉期",
+      "pieces": [
+        {
+          "equip_slot": "weapon",
+          "item_def_id": "equip-weapon-004",
+          "piece_key": "weapon"
+        },
+        {
+          "equip_slot": "head",
+          "item_def_id": "equip-head-002",
+          "piece_key": "head"
+        },
+        {
+          "equip_slot": "clothes",
+          "item_def_id": "equip-clothes-004",
+          "piece_key": "clothes"
+        },
+        {
+          "equip_slot": "gloves",
+          "item_def_id": "equip-gloves-002",
+          "piece_key": "gloves"
+        },
+        {
+          "equip_slot": "pants",
+          "item_def_id": "equip-pants-002",
+          "piece_key": "pants"
+        },
+        {
+          "equip_slot": "necklace",
+          "item_def_id": "equip-necklace-002",
+          "piece_key": "necklace"
+        },
+        {
+          "equip_slot": "accessory",
+          "item_def_id": "equip-accessory-001",
+          "piece_key": "accessory"
+        },
+        {
+          "equip_slot": "artifact",
+          "item_def_id": "equip-artifact-001",
+          "piece_key": "artifact"
+        }
+      ],
+      "bonuses": [
+        {
+          "piece_count": 2,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "wugong",
+                "value": 12,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "fagong",
+                "value": 12,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 0
+        },
+        {
+          "piece_count": 4,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_qixue",
+                "value": 120,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "max_lingqi",
+                "value": 35,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 1
+        },
+        {
+          "piece_count": 6,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "mingzhong",
+                "value": 0.02,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "shanbi",
+                "value": 0.02,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 2
+        },
+        {
+          "piece_count": 8,
+          "effect_defs": [
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "zengshang",
+                "value": 0.03,
+                "apply_type": "flat"
+              }
+            },
+            {
+              "trigger": "equip",
+              "target": "self",
+              "effect_type": "buff",
+              "params": {
+                "attr_key": "lengque",
+                "value": 0.015,
+                "apply_type": "flat"
+              }
+            }
+          ],
+          "priority": 3
+        }
+      ]
+    },
+    {
       "id": "set-chiyan",
       "name": "赤焰套装",
       "description": "赤焰焚身，以攻代守，擅长爆发追击。",

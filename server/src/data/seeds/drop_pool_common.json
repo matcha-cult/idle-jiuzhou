@@ -502,6 +502,27 @@
           "show_in_ui": true
         },
         {
+          "item_def_id": "equip-clothes-004",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "equip-gloves-002",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "equip-pants-002",
+          "chance": 0.08,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
           "item_def_id": "equip-necklace-002",
           "chance": 0.06,
           "qty_min": 1,
