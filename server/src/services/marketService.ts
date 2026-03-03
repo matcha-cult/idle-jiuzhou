@@ -84,7 +84,7 @@ const parseNonNegativeInt = (v: unknown): number | null => {
 const parseMaybeString = (v: unknown): string =>
   (typeof v === "string" ? v : "").trim();
 
-const MARKET_LISTING_FEE_SILVER_PER_SPIRIT_STONE = 10n;
+const MARKET_LISTING_FEE_SILVER_PER_SPIRIT_STONE = 5n;
 
 const getTaxAmount = (totalPrice: bigint, taxRate: number): bigint => {
   if (!Number.isFinite(taxRate) || taxRate <= 0) return 0n;
