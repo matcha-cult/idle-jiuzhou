@@ -730,12 +730,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "wufang",
-            "value": 2,
+            "value": 3,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后物防+2"
+      "description": "镶嵌后物防+3"
     },
     {
       "id": "gem-def-wf-2",
@@ -767,12 +767,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "wufang",
-            "value": 4,
+            "value": 6,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后物防+4"
+      "description": "镶嵌后物防+6"
     },
     {
       "id": "gem-def-wf-3",
@@ -804,12 +804,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "wufang",
-            "value": 6,
+            "value": 10,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后物防+6"
+      "description": "镶嵌后物防+10"
     },
     {
       "id": "gem-def-wf-4",
@@ -838,12 +838,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "wufang",
-            "value": 9,
+            "value": 14,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后物防+9"
+      "description": "镶嵌后物防+14"
     },
     {
       "id": "gem-def-wf-5",
@@ -872,12 +872,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "wufang",
-            "value": 13,
+            "value": 19,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后物防+13"
+      "description": "镶嵌后物防+19"
     },
     {
       "id": "gem-def-wf-6",
@@ -906,12 +906,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "wufang",
-            "value": 17,
+            "value": 25,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后物防+17"
+      "description": "镶嵌后物防+25"
     },
     {
       "id": "gem-def-wf-7",
@@ -940,12 +940,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "wufang",
-            "value": 22,
+            "value": 32,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后物防+22"
+      "description": "镶嵌后物防+32"
     },
     {
       "id": "gem-def-wf-8",
@@ -974,12 +974,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "wufang",
-            "value": 28,
+            "value": 40,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后物防+28"
+      "description": "镶嵌后物防+40"
     },
     {
       "id": "gem-def-wf-9",
@@ -1008,12 +1008,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "wufang",
-            "value": 34,
+            "value": 49,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后物防+34"
+      "description": "镶嵌后物防+49"
     },
     {
       "id": "gem-def-wf-10",
@@ -1042,12 +1042,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "wufang",
-            "value": 41,
+            "value": 59,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后物防+41"
+      "description": "镶嵌后物防+59"
     },
     {
       "id": "gem-def-ff-1",
@@ -1079,12 +1079,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "fafang",
-            "value": 2,
+            "value": 3,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后法防+2"
+      "description": "镶嵌后法防+3"
     },
     {
       "id": "gem-def-ff-2",
@@ -1116,12 +1116,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "fafang",
-            "value": 4,
+            "value": 6,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后法防+4"
+      "description": "镶嵌后法防+6"
     },
     {
       "id": "gem-def-ff-3",
@@ -1153,12 +1153,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "fafang",
-            "value": 6,
+            "value": 10,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后法防+6"
+      "description": "镶嵌后法防+10"
     },
     {
       "id": "gem-def-ff-4",
@@ -1187,12 +1187,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "fafang",
-            "value": 9,
+            "value": 14,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后法防+9"
+      "description": "镶嵌后法防+14"
     },
     {
       "id": "gem-def-ff-5",
@@ -1221,12 +1221,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "fafang",
-            "value": 13,
+            "value": 19,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后法防+13"
+      "description": "镶嵌后法防+19"
     },
     {
       "id": "gem-def-ff-6",
@@ -1255,12 +1255,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "fafang",
-            "value": 17,
+            "value": 25,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后法防+17"
+      "description": "镶嵌后法防+25"
     },
     {
       "id": "gem-def-ff-7",
@@ -1289,12 +1289,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "fafang",
-            "value": 22,
+            "value": 32,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后法防+22"
+      "description": "镶嵌后法防+32"
     },
     {
       "id": "gem-def-ff-8",
@@ -1323,12 +1323,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "fafang",
-            "value": 28,
+            "value": 40,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后法防+28"
+      "description": "镶嵌后法防+40"
     },
     {
       "id": "gem-def-ff-9",
@@ -1357,12 +1357,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "fafang",
-            "value": 34,
+            "value": 49,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后法防+34"
+      "description": "镶嵌后法防+49"
     },
     {
       "id": "gem-def-ff-10",
@@ -1391,12 +1391,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "fafang",
-            "value": 41,
+            "value": 59,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后法防+41"
+      "description": "镶嵌后法防+59"
     },
     {
       "id": "gem-sur-hp-1",
@@ -1428,12 +1428,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "max_qixue",
-            "value": 2,
+            "value": 3,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后气血上限+2"
+      "description": "镶嵌后气血上限+3"
     },
     {
       "id": "gem-sur-hp-2",
@@ -1465,12 +1465,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "max_qixue",
-            "value": 4,
+            "value": 6,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后气血上限+4"
+      "description": "镶嵌后气血上限+6"
     },
     {
       "id": "gem-sur-hp-3",
@@ -1502,12 +1502,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "max_qixue",
-            "value": 6,
+            "value": 10,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后气血上限+6"
+      "description": "镶嵌后气血上限+10"
     },
     {
       "id": "gem-sur-hp-4",
@@ -1536,12 +1536,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "max_qixue",
-            "value": 9,
+            "value": 14,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后气血上限+9"
+      "description": "镶嵌后气血上限+14"
     },
     {
       "id": "gem-sur-hp-5",
@@ -1570,12 +1570,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "max_qixue",
-            "value": 13,
+            "value": 19,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后气血上限+13"
+      "description": "镶嵌后气血上限+19"
     },
     {
       "id": "gem-sur-hp-6",
@@ -1604,12 +1604,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "max_qixue",
-            "value": 17,
+            "value": 25,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后气血上限+17"
+      "description": "镶嵌后气血上限+25"
     },
     {
       "id": "gem-sur-hp-7",
@@ -1638,12 +1638,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "max_qixue",
-            "value": 22,
+            "value": 32,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后气血上限+22"
+      "description": "镶嵌后气血上限+32"
     },
     {
       "id": "gem-sur-hp-8",
@@ -1672,12 +1672,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "max_qixue",
-            "value": 28,
+            "value": 40,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后气血上限+28"
+      "description": "镶嵌后气血上限+40"
     },
     {
       "id": "gem-sur-hp-9",
@@ -1706,12 +1706,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "max_qixue",
-            "value": 34,
+            "value": 49,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后气血上限+34"
+      "description": "镶嵌后气血上限+49"
     },
     {
       "id": "gem-sur-hp-10",
@@ -1740,12 +1740,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "max_qixue",
-            "value": 41,
+            "value": 59,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后气血上限+41"
+      "description": "镶嵌后气血上限+59"
     },
     {
       "id": "gem-sur-lq-1",
@@ -2127,12 +2127,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "mingzhong",
-            "value": 0.0012,
+            "value": 0.0015,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后命中+0.12%"
+      "description": "镶嵌后命中+0.15%"
     },
     {
       "id": "gem-all-mz-2",
@@ -2165,12 +2165,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "mingzhong",
-            "value": 0.0024,
+            "value": 0.003,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后命中+0.24%"
+      "description": "镶嵌后命中+0.3%"
     },
     {
       "id": "gem-all-mz-3",
@@ -2203,12 +2203,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "mingzhong",
-            "value": 0.0036,
+            "value": 0.0046,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后命中+0.36%"
+      "description": "镶嵌后命中+0.46%"
     },
     {
       "id": "gem-all-mz-4",
@@ -2238,12 +2238,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "mingzhong",
-            "value": 0.0052,
+            "value": 0.0065,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后命中+0.52%"
+      "description": "镶嵌后命中+0.65%"
     },
     {
       "id": "gem-all-mz-5",
@@ -2273,12 +2273,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "mingzhong",
-            "value": 0.007,
+            "value": 0.0088,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后命中+0.7%"
+      "description": "镶嵌后命中+0.88%"
     },
     {
       "id": "gem-all-mz-6",
@@ -2308,12 +2308,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "mingzhong",
-            "value": 0.009,
+            "value": 0.0115,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后命中+0.9%"
+      "description": "镶嵌后命中+1.15%"
     },
     {
       "id": "gem-all-mz-7",
@@ -2343,12 +2343,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "mingzhong",
-            "value": 0.0112,
+            "value": 0.0145,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后命中+1.12%"
+      "description": "镶嵌后命中+1.45%"
     },
     {
       "id": "gem-all-mz-8",
@@ -2378,12 +2378,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "mingzhong",
-            "value": 0.0136,
+            "value": 0.018,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后命中+1.36%"
+      "description": "镶嵌后命中+1.8%"
     },
     {
       "id": "gem-all-mz-9",
@@ -2413,12 +2413,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "mingzhong",
-            "value": 0.0162,
+            "value": 0.0218,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后命中+1.62%"
+      "description": "镶嵌后命中+2.18%"
     },
     {
       "id": "gem-all-mz-10",
@@ -2448,12 +2448,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "mingzhong",
-            "value": 0.019,
+            "value": 0.026,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后命中+1.9%"
+      "description": "镶嵌后命中+2.6%"
     },
     {
       "id": "gem-all-sb-1",
@@ -2486,12 +2486,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "shanbi",
-            "value": 0.0012,
+            "value": 0.0015,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后闪避+0.12%"
+      "description": "镶嵌后闪避+0.15%"
     },
     {
       "id": "gem-all-sb-2",
@@ -2524,12 +2524,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "shanbi",
-            "value": 0.0024,
+            "value": 0.003,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后闪避+0.24%"
+      "description": "镶嵌后闪避+0.3%"
     },
     {
       "id": "gem-all-sb-3",
@@ -2562,12 +2562,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "shanbi",
-            "value": 0.0036,
+            "value": 0.0046,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后闪避+0.36%"
+      "description": "镶嵌后闪避+0.46%"
     },
     {
       "id": "gem-all-sb-4",
@@ -2597,12 +2597,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "shanbi",
-            "value": 0.0052,
+            "value": 0.0065,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后闪避+0.52%"
+      "description": "镶嵌后闪避+0.65%"
     },
     {
       "id": "gem-all-sb-5",
@@ -2632,12 +2632,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "shanbi",
-            "value": 0.007,
+            "value": 0.0088,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后闪避+0.7%"
+      "description": "镶嵌后闪避+0.88%"
     },
     {
       "id": "gem-all-sb-6",
@@ -2667,12 +2667,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "shanbi",
-            "value": 0.009,
+            "value": 0.0115,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后闪避+0.9%"
+      "description": "镶嵌后闪避+1.15%"
     },
     {
       "id": "gem-all-sb-7",
@@ -2702,12 +2702,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "shanbi",
-            "value": 0.0112,
+            "value": 0.0145,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后闪避+1.12%"
+      "description": "镶嵌后闪避+1.45%"
     },
     {
       "id": "gem-all-sb-8",
@@ -2737,12 +2737,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "shanbi",
-            "value": 0.0136,
+            "value": 0.018,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后闪避+1.36%"
+      "description": "镶嵌后闪避+1.8%"
     },
     {
       "id": "gem-all-sb-9",
@@ -2772,12 +2772,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "shanbi",
-            "value": 0.0162,
+            "value": 0.0218,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后闪避+1.62%"
+      "description": "镶嵌后闪避+2.18%"
     },
     {
       "id": "gem-all-sb-10",
@@ -2807,12 +2807,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "shanbi",
-            "value": 0.019,
+            "value": 0.026,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后闪避+1.9%"
+      "description": "镶嵌后闪避+2.6%"
     },
     {
       "id": "gem-all-bj-1",
@@ -2845,12 +2845,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "baoji",
-            "value": 0.0008,
+            "value": 0.001,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后暴击+0.08%"
+      "description": "镶嵌后暴击+0.1%"
     },
     {
       "id": "gem-all-bj-2",
@@ -2883,12 +2883,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "baoji",
-            "value": 0.0016,
+            "value": 0.002,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后暴击+0.16%"
+      "description": "镶嵌后暴击+0.2%"
     },
     {
       "id": "gem-all-bj-3",
@@ -2921,12 +2921,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "baoji",
-            "value": 0.0024,
+            "value": 0.003,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后暴击+0.24%"
+      "description": "镶嵌后暴击+0.3%"
     },
     {
       "id": "gem-all-bj-4",
@@ -2956,12 +2956,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "baoji",
-            "value": 0.0034,
+            "value": 0.0042,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后暴击+0.34%"
+      "description": "镶嵌后暴击+0.42%"
     },
     {
       "id": "gem-all-bj-5",
@@ -2991,12 +2991,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "baoji",
-            "value": 0.0046,
+            "value": 0.0057,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后暴击+0.46%"
+      "description": "镶嵌后暴击+0.57%"
     },
     {
       "id": "gem-all-bj-6",
@@ -3026,12 +3026,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "baoji",
-            "value": 0.006,
+            "value": 0.0075,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后暴击+0.6%"
+      "description": "镶嵌后暴击+0.75%"
     },
     {
       "id": "gem-all-bj-7",
@@ -3061,12 +3061,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "baoji",
-            "value": 0.0076,
+            "value": 0.0096,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后暴击+0.76%"
+      "description": "镶嵌后暴击+0.96%"
     },
     {
       "id": "gem-all-bj-8",
@@ -3096,12 +3096,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "baoji",
-            "value": 0.0094,
+            "value": 0.012,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后暴击+0.94%"
+      "description": "镶嵌后暴击+1.2%"
     },
     {
       "id": "gem-all-bj-9",
@@ -3131,12 +3131,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "baoji",
-            "value": 0.0114,
+            "value": 0.0147,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后暴击+1.14%"
+      "description": "镶嵌后暴击+1.47%"
     },
     {
       "id": "gem-all-bj-10",
@@ -3166,12 +3166,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "baoji",
-            "value": 0.0136,
+            "value": 0.0176,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后暴击+1.36%"
+      "description": "镶嵌后暴击+1.76%"
     },
     {
       "id": "gem-all-zj-1",
@@ -3204,12 +3204,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zhaojia",
-            "value": 0.0008,
+            "value": 0.001,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后招架+0.08%"
+      "description": "镶嵌后招架+0.1%"
     },
     {
       "id": "gem-all-zj-2",
@@ -3242,12 +3242,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zhaojia",
-            "value": 0.0016,
+            "value": 0.002,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后招架+0.16%"
+      "description": "镶嵌后招架+0.2%"
     },
     {
       "id": "gem-all-zj-3",
@@ -3280,12 +3280,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zhaojia",
-            "value": 0.0024,
+            "value": 0.003,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后招架+0.24%"
+      "description": "镶嵌后招架+0.3%"
     },
     {
       "id": "gem-all-zj-4",
@@ -3315,12 +3315,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zhaojia",
-            "value": 0.0034,
+            "value": 0.0042,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后招架+0.34%"
+      "description": "镶嵌后招架+0.42%"
     },
     {
       "id": "gem-all-zj-5",
@@ -3350,12 +3350,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zhaojia",
-            "value": 0.0046,
+            "value": 0.0057,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后招架+0.46%"
+      "description": "镶嵌后招架+0.57%"
     },
     {
       "id": "gem-all-zj-6",
@@ -3385,12 +3385,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zhaojia",
-            "value": 0.006,
+            "value": 0.0075,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后招架+0.6%"
+      "description": "镶嵌后招架+0.75%"
     },
     {
       "id": "gem-all-zj-7",
@@ -3420,12 +3420,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zhaojia",
-            "value": 0.0076,
+            "value": 0.0096,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后招架+0.76%"
+      "description": "镶嵌后招架+0.96%"
     },
     {
       "id": "gem-all-zj-8",
@@ -3455,12 +3455,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zhaojia",
-            "value": 0.0094,
+            "value": 0.012,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后招架+0.94%"
+      "description": "镶嵌后招架+1.2%"
     },
     {
       "id": "gem-all-zj-9",
@@ -3490,12 +3490,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zhaojia",
-            "value": 0.0114,
+            "value": 0.0147,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后招架+1.14%"
+      "description": "镶嵌后招架+1.47%"
     },
     {
       "id": "gem-all-zj-10",
@@ -3525,12 +3525,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zhaojia",
-            "value": 0.0136,
+            "value": 0.0176,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后招架+1.36%"
+      "description": "镶嵌后招架+1.76%"
     },
     {
       "id": "gem-all-kb-1",
@@ -3563,12 +3563,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "kangbao",
-            "value": 0.0008,
+            "value": 0.001,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后抗暴+0.08%"
+      "description": "镶嵌后抗暴+0.1%"
     },
     {
       "id": "gem-all-kb-2",
@@ -3601,12 +3601,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "kangbao",
-            "value": 0.0016,
+            "value": 0.002,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后抗暴+0.16%"
+      "description": "镶嵌后抗暴+0.2%"
     },
     {
       "id": "gem-all-kb-3",
@@ -3639,12 +3639,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "kangbao",
-            "value": 0.0024,
+            "value": 0.003,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后抗暴+0.24%"
+      "description": "镶嵌后抗暴+0.3%"
     },
     {
       "id": "gem-all-kb-4",
@@ -3674,12 +3674,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "kangbao",
-            "value": 0.0034,
+            "value": 0.0042,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后抗暴+0.34%"
+      "description": "镶嵌后抗暴+0.42%"
     },
     {
       "id": "gem-all-kb-5",
@@ -3709,12 +3709,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "kangbao",
-            "value": 0.0046,
+            "value": 0.0057,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后抗暴+0.46%"
+      "description": "镶嵌后抗暴+0.57%"
     },
     {
       "id": "gem-all-kb-6",
@@ -3744,12 +3744,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "kangbao",
-            "value": 0.006,
+            "value": 0.0075,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后抗暴+0.6%"
+      "description": "镶嵌后抗暴+0.75%"
     },
     {
       "id": "gem-all-kb-7",
@@ -3779,12 +3779,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "kangbao",
-            "value": 0.0076,
+            "value": 0.0096,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后抗暴+0.76%"
+      "description": "镶嵌后抗暴+0.96%"
     },
     {
       "id": "gem-all-kb-8",
@@ -3814,12 +3814,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "kangbao",
-            "value": 0.0094,
+            "value": 0.012,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后抗暴+0.94%"
+      "description": "镶嵌后抗暴+1.2%"
     },
     {
       "id": "gem-all-kb-9",
@@ -3849,12 +3849,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "kangbao",
-            "value": 0.0114,
+            "value": 0.0147,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后抗暴+1.14%"
+      "description": "镶嵌后抗暴+1.47%"
     },
     {
       "id": "gem-all-kb-10",
@@ -3884,12 +3884,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "kangbao",
-            "value": 0.0136,
+            "value": 0.0176,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后抗暴+1.36%"
+      "description": "镶嵌后抗暴+1.76%"
     },
     {
       "id": "gem-all-zs-1",
@@ -3922,12 +3922,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zengshang",
-            "value": 0.0004,
+            "value": 0.0006,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后增伤+0.04%"
+      "description": "镶嵌后增伤+0.06%"
     },
     {
       "id": "gem-all-zs-2",
@@ -3960,12 +3960,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zengshang",
-            "value": 0.0008,
+            "value": 0.0012,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后增伤+0.08%"
+      "description": "镶嵌后增伤+0.12%"
     },
     {
       "id": "gem-all-zs-3",
@@ -3998,12 +3998,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zengshang",
-            "value": 0.0012,
+            "value": 0.0018,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后增伤+0.12%"
+      "description": "镶嵌后增伤+0.18%"
     },
     {
       "id": "gem-all-zs-4",
@@ -4033,12 +4033,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zengshang",
-            "value": 0.0017,
+            "value": 0.0026,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后增伤+0.17%"
+      "description": "镶嵌后增伤+0.26%"
     },
     {
       "id": "gem-all-zs-5",
@@ -4068,12 +4068,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zengshang",
-            "value": 0.0023,
+            "value": 0.0035,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后增伤+0.23%"
+      "description": "镶嵌后增伤+0.35%"
     },
     {
       "id": "gem-all-zs-6",
@@ -4103,12 +4103,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zengshang",
-            "value": 0.003,
+            "value": 0.0046,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后增伤+0.3%"
+      "description": "镶嵌后增伤+0.46%"
     },
     {
       "id": "gem-all-zs-7",
@@ -4138,12 +4138,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zengshang",
-            "value": 0.0038,
+            "value": 0.0059,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后增伤+0.38%"
+      "description": "镶嵌后增伤+0.59%"
     },
     {
       "id": "gem-all-zs-8",
@@ -4173,12 +4173,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zengshang",
-            "value": 0.0047,
+            "value": 0.0074,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后增伤+0.47%"
+      "description": "镶嵌后增伤+0.74%"
     },
     {
       "id": "gem-all-zs-9",
@@ -4208,12 +4208,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zengshang",
-            "value": 0.0057,
+            "value": 0.0091,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后增伤+0.57%"
+      "description": "镶嵌后增伤+0.91%"
     },
     {
       "id": "gem-all-zs-10",
@@ -4243,12 +4243,12 @@
           "effect_type": "buff",
           "params": {
             "attr_key": "zengshang",
-            "value": 0.0068,
+            "value": 0.011,
             "apply_type": "flat"
           }
         }
       ],
-      "description": "镶嵌后增伤+0.68%"
+      "description": "镶嵌后增伤+1.1%"
     }
   ]
 }
