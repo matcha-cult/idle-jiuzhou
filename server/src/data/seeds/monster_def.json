@@ -3708,9 +3708,9 @@
         }
       },
       "drop_pool_id": "dp-huanxu-rift-blade",
-      "exp_reward": 1640,
-      "silver_reward_min": 430,
-      "silver_reward_max": 660,
+      "exp_reward": 1562,
+      "silver_reward_min": 418,
+      "silver_reward_max": 638,
       "enabled": true
     },
     {
@@ -3775,9 +3775,9 @@
         }
       },
       "drop_pool_id": "dp-huanxu-xushi-wisp",
-      "exp_reward": 1700,
-      "silver_reward_min": 450,
-      "silver_reward_max": 690,
+      "exp_reward": 1628,
+      "silver_reward_min": 440,
+      "silver_reward_max": 660,
       "enabled": true
     },
     {
@@ -3844,9 +3844,9 @@
         }
       },
       "drop_pool_id": "dp-huanxu-elite-mark-warden",
-      "exp_reward": 2360,
-      "silver_reward_min": 660,
-      "silver_reward_max": 980,
+      "exp_reward": 2288,
+      "silver_reward_min": 638,
+      "silver_reward_max": 968,
       "enabled": true
     },
     {
@@ -3913,9 +3913,9 @@
         }
       },
       "drop_pool_id": "dp-huanxu-elite-null-priest",
-      "exp_reward": 2480,
-      "silver_reward_min": 700,
-      "silver_reward_max": 1040,
+      "exp_reward": 2464,
+      "silver_reward_min": 682,
+      "silver_reward_max": 1034,
       "enabled": true
     },
     {
