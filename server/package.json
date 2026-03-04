@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/app.js",
     "simulate:equipment-cost": "tsx scripts/simulate-equipment-costs.ts",
+    "simulate:defense-reduction": "tsx scripts/simulate-defense-reduction.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",

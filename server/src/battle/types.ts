@@ -496,7 +496,7 @@ export const BATTLE_CONSTANTS = {
   BASE_LINGQI_REGEN: 10,
 
   // 防御减伤曲线参数：减伤 = 防御 / (防御 + 攻击 * 系数 + 常量偏移)
-  DEFENSE_ATTACK_FACTOR: 2.8,
+  DEFENSE_ATTACK_FACTOR: 2.5,
   DEFENSE_BASE_OFFSET: 60,
   
   ELEMENT_COUNTER: {
