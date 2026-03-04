@@ -24,7 +24,7 @@ import {
   getTechniqueLayerDefinitions,
   getTitleDefinitions,
 } from './staticConfigLoader.js';
-import { extractFlatAffixDeltas } from './shared/affixModifier.js';
+import { extractFlatAffixDeltas, extractPercentAffixDeltas } from './shared/affixModifier.js';
 import { convertRatingToPercent, getEffectiveLevelByRealm, resolveRatingBaseAttrKey } from './shared/affixRating.js';
 import { buildInsightPctBonusByLevel } from './shared/insightRules.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
@@ -612,11 +612,17 @@ const applyInsightRewardsToStats = (
   pctModifiers.fafang = (pctModifiers.fafang || 0) + insightBonusPct;
 };
 
-const loadEquippedAttrBonuses = async (characterId: number, effectiveLevel: number): Promise<CharacterComputedStats> => {
-  const stats = emptyStats();
-  for (const key of Object.keys(stats) as Array<keyof CharacterComputedStats>) {
-    stats[key] = 0;
+interface EquippedAttrBonuses {
+  flatStats: CharacterComputedStats;
+  pctModifiers: Record<string, number>;
+}
+
+const loadEquippedAttrBonuses = async (characterId: number, effectiveLevel: number): Promise<EquippedAttrBonuses> => {
+  const flatStats = emptyStats();
+  for (const key of Object.keys(flatStats) as Array<keyof CharacterComputedStats>) {
+    flatStats[key] = 0;
   }
+  const pctModifiers: Record<string, number> = {};
   const ratingTotals: Partial<Record<CharacterAttrKey, number>> = {};
 
   const equippedResult = await query(
@@ -663,12 +669,12 @@ const loadEquippedAttrBonuses = async (characterId: number, effectiveLevel: numb
     });
     for (const [key, value] of Object.entries(displayBaseAttrs)) {
       const ratingBaseAttrKey = resolveRatingBaseAttrKey(key);
-      if (ratingBaseAttrKey && Object.prototype.hasOwnProperty.call(stats, ratingBaseAttrKey)) {
+      if (ratingBaseAttrKey && Object.prototype.hasOwnProperty.call(flatStats, ratingBaseAttrKey)) {
         const mappedKey = ratingBaseAttrKey as CharacterAttrKey;
         ratingTotals[mappedKey] = (ratingTotals[mappedKey] || 0) + value;
         continue;
       }
-      applyAttrDelta(stats, key, value);
+      applyAttrDelta(flatStats, key, value);
     }
 
     const affixes = toArray(row.affixes);
@@ -676,12 +682,19 @@ const loadEquippedAttrBonuses = async (characterId: number, effectiveLevel: numb
       const rows = extractFlatAffixDeltas(affixRaw);
       for (const rowValue of rows) {
         const ratingBaseAttrKey = resolveRatingBaseAttrKey(rowValue.attrKey);
-        if (ratingBaseAttrKey && Object.prototype.hasOwnProperty.call(stats, ratingBaseAttrKey)) {
+        if (ratingBaseAttrKey && Object.prototype.hasOwnProperty.call(flatStats, ratingBaseAttrKey)) {
           const mappedKey = ratingBaseAttrKey as CharacterAttrKey;
           ratingTotals[mappedKey] = (ratingTotals[mappedKey] || 0) + rowValue.value;
           continue;
         }
-        applyAttrDelta(stats, rowValue.attrKey, rowValue.value);
+        applyAttrDelta(flatStats, rowValue.attrKey, rowValue.value);
+      }
+
+      const percentRows = extractPercentAffixDeltas(affixRaw);
+      for (const rowValue of percentRows) {
+        if (!TECHNIQUE_PASSIVE_PERCENT_MULTIPLY_KEYS.has(rowValue.attrKey)) continue;
+        if (!Object.prototype.hasOwnProperty.call(flatStats, rowValue.attrKey)) continue;
+        pctModifiers[rowValue.attrKey] = (pctModifiers[rowValue.attrKey] || 0) + rowValue.value;
       }
     }
 
@@ -690,7 +703,9 @@ const loadEquippedAttrBonuses = async (characterId: number, effectiveLevel: numb
   }
 
   const setIds = [...setCountMap.keys()];
-  if (setIds.length === 0) return stats;
+  if (setIds.length === 0) {
+    return { flatStats, pctModifiers };
+  }
 
   const staticSetBonusBySetId = new Map<
     string,
@@ -726,7 +741,7 @@ const loadEquippedAttrBonuses = async (characterId: number, effectiveLevel: numb
         if (String(params.apply_type || '') !== 'flat') continue;
         const attrKey = String(params.attr_key || '').trim();
         if (!attrKey) continue;
-        applyAttrDelta(stats, attrKey, params.value);
+        applyAttrDelta(flatStats, attrKey, params.value);
       }
     }
   }
@@ -736,10 +751,10 @@ const loadEquippedAttrBonuses = async (characterId: number, effectiveLevel: numb
     if (!Number.isFinite(rating) || rating === 0) continue;
     const projectedValue = convertRatingToPercent(attrKey, rating, effectiveLevel);
     if (!Number.isFinite(projectedValue) || projectedValue === 0) continue;
-    applyAttrDelta(stats, attrKey, projectedValue);
+    applyAttrDelta(flatStats, attrKey, projectedValue);
   }
 
-  return stats;
+  return { flatStats, pctModifiers };
 };
 
 const loadEquippedTitleEffects = async (characterId: number): Promise<Record<string, number>> => {
@@ -784,14 +799,18 @@ const computeStaticAttrs = async (base: CharacterBaseRow): Promise<CharacterComp
   applyInsightRewardsToStats(base, pctModifiers);
   const effectiveLevel = getEffectiveLevelByRealm(base.realm, base.sub_realm);
 
-  const [equipBonus, titleEffects, techniquePassives] = await Promise.all([
+  const [equipBonuses, titleEffects, techniquePassives] = await Promise.all([
     loadEquippedAttrBonuses(base.id, effectiveLevel),
     loadEquippedTitleEffects(base.id),
     loadTechniquePassives(base.id),
   ]);
 
-  for (const [key, value] of Object.entries(equipBonus)) {
+  for (const [key, value] of Object.entries(equipBonuses.flatStats)) {
     applyAttrDelta(stats, key, value);
+  }
+  for (const [key, value] of Object.entries(equipBonuses.pctModifiers)) {
+    if (!Number.isFinite(value) || value === 0) continue;
+    pctModifiers[key] = (pctModifiers[key] || 0) + value;
   }
   for (const [key, value] of Object.entries(titleEffects)) {
     applyAttrDelta(stats, key, value);

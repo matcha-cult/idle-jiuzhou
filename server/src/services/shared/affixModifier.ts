@@ -312,14 +312,22 @@ export interface FlatAffixDelta {
   value: number;
 }
 
-export const extractFlatAffixDeltas = (affixRaw: unknown): FlatAffixDelta[] => {
+export interface PercentAffixDelta {
+  attrKey: string;
+  value: number;
+}
+
+const extractAffixDeltasByApplyType = (
+  affixRaw: unknown,
+  applyType: 'flat' | 'percent',
+): Array<{ attrKey: string; value: number }> => {
   if (!affixRaw || typeof affixRaw !== 'object') return [];
   const affix = affixRaw as Record<string, unknown>;
-  const applyType = String(affix.apply_type || '').trim().toLowerCase();
-  if (applyType !== 'flat') return [];
+  const rawApplyType = String(affix.apply_type || '').trim().toLowerCase();
+  if (rawApplyType !== applyType) return [];
 
   const modifiers = normalizeGeneratedAffixModifiers({
-    applyType: 'flat',
+    applyType,
     effectType: undefined,
     params: undefined,
     modifiersRaw: affix.modifiers,
@@ -333,4 +341,12 @@ export const extractFlatAffixDeltas = (affixRaw: unknown): FlatAffixDelta[] => {
       value: toFiniteNumber(modifier.value, 0),
     }))
     .filter((row) => row.attrKey.length > 0);
+};
+
+export const extractFlatAffixDeltas = (affixRaw: unknown): FlatAffixDelta[] => {
+  return extractAffixDeltasByApplyType(affixRaw, 'flat');
+};
+
+export const extractPercentAffixDeltas = (affixRaw: unknown): PercentAffixDelta[] => {
+  return extractAffixDeltasByApplyType(affixRaw, 'percent');
 };
