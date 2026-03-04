@@ -4,7 +4,6 @@
  * - `getCharacterIdByUserIdForUpdate`：事务内加锁查询（FOR UPDATE）。
  * 返回：有效角色ID或 `null`。
  */
-import type { PoolClient } from 'pg';
 import { query } from '../../config/database.js';
 
 const normalizeUserId = (userId: number): number | null => {
@@ -28,12 +27,11 @@ export const getCharacterIdByUserId = async (userId: number): Promise<number | n
 };
 
 export const getCharacterIdByUserIdForUpdate = async (
-  client: PoolClient,
   userId: number,
 ): Promise<number | null> => {
   const uid = normalizeUserId(userId);
   if (!uid) return null;
 
-  const result = await client.query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE', [uid]);
+  const result = await query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE', [uid]);
   return normalizeCharacterId(result.rows?.[0]?.id);
 };

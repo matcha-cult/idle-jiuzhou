@@ -10,11 +10,11 @@
  * 复用点：通过 service.ts 的 @Transactional 装饰器在事务中执行。
  *
  * 边界条件：
- * 1) startDungeonInstance 需要事务上下文（通过 getTransactionClient 获取 client）。
+ * 1) startDungeonInstance 由调用方 @Transactional 保证事务上下文。
  * 2) nextDungeonInstance 的结算部分在通关时执行锁行+奖励发放+记录写入，需在事务中。
  */
 
-import { getTransactionClient, query } from '../../config/database.js';
+import { query } from '../../config/database.js';
 import { getBattleState, startDungeonPVEBattle } from '../battle/index.js';
 import { runDungeonStartFlow } from './shared/startFlow.js';
 import { itemService } from '../itemService.js';
@@ -70,8 +70,6 @@ export const startDungeonInstance = async (
 > => {
   const user = await getUserAndCharacter(userId);
   if (!user.ok) return { success: false, message: user.message };
-  const client = getTransactionClient();
-  if (!client) throw new Error('事务上下文缺失');
 
   const instRes = await query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1 FOR UPDATE`, [instanceId]);
   if (instRes.rows.length === 0) {
@@ -116,7 +114,7 @@ export const startDungeonInstance = async (
     if (staminaCost > 0) {
       for (const p of participants) {
         const participantLabel = buildParticipantLabel(p, participantNicknameMap);
-        const staminaState = await applyStaminaRecoveryTx(client, p.characterId);
+        const staminaState = await applyStaminaRecoveryTx(p.characterId);
         if (!staminaState) {
           return { success: false, message: `${participantLabel}不存在` };
         }

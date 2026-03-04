@@ -1,4 +1,4 @@
-import type { PoolClient } from 'pg';
+import { query } from '../config/database.js';
 import { itemService } from './itemService.js';
 import { getDialogueDefinitions } from './staticConfigLoader.js';
 
@@ -118,7 +118,6 @@ export const createDialogueState = (dialogueId: string, nodes: DialogueNode[]): 
 };
 
 export const applyDialogueEffectsTx = async (
-  client: PoolClient,
   userId: number,
   characterId: number,
   effects: DialogueEffect[],
@@ -131,7 +130,7 @@ export const applyDialogueEffectsTx = async (
       if (type === 'give_silver') {
         const amount = Number(params.amount) || 0;
         if (amount > 0) {
-          await client.query(`UPDATE characters SET silver = silver + $1, updated_at = NOW() WHERE id = $2`, [
+          await query(`UPDATE characters SET silver = silver + $1, updated_at = NOW() WHERE id = $2`, [
             amount,
             characterId,
           ]);
@@ -142,7 +141,7 @@ export const applyDialogueEffectsTx = async (
       if (type === 'give_spirit_stones') {
         const amount = Number(params.amount) || 0;
         if (amount > 0) {
-          await client.query(`UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2`, [
+          await query(`UPDATE characters SET spirit_stones = spirit_stones + $1, updated_at = NOW() WHERE id = $2`, [
             amount,
             characterId,
           ]);
@@ -153,7 +152,7 @@ export const applyDialogueEffectsTx = async (
       if (type === 'give_exp') {
         const amount = Number(params.amount) || 0;
         if (amount > 0) {
-          await client.query(`UPDATE characters SET exp = exp + $1, updated_at = NOW() WHERE id = $2`, [
+          await query(`UPDATE characters SET exp = exp + $1, updated_at = NOW() WHERE id = $2`, [
             amount,
             characterId,
           ]);
@@ -164,12 +163,12 @@ export const applyDialogueEffectsTx = async (
       if (type === 'give_technique') {
         const techniqueId = typeof params.technique_id === 'string' ? params.technique_id : '';
         if (techniqueId) {
-          const existsRes = await client.query(
+          const existsRes = await query(
             `SELECT 1 FROM character_technique WHERE character_id = $1 AND technique_id = $2 LIMIT 1`,
             [characterId, techniqueId],
           );
           if (existsRes.rows.length === 0) {
-            await client.query(
+            await query(
               `INSERT INTO character_technique (character_id, technique_id, current_layer, acquired_at)
                VALUES ($1, $2, 1, NOW())`,
               [characterId, techniqueId],
@@ -196,7 +195,7 @@ export const applyDialogueEffectsTx = async (
         const flagName = typeof params.flag === 'string' ? params.flag : '';
         const flagValue = params.value ?? true;
         if (flagName) {
-          await client.query(
+          await query(
             `UPDATE characters 
              SET extra_data = COALESCE(extra_data, '{}'::jsonb) || jsonb_build_object($1, $2::jsonb),
                  updated_at = NOW()

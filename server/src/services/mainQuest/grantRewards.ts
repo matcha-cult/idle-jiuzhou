@@ -8,10 +8,10 @@
  * 数据流：遍历 rewards 各字段 → 执行对应 DB 更新/物品创建 → 收集结果。
  *
  * 边界条件：
- * 1) 调用方需保证事务上下文（getTransactionClient），物品创建会自动复用当前事务。
+ * 1) 调用方需保证事务上下文，物品创建会自动复用当前事务。
  * 2) 任一物品创建失败会抛异常，由事务回滚保证一致性。
  */
-import { query, getTransactionClient } from '../../config/database.js';
+import { query } from '../../config/database.js';
 import { itemService } from '../itemService.js';
 import {
   getItemDefinitionById,
@@ -27,8 +27,6 @@ export const grantSectionRewards = async (
   rewards: Record<string, unknown>,
 ): Promise<RewardResult[]> => {
   const results: RewardResult[] = [];
-  const client = getTransactionClient();
-  if (!client) throw new Error('事务上下文不存在');
 
   const exp = asNumber((rewards as { exp?: unknown }).exp, 0);
   if (exp > 0) {

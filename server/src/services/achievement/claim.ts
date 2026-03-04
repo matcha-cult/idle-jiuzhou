@@ -1,5 +1,4 @@
-import type { PoolClient } from 'pg';
-import { query, getTransactionClient } from '../../config/database.js';
+import { query } from '../../config/database.js';
 import { Transactional } from '../../decorators/transactional.js';
 import { itemService } from '../itemService.js';
 import {
@@ -84,9 +83,6 @@ class AchievementClaimService {
     rewards: AchievementRewardConfig[],
     obtainedFrom: 'achievement_reward' | 'achievement_points_reward',
   ): Promise<AchievementRewardView[]> {
-    const client = getTransactionClient();
-    if (!client) throw new Error('applyRewardsTx 必须在事务上下文中执行');
-
     const itemMeta = await this.loadItemMetaMap(this.collectItemRewardIds(rewards));
     const out: AchievementRewardView[] = [];
 
@@ -152,14 +148,11 @@ class AchievementClaimService {
     characterId: number,
     titleId: string | null,
   ): Promise<AchievementClaimTitle | undefined> {
-    const client = getTransactionClient();
-    if (!client) throw new Error('grantTitleTx 必须在事务上下文中执行');
-
     const id = asNonEmptyString(titleId);
     if (!id) return undefined;
     const titleDef = getTitleDefinitions().find((entry) => entry.id === id && entry.enabled !== false);
     if (!titleDef) return undefined;
-    await grantPermanentTitleTx(client, characterId, id);
+    await grantPermanentTitleTx(characterId, id);
 
     return this.getTitleInfo(id);
   }

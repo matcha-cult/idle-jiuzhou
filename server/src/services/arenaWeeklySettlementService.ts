@@ -1,4 +1,4 @@
-import { query, getTransactionClient } from '../config/database.js';
+import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import { invalidateCharacterComputedCache } from './characterComputedService.js';
 import { getPvpWeeklyTitleIdByRank, PVP_WEEKLY_TITLE_VALID_DAYS } from './achievement/pvpWeeklyTitleConfig.js';
@@ -316,12 +316,7 @@ class ArenaWeeklySettlementService {
       };
     }
 
-    const client = getTransactionClient();
-    if (!client) {
-      throw new Error('settleSingleWeek 必须在事务上下文中执行');
-    }
-
-    const expiredEquippedCharacterIds = await clearExpiredEquippedPvpWeeklyTitlesTx(client);
+    const expiredEquippedCharacterIds = await clearExpiredEquippedPvpWeeklyTitlesTx();
     const topCharacterIds = await this.loadTopThreeCharacterIdsForWeekTx(weekStartLocalDate, weekEndLocalDate);
     const awards: WeeklyAwardInfo[] = [];
 
@@ -333,7 +328,7 @@ class ArenaWeeklySettlementService {
           throw new Error(`PVP周称号配置缺失，rank=${rank}`);
         }
         const characterId = topCharacterIds[rank - 1]!;
-        await grantExpiringTitleTx(client, characterId, titleId, expireAt);
+        await grantExpiringTitleTx(characterId, titleId, expireAt);
         awards.push({ rank, characterId, titleId });
       }
     }

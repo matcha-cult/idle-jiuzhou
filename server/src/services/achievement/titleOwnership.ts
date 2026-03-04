@@ -1,4 +1,4 @@
-import type { PoolClient } from 'pg';
+import { query } from '../../config/database.js';
 import { asFiniteNonNegativeInt, asNonEmptyString } from './shared.js';
 import { PVP_WEEKLY_TITLE_IDS } from './pvpWeeklyTitleConfig.js';
 
@@ -10,7 +10,6 @@ import { PVP_WEEKLY_TITLE_IDS } from './pvpWeeklyTitleConfig.js';
  * 2. 统一处理“已过期且仍装备”的 PVP 周称号，保证属性与显示口径一致。
  *
  * 输入：
- * - PoolClient 事务客户端；
  * - 角色ID、称号ID、过期时间（可为 null，表示永久称号）。
  *
  * 输出：
@@ -27,7 +26,6 @@ import { PVP_WEEKLY_TITLE_IDS } from './pvpWeeklyTitleConfig.js';
  */
 
 export const grantTitleOwnershipTx = async (
-  client: PoolClient,
   characterId: number,
   titleId: string,
   expiresAt: Date | null,
@@ -37,7 +35,7 @@ export const grantTitleOwnershipTx = async (
   if (!cid) throw new Error('grantTitleOwnershipTx: characterId 无效');
   if (!tid) throw new Error('grantTitleOwnershipTx: titleId 不能为空');
 
-  await client.query(
+  await query(
     `
       INSERT INTO character_title (character_id, title_id, is_equipped, obtained_at, expires_at, updated_at)
       VALUES ($1, $2, false, NOW(), $3, NOW())
@@ -52,26 +50,23 @@ export const grantTitleOwnershipTx = async (
 };
 
 export const grantPermanentTitleTx = async (
-  client: PoolClient,
   characterId: number,
   titleId: string,
 ): Promise<void> => {
-  await grantTitleOwnershipTx(client, characterId, titleId, null);
+  await grantTitleOwnershipTx(characterId, titleId, null);
 };
 
 export const grantExpiringTitleTx = async (
-  client: PoolClient,
   characterId: number,
   titleId: string,
   expiresAt: Date,
 ): Promise<void> => {
-  await grantTitleOwnershipTx(client, characterId, titleId, expiresAt);
+  await grantTitleOwnershipTx(characterId, titleId, expiresAt);
 };
 
 export const clearExpiredEquippedPvpWeeklyTitlesTx = async (
-  client: PoolClient,
 ): Promise<number[]> => {
-  const expiredRes = await client.query<{ character_id: number }>(
+  const expiredRes = await query<{ character_id: number }>(
     `
       UPDATE character_title
       SET is_equipped = false,
@@ -97,7 +92,7 @@ export const clearExpiredEquippedPvpWeeklyTitlesTx = async (
     return [];
   }
 
-  await client.query(
+  await query(
     `
       UPDATE characters c
       SET title = '散修',

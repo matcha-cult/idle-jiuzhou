@@ -5,7 +5,7 @@
  *   管理角色体力的恢复计算与持久化。每次读取体力时根据 stamina_recover_at
  *   时间戳惰性计算已恢复量，并写回 DB。
  *
- * 输入：characterId / userId / PoolClient（事务）
+ * 输入：characterId / userId
  * 输出：StaminaRecoveryState（当前体力、恢复量、是否变更）
  *
  * 数据流：
@@ -18,7 +18,6 @@
  *   2. 事务内操作不走缓存（需要 FOR UPDATE 行锁保证一致性）
  */
 
-import type { PoolClient } from 'pg';
 import { query } from '../config/database.js';
 import { getCachedStamina, setCachedStamina, toRecoveryState } from './staminaCacheService.js';
 
@@ -181,7 +180,6 @@ export const applyStaminaRecoveryByUserId = async (userId: number): Promise<Stam
  * 事务需要 FOR UPDATE 行锁保证一致性，不适合走缓存。
  * 调用方在事务提交后应自行调用 setCachedStamina 同步缓存。
  */
-export const applyStaminaRecoveryTx = async (client: PoolClient, characterId: number): Promise<StaminaRecoveryState | null> => {
-  const runQuery: QueryRunner = (text, params) => client.query(text, params);
-  return applyRecoveryByCharacterIdFromDB(runQuery, characterId, true);
+export const applyStaminaRecoveryTx = async (characterId: number): Promise<StaminaRecoveryState | null> => {
+  return applyRecoveryByCharacterIdFromDB((text, params) => query(text, params), characterId, true);
 };

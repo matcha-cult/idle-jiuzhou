@@ -11,10 +11,10 @@
  * 3. selectDialogueChoice：读进度（FOR UPDATE）→ 处理选项 → 应用效果 → 推进节点 → 更新 DB
  *
  * 边界条件：
- * 1) advanceDialogue/selectDialogueChoice 需要事务上下文（getTransactionClient），调用方需通过 @Transactional 保证。
+ * 1) advanceDialogue/selectDialogueChoice 由调用方通过 @Transactional 保证事务上下文。
  * 2) 对话结束时根据是否有 objectives 决定下一阶段（objectives 或 turnin）。
  */
-import { query, getTransactionClient } from '../../config/database.js';
+import { query } from '../../config/database.js';
 import {
   loadDialogue,
   getDialogueNode,
@@ -90,9 +90,6 @@ export const advanceDialogueLegacy = async (
   if (!Number.isFinite(uid) || uid <= 0) return { success: false, message: '未登录' };
   if (!Number.isFinite(cid) || cid <= 0) return { success: false, message: '角色不存在' };
 
-  const client = getTransactionClient();
-  if (!client) throw new Error('事务上下文不存在');
-
   const progressRes = await query(
     `SELECT dialogue_state, current_section_id, section_status
      FROM character_main_quest_progress
@@ -142,7 +139,7 @@ export const advanceDialogueLegacy = async (
   const pendingEffects = asArray<DialogueEffect>(dialogueStateRaw.pendingEffects);
   let effectResults: unknown[] = [];
   if (pendingEffects.length > 0) {
-    const applyResult = await applyDialogueEffectsTx(client, uid, cid, pendingEffects);
+    const applyResult = await applyDialogueEffectsTx(uid, cid, pendingEffects);
     effectResults = applyResult.results;
   }
 
@@ -234,9 +231,6 @@ export const selectDialogueChoiceLegacy = async (
   const ch = typeof choiceId === 'string' ? choiceId.trim() : '';
   if (!ch) return { success: false, message: '选项ID不能为空' };
 
-  const client = getTransactionClient();
-  if (!client) throw new Error('事务上下文不存在');
-
   const progressRes = await query(
     `SELECT dialogue_state
      FROM character_main_quest_progress
@@ -265,7 +259,7 @@ export const selectDialogueChoiceLegacy = async (
 
   let effectResults: unknown[] = [];
   if (effects.length > 0) {
-    const applyResult = await applyDialogueEffectsTx(client, uid, cid, effects);
+    const applyResult = await applyDialogueEffectsTx(uid, cid, effects);
     effectResults = applyResult.results;
   }
 
