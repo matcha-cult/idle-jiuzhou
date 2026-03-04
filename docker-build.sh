@@ -3,7 +3,9 @@
 set -e
 
 REGISTRY="ccr.ccs.tencentyun.com/tcb-100001011660-qtgo"
-VERSION=${1:-latest}
+VERSION="latest"
+MODE="all"
+VERSION_SET=0
 
 # 颜色输出
 RED='\033[0;31m'
@@ -15,36 +17,102 @@ log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
+usage() {
+    cat <<'USAGE'
+用法:
+  ./docker-build.sh [版本号] [--server-only|-s]
+
+参数:
+  版本号              镜像标签，默认 latest
+  --server-only, -s   只构建并推送服务端镜像
+USAGE
+}
+
+for arg in "$@"; do
+    case "$arg" in
+        --server-only|-s)
+            MODE="server-only"
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            if [ "$VERSION_SET" -eq 0 ]; then
+                VERSION="$arg"
+                VERSION_SET=1
+            else
+                log_error "无法识别参数: $arg"
+                usage
+                exit 1
+            fi
+            ;;
+    esac
+done
+
+TARGETS=("client" "server")
+if [ "$MODE" = "server-only" ]; then
+    TARGETS=("server")
+fi
+
+get_image_name() {
+    local target="$1"
+    echo "$REGISTRY/jiuzhou-$target:$VERSION"
+}
+
+build_image() {
+    local target="$1"
+
+    if [ "$target" = "client" ]; then
+        log_info "📦 Building client..."
+        # VITE_CDN_BASE / VITE_API_BASE 从环境变量读取，构建时静态替换到产物中
+        docker build \
+            -t "$(get_image_name client)" \
+            ${VITE_CDN_BASE:+--build-arg VITE_CDN_BASE="$VITE_CDN_BASE"} \
+            ${VITE_API_BASE:+--build-arg VITE_API_BASE="$VITE_API_BASE"} \
+            -f client/Dockerfile .
+        return
+    fi
+
+    log_info "📦 Building server..."
+    docker build -t "$(get_image_name server)" -f server/Dockerfile .
+}
+
+push_image() {
+    local target="$1"
+    log_info "⬆️  Pushing $target..."
+    docker push "$(get_image_name "$target")"
+}
+
+tag_latest_image() {
+    local target="$1"
+    local version_image="$REGISTRY/jiuzhou-$target:$VERSION"
+    local latest_image="$REGISTRY/jiuzhou-$target:latest"
+
+    docker tag "$version_image" "$latest_image"
+    docker push "$latest_image"
+}
+
 echo "🚀 Building and pushing to $REGISTRY..."
 
-log_info "📦 Building client..."
-# VITE_CDN_BASE / VITE_API_BASE 从环境变量读取，构建时静态替换到产物中
-docker build \
-    -t $REGISTRY/jiuzhou-client:$VERSION \
-    ${VITE_CDN_BASE:+--build-arg VITE_CDN_BASE="$VITE_CDN_BASE"} \
-    ${VITE_API_BASE:+--build-arg VITE_API_BASE="$VITE_API_BASE"} \
-    -f client/Dockerfile .
+for target in "${TARGETS[@]}"; do
+    build_image "$target"
+done
 
-log_info "📦 Building server..."
-docker build -t $REGISTRY/jiuzhou-server:$VERSION -f server/Dockerfile .
-
-# Push to registry
-log_info "⬆️  Pushing client..."
-docker push $REGISTRY/jiuzhou-client:$VERSION
-
-log_info "⬆️  Pushing server..."
-docker push $REGISTRY/jiuzhou-server:$VERSION
+for target in "${TARGETS[@]}"; do
+    push_image "$target"
+done
 
 # Tag as latest if version specified
 if [ "$VERSION" != "latest" ]; then
     log_info "🏷️  Tagging as latest..."
-    docker tag $REGISTRY/jiuzhou-client:$VERSION $REGISTRY/jiuzhou-client:latest
-    docker tag $REGISTRY/jiuzhou-server:$VERSION $REGISTRY/jiuzhou-server:latest
-    docker push $REGISTRY/jiuzhou-client:latest
-    docker push $REGISTRY/jiuzhou-server:latest
+    for target in "${TARGETS[@]}"; do
+        tag_latest_image "$target"
+    done
 fi
 
 echo ""
 log_info "✅ Done! Images pushed to $REGISTRY"
-echo "   - $REGISTRY/jiuzhou-client:$VERSION"
-echo "   - $REGISTRY/jiuzhou-server:$VERSION"
+for target in "${TARGETS[@]}"; do
+    echo "   - $(get_image_name "$target")"
+done
