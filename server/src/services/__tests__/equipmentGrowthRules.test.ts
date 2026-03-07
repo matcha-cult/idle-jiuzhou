@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  ENHANCE_DOWNGRADE_END_LEVEL,
+  ENHANCE_DOWNGRADE_START_LEVEL,
   buildEnhanceCostPlan,
   buildEquipmentDisplayBaseAttrs,
   ENHANCE_DESTROY_START_LEVEL,
@@ -41,8 +43,13 @@ test('装备基础属性预览在 +15 后仍应继续按强化等级增长', () 
   assert.equal(attrs.qixue, 160);
 });
 
-test('冲击 +15 以下时强化失败不应碎装', () => {
-  assert.equal(getEnhanceFailMode(ENHANCE_DESTROY_START_LEVEL - 1), 'none');
+test('冲击 +7 及以下时强化失败不应降级', () => {
+  assert.equal(getEnhanceFailMode(ENHANCE_DOWNGRADE_START_LEVEL - 1), 'none');
+});
+
+test('冲击 +8 ~ +14 时强化失败应降 1 级', () => {
+  assert.equal(getEnhanceFailMode(ENHANCE_DOWNGRADE_START_LEVEL), 'downgrade');
+  assert.equal(getEnhanceFailMode(ENHANCE_DOWNGRADE_END_LEVEL), 'downgrade');
 });
 
 test('冲击 +15 及以上时强化失败应为碎装', () => {

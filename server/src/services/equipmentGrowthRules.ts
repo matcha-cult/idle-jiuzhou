@@ -28,6 +28,8 @@ const DEFAULT_SOCKET_MAX_BY_QUALITY_RANK: Record<number, number> = {
 };
 
 export const ENHANCE_FIXED_RATE_START_LEVEL = 15;
+export const ENHANCE_DOWNGRADE_START_LEVEL = 8;
+export const ENHANCE_DOWNGRADE_END_LEVEL = 14;
 export const ENHANCE_DESTROY_START_LEVEL = 15;
 export const ENHANCE_MAX_LEVEL: number | null = null;
 export const REFINE_MAX_LEVEL = 10;
@@ -243,7 +245,14 @@ export const getEnhanceFailMode = (
   targetLevel: number,
 ): EquipmentGrowthFailMode => {
   const level = Math.max(1, normalizeEnhanceLevel(targetLevel));
-  return level >= ENHANCE_DESTROY_START_LEVEL ? "destroy" : "none";
+  if (level >= ENHANCE_DESTROY_START_LEVEL) return "destroy";
+  if (
+    level >= ENHANCE_DOWNGRADE_START_LEVEL &&
+    level <= ENHANCE_DOWNGRADE_END_LEVEL
+  ) {
+    return "downgrade";
+  }
+  return "none";
 };
 
 export const getRefineFailResultLevel = (

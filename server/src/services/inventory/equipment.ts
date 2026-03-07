@@ -460,12 +460,24 @@ export const enhanceEquipment = async (
   const success = roll < finalRate;
   const failMode = success ? "none" : getEnhanceFailMode(targetLv);
   const destroyed = !success && failMode === "destroy";
-  const resultLevel = success ? targetLv : null;
+  const downgraded = !success && failMode === "downgrade";
+  const resultLevel = success
+    ? targetLv
+    : destroyed
+      ? null
+      : downgraded
+        ? Math.max(0, curLv - 1)
+        : curLv;
 
   if (success) {
     await query(
       "UPDATE item_instance SET strengthen_level = $1, updated_at = NOW() WHERE id = $2 AND owner_character_id = $3",
       [targetLv, itemInstanceId, characterId],
+    );
+  } else if (downgraded) {
+    await query(
+      "UPDATE item_instance SET strengthen_level = $1, updated_at = NOW() WHERE id = $2 AND owner_character_id = $3",
+      [resultLevel, itemInstanceId, characterId],
     );
   } else if (destroyed) {
     if (String(item.location) === "equipped") {
@@ -493,7 +505,7 @@ export const enhanceEquipment = async (
     }
   }
 
-  if (success) {
+  if (success || downgraded) {
     const applyDiffRes = await applyEquipmentDiffIfEquipped(
       characterId,
       itemInstanceId,

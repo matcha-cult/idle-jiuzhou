@@ -450,7 +450,7 @@ router.post('/enhance', asyncHandler(async (req, res) => {
 
     const result = await inventoryService.enhanceEquipment(characterId, userId, parsedItemId);
 
-    if (result.success || result.data?.destroyed) {
+    if (result.success || result.data?.destroyed || result.data?.failMode === 'downgrade') {
       await safePushCharacterUpdate(userId);
     }
 
