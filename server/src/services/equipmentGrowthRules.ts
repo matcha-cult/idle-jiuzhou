@@ -28,7 +28,8 @@ const DEFAULT_SOCKET_MAX_BY_QUALITY_RANK: Record<number, number> = {
 };
 
 export const ENHANCE_FIXED_RATE_START_LEVEL = 15;
-export const ENHANCE_MAX_LEVEL = ENHANCE_FIXED_RATE_START_LEVEL;
+export const ENHANCE_DESTROY_START_LEVEL = 15;
+export const ENHANCE_MAX_LEVEL: number | null = null;
 export const REFINE_MAX_LEVEL = 10;
 
 const ENHANCE_SUCCESS_RATE_PERCENT: Record<number, number> = {
@@ -238,8 +239,11 @@ export const getRefineSuccessRatePercent = (targetLevel: number): number => {
   return Math.max(0, Math.min(1, value));
 };
 
-export const getEnhanceFailMode = (): EquipmentGrowthFailMode => {
-  return "destroy";
+export const getEnhanceFailMode = (
+  targetLevel: number,
+): EquipmentGrowthFailMode => {
+  const level = Math.max(1, normalizeEnhanceLevel(targetLevel));
+  return level >= ENHANCE_DESTROY_START_LEVEL ? "destroy" : "none";
 };
 
 export const getRefineFailResultLevel = (

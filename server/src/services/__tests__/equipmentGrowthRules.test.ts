@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildEnhanceCostPlan,
   buildEquipmentDisplayBaseAttrs,
+  ENHANCE_DESTROY_START_LEVEL,
   ENHANCE_FIXED_RATE_START_LEVEL,
   getEnhanceFailMode,
   getEnhanceSuccessRatePercent,
@@ -40,6 +41,11 @@ test('装备基础属性预览在 +15 后仍应继续按强化等级增长', () 
   assert.equal(attrs.qixue, 160);
 });
 
-test('强化失败模式应为碎装', () => {
-  assert.equal(getEnhanceFailMode(), 'destroy');
+test('冲击 +15 以下时强化失败不应碎装', () => {
+  assert.equal(getEnhanceFailMode(ENHANCE_DESTROY_START_LEVEL - 1), 'none');
+});
+
+test('冲击 +15 及以上时强化失败应为碎装', () => {
+  assert.equal(getEnhanceFailMode(ENHANCE_DESTROY_START_LEVEL), 'destroy');
+  assert.equal(getEnhanceFailMode(ENHANCE_DESTROY_START_LEVEL + 20), 'destroy');
 });

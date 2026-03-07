@@ -18,7 +18,7 @@
  * 2) 强化/精炼等级范围与锁定词条上限会做硬校验，非法参数直接报错，避免输出误导数据。
  */
 
-import { buildEnhanceCostPlan, buildRefineCostPlan, ENHANCE_MAX_LEVEL, REFINE_MAX_LEVEL } from '../src/services/equipmentGrowthRules.js';
+import { buildEnhanceCostPlan, buildRefineCostPlan, REFINE_MAX_LEVEL } from '../src/services/equipmentGrowthRules.js';
 import { buildAffixRerollCostPlan } from '../src/services/equipmentAffixRerollRules.js';
 import { getRealmRankOneBasedForEquipment, REALM_ORDER } from '../src/services/shared/realmRules.js';
 
@@ -42,7 +42,7 @@ const DEFAULTS = {
   mode: 'all' as SimMode,
   realmRaw: '炼虚合道·成圣期',
   startEnhanceLevel: 1,
-  endEnhanceLevel: ENHANCE_MAX_LEVEL,
+  endEnhanceLevel: 20,
   startRefineLevel: 1,
   endRefineLevel: REFINE_MAX_LEVEL,
   maxLock: 5,
@@ -65,7 +65,7 @@ const usageText = `
   --realm <境界文本>                装备需求境界（默认 炼虚合道·成圣期）
   --realm-rank <数字>              装备需求境界档位（1..${REALM_ORDER.length}，优先级高于 --realm）
   --start-level <数字>             强化起始目标等级（默认 1）
-  --end-level <数字>               强化结束目标等级（默认 ${ENHANCE_MAX_LEVEL}）
+  --end-level <数字>               强化结束目标等级（默认 ${DEFAULTS.endEnhanceLevel}）
   --start-refine-level <数字>      精炼起始目标等级（默认 1）
   --end-refine-level <数字>        精炼结束目标等级（默认 ${REFINE_MAX_LEVEL}）
   --max-lock <数字>                洗炼最大锁定词条数（默认 5）
@@ -136,8 +136,8 @@ const toSimOptions = (args: ArgMap): SimOptions => {
   const endRefineLevel = parseIntStrict(args['end-refine-level'], 'end-refine-level') ?? DEFAULTS.endRefineLevel;
   const maxLock = parseIntStrict(args['max-lock'], 'max-lock') ?? DEFAULTS.maxLock;
 
-  assertRange(startEnhanceLevel, 1, ENHANCE_MAX_LEVEL, 'start-level');
-  assertRange(endEnhanceLevel, 1, ENHANCE_MAX_LEVEL, 'end-level');
+  assertRange(startEnhanceLevel, 1, Number.MAX_SAFE_INTEGER, 'start-level');
+  assertRange(endEnhanceLevel, 1, Number.MAX_SAFE_INTEGER, 'end-level');
   if (startEnhanceLevel > endEnhanceLevel) {
     throw new Error(`start-level 不能大于 end-level，当前：${startEnhanceLevel} > ${endEnhanceLevel}`);
   }

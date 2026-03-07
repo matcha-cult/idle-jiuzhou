@@ -21,7 +21,7 @@
  *
  * 边界条件：
  * 1. 穿戴替换已有装备时，若背包无空位则拒绝操作
- * 2. 强化失败会直接销毁装备，精炼失败仍按既有规则回退等级
+ * 2. 强化在冲击 +15 及以上失败时会碎装，+14 及以下失败保留原装备；精炼失败仍按既有规则回退等级
  */
 import { query } from "../../config/database.js";
 import { randomInt } from "crypto";
@@ -458,7 +458,7 @@ export const enhanceEquipment = async (
   const finalRate = Math.max(0, Math.min(1, baseRate));
   const roll = randomInt(0, 10_000) / 10_000;
   const success = roll < finalRate;
-  const failMode = success ? "none" : getEnhanceFailMode();
+  const failMode = success ? "none" : getEnhanceFailMode(targetLv);
   const destroyed = !success && failMode === "destroy";
   const resultLevel = success ? targetLv : null;
 
@@ -789,7 +789,7 @@ export const getEquipmentGrowthCostPreview = async (
         targetLevel: enhanceTargetLevel,
         maxLevel: null,
         successRate: getEnhanceSuccessRatePercent(enhanceTargetLevel),
-        failMode: getEnhanceFailMode(),
+        failMode: getEnhanceFailMode(enhanceTargetLevel),
         costs: enhanceCostPlan,
         previewBaseAttrs: enhancePreviewBaseAttrs,
       },
