@@ -12,7 +12,7 @@
  * - UI 组件只消费 `ItemBindMeta` 渲染，不再直接判断 `bind_type`。
  *
  * 边界条件与坑点：
- * - `bind_type` 可能为空、大小写不一致或出现未知值，都会标准化并回退到“已绑定”通用展示。
+ * - `bind_type` 可能为空、大小写不一致或出现未知值，都会标准化并统一为“未绑定/已绑定”二元展示。
  * - `none` 虽然不显示角标，但详情仍返回“未绑定”，确保状态信息可见且一致。
  */
 
@@ -43,27 +43,9 @@ export const resolveItemBindMeta = (value: unknown): ItemBindMeta => {
       cellBadgeLabel: null,
     };
   }
-  if (type === "pickup") {
-    return {
-      type,
-      tone: "pickup",
-      isBound: true,
-      detailLabel: "拾取绑定",
-      cellBadgeLabel: "拾绑",
-    };
-  }
-  if (type === "equip") {
-    return {
-      type,
-      tone: "equip",
-      isBound: true,
-      detailLabel: "装备绑定",
-      cellBadgeLabel: "装绑",
-    };
-  }
   return {
     type,
-    tone: "other",
+    tone: type === "pickup" ? "pickup" : type === "equip" ? "equip" : "other",
     isBound: true,
     detailLabel: "已绑定",
     cellBadgeLabel: "绑定",

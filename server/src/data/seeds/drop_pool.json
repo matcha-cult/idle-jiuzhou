@@ -449,7 +449,8 @@
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-ningqi",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-dungeon-boss-unbind"
       ]
     },
     {
@@ -663,7 +664,8 @@
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-lianji",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-dungeon-boss-unbind"
       ]
     },
     {
@@ -696,7 +698,8 @@
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-lianji",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-dungeon-boss-unbind"
       ]
     },
     {
@@ -958,7 +961,8 @@
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-lianji",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-dungeon-boss-unbind"
       ]
     },
     {
@@ -1033,7 +1037,8 @@
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-lianji",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-dungeon-boss-unbind"
       ]
     },
     {
@@ -1232,7 +1237,8 @@
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-caiyao",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-dungeon-boss-unbind"
       ]
     },
     {
@@ -1293,7 +1299,8 @@
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-caiyao",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-dungeon-boss-unbind"
       ]
     },
     {
@@ -1456,7 +1463,8 @@
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-jietai",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-dungeon-boss-unbind"
       ]
     },
     {
@@ -1622,7 +1630,8 @@
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-yangshen",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-dungeon-boss-unbind"
       ]
     },
     {
@@ -1885,7 +1894,8 @@
       "common_pool_ids": [
         "dp-common-monster-global",
         "dp-common-monster-huanxu",
-        "dp-common-monster-boss"
+        "dp-common-monster-boss",
+        "dp-common-dungeon-boss-unbind"
       ]
     },
     {

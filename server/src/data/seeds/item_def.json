@@ -973,6 +973,38 @@
       ]
     },
     {
+      "id": "scroll-jie-fu-fu",
+      "name": "解缚符",
+      "category": "consumable",
+      "sub_category": "scroll",
+      "quality": "地",
+      "stack_max": 9999,
+      "bind_type": "none",
+      "tradeable": true,
+      "icon": "/assets/items/jie_fu_fu.png",
+      "description": "解除一件已绑定装备的绑定状态",
+      "long_desc": "以秘境残阵中残留的逆缚灵纹炼成，可抹去装备上的绑定烙印，使其重新恢复为未绑定状态。",
+      "tags": [
+        "符箓",
+        "解绑",
+        "装备"
+      ],
+      "use_type": "target",
+      "effect_defs": [
+        {
+          "trigger": "use",
+          "effect_type": "unbind",
+          "params": {
+            "target_type": "equipment",
+            "bind_state": "bound"
+          }
+        }
+      ],
+      "source_hint": [
+        "秘境BOSS掉落"
+      ]
+    },
+    {
       "id": "token-001",
       "name": "日常令",
       "category": "consumable",

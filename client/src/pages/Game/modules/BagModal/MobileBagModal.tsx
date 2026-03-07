@@ -45,6 +45,7 @@ import {
   formatMergedLootResultParts,
   getAffixRollColor,
   getAffixRollPercent,
+  getEquipSlotLabel,
   isDisassemblableBagItem,
   isGemTypeAllowedInSlot,
   normalizeAffixLockIndexes,
@@ -70,6 +71,7 @@ import DisassembleModal from './DisassembleModal';
 import CraftModal from './CraftModal';
 import GemSynthesisModal from './GemSynthesisModal';
 import { getEquipmentGrowthFailModeText, useEquipmentGrowthPreview } from './useEquipmentGrowthPreview';
+import { collectEquipmentUnbindCandidates } from './equipmentUnbind';
 import './MobileBagModal.scss';
 
 /* ─── 排序面板 ─── */
@@ -281,6 +283,88 @@ const BatchPanel: React.FC<BatchPanelProps> = ({
   </>
 );
 
+interface EquipmentUnbindPanelProps {
+  itemName: string;
+  submitting: boolean;
+  candidates: BagItem[];
+  selectedTargetItemId?: number;
+  onClose: () => void;
+  onChangeTarget: (value: number | undefined) => void;
+  onSubmit: () => void;
+}
+
+const EquipmentUnbindPanel: React.FC<EquipmentUnbindPanelProps> = ({
+  itemName,
+  submitting,
+  candidates,
+  selectedTargetItemId,
+  onClose,
+  onChangeTarget,
+  onSubmit,
+}) => (
+  <>
+    <div
+      className="mbag-sort-mask"
+      onClick={() => {
+        if (submitting) return;
+        onClose();
+      }}
+    />
+    <div className="mbag-batch-panel">
+      <div className="mbag-batch-title">选择解绑装备</div>
+      <div className="mbag-batch-summary">使用【{itemName}】后，可将一件已绑定装备恢复为未绑定。</div>
+
+      <div className="mbag-batch-field">
+        <div className="mbag-batch-label">已绑定装备</div>
+        <select
+          className="mbag-batch-select"
+          value={selectedTargetItemId ?? ''}
+          disabled={submitting || candidates.length <= 0}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            onChangeTarget(Number.isInteger(next) && next > 0 ? next : undefined);
+          }}
+        >
+          <option value="">请选择已绑定装备</option>
+          {candidates.map((item) => {
+            const slotText = item.equip?.equipSlot ? getEquipSlotLabel(item.equip.equipSlot) : '装备';
+            const levelText = `+${item.equip?.strengthenLevel ?? 0}/精炼+${item.equip?.refineLevel ?? 0}`;
+            const locationText = item.location === 'equipped' ? '已穿戴' : '背包';
+            return (
+              <option key={item.id} value={item.id}>
+                {item.name} · {slotText} · {levelText} · {locationText}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+
+      {candidates.length <= 0 ? (
+        <div className="mbag-batch-tip">当前没有可解绑的已绑定装备</div>
+      ) : null}
+
+      <div className="mbag-batch-actions">
+        <button
+          type="button"
+          className="mbag-batch-btn"
+          disabled={submitting}
+          onClick={onClose}
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          className="mbag-batch-btn is-primary"
+          disabled={submitting || selectedTargetItemId === undefined}
+          onClick={onSubmit}
+        >
+          {submitting ? '解绑中...' : '确认解绑'}
+        </button>
+      </div>
+    </div>
+  </>
+);
+
 /* ─── Bottom Sheet 详情 ─── */
 
 interface SheetProps {
@@ -326,6 +410,7 @@ const ItemSheet: React.FC<SheetProps> = ({
     item.actions.includes('use') &&
     item.category === 'consumable' &&
     item.location === 'bag' &&
+    item.useTargetType === 'none' &&
     Math.floor(item.qty) > 1;
 
   const actionDisabled = (a: BagAction) => {
@@ -1145,6 +1230,9 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [growthOpen, setGrowthOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [equipmentUnbindOpen, setEquipmentUnbindOpen] = useState(false);
+  const [equipmentUnbindSubmitting, setEquipmentUnbindSubmitting] = useState(false);
+  const [selectedUnbindTargetItemId, setSelectedUnbindTargetItemId] = useState<number | undefined>(undefined);
   const [batchMode, setBatchMode] = useState<BatchMode>('disassemble');
   const [batchQualities, setBatchQualities] = useState<BagQuality[]>(qualityLabels);
   const [batchCategory, setBatchCategory] = useState<BagCategory>('equipment');
@@ -1221,6 +1309,14 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
     () => (activeId !== null ? filtered.find((i) => i.id === activeId) ?? null : null),
     [activeId, filtered],
   );
+  const equipmentUnbindCandidates = useMemo(
+    () => collectEquipmentUnbindCandidates(items),
+    [items],
+  );
+  const selectedUnbindTargetItem = useMemo(
+    () => equipmentUnbindCandidates.find((item) => item.id === selectedUnbindTargetItemId) ?? null,
+    [equipmentUnbindCandidates, selectedUnbindTargetItemId],
+  );
   const useQtyMax = useMemo(() => {
     if (!activeItem || activeItem.category !== 'consumable') return 1;
     return Math.max(1, Math.floor(activeItem.qty));
@@ -1232,6 +1328,22 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
   useEffect(() => {
     setUseQty(1);
   }, [activeItem?.id]);
+  useEffect(() => {
+    if (!equipmentUnbindOpen) {
+      setSelectedUnbindTargetItemId(undefined);
+      return;
+    }
+    setSelectedUnbindTargetItemId((prev) => {
+      if (prev !== undefined && equipmentUnbindCandidates.some((item) => item.id === prev)) {
+        return prev;
+      }
+      return equipmentUnbindCandidates[0]?.id;
+    });
+  }, [equipmentUnbindCandidates, equipmentUnbindOpen]);
+  useEffect(() => {
+    if (activeItem?.useTargetType === 'boundEquipment') return;
+    setEquipmentUnbindOpen(false);
+  }, [activeItem?.id, activeItem?.useTargetType]);
   useEffect(() => {
     setUseQty((prev) => Math.max(1, Math.min(prev, useQtyMax)));
   }, [useQtyMax]);
@@ -1370,6 +1482,14 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
 
   const handleUseItem = useCallback(async () => {
     if (!activeItem) return;
+    if (activeItem.useTargetType === 'boundEquipment') {
+      if (equipmentUnbindCandidates.length <= 0) {
+        message.warning('当前没有可解绑的已绑定装备');
+        return;
+      }
+      setEquipmentUnbindOpen(true);
+      return;
+    }
     const useCount = activeItem.category === 'consumable' ? clampUseQty(useQty) : 1;
     setLoading(true);
     try {
@@ -1423,7 +1543,42 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
       }));
       setLoading(false);
     }
-  }, [activeItem, clampUseQty, refresh, useQty]);
+  }, [activeItem, clampUseQty, equipmentUnbindCandidates.length, message, refresh, useQty]);
+
+  const handleSubmitEquipmentUnbind = useCallback(async () => {
+    if (!activeItem || activeItem.useTargetType !== 'boundEquipment') return;
+    if (!selectedUnbindTargetItem) {
+      message.warning('请选择要解绑的装备');
+      return;
+    }
+
+    setEquipmentUnbindSubmitting(true);
+    try {
+      const res = await inventoryUseItem({
+        itemInstanceId: activeItem.id,
+        qty: 1,
+        targetItemInstanceId: selectedUnbindTargetItem.id,
+      });
+      if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '使用失败'));
+
+      window.dispatchEvent(new CustomEvent('chat:append', {
+        detail: {
+          channel: 'system',
+          content: `使用【${activeItem.name}】成功，【${selectedUnbindTargetItem.name}】已解除绑定。`,
+        },
+      }));
+      await refresh();
+      window.dispatchEvent(new Event('inventory:changed'));
+      setEquipmentUnbindOpen(false);
+      setSheetOpen(false);
+    } catch (error: unknown) {
+      window.dispatchEvent(new CustomEvent('chat:append', {
+        detail: { channel: 'system', content: `使用【${activeItem.name}】失败：${getUnifiedApiErrorMessage(error, '操作失败')}` },
+      }));
+    } finally {
+      setEquipmentUnbindSubmitting(false);
+    }
+  }, [activeItem, message, refresh, selectedUnbindTargetItem]);
 
   const handleToggleItemLock = useCallback(async () => {
     if (!activeItem) return;
@@ -1697,6 +1852,21 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
           onKeywordChange={setBatchKeyword}
           onIncludeKeywordsChange={setBatchIncludeKeywordsText}
           onExcludeKeywordsChange={setBatchExcludeKeywordsText}
+        />
+      )}
+
+      {equipmentUnbindOpen && activeItem && (
+        <EquipmentUnbindPanel
+          itemName={activeItem.name}
+          submitting={equipmentUnbindSubmitting}
+          candidates={equipmentUnbindCandidates}
+          selectedTargetItemId={selectedUnbindTargetItemId}
+          onClose={() => {
+            if (equipmentUnbindSubmitting) return;
+            setEquipmentUnbindOpen(false);
+          }}
+          onChangeTarget={setSelectedUnbindTargetItemId}
+          onSubmit={() => void handleSubmitEquipmentUnbind()}
         />
       )}
     </div>

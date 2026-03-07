@@ -29,6 +29,7 @@ import {
 } from './characterComputedService.js';
 import { getItemDefinitionById, getItemDefinitions, getTechniqueDefinitions } from './staticConfigLoader.js';
 import { getGemLevel, isGemItemDefinition } from './shared/gemItemSemantics.js';
+import { unbindEquipmentBindingByInstanceId } from './inventory/equipmentUnbind.js';
 
 // 物品定义接口
 export interface ItemDef {
@@ -83,6 +84,25 @@ const toStringArray = (value: unknown): string[] => {
   return value
     .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
     .filter((entry): entry is string => entry.length > 0);
+};
+
+type ItemUseTargetType = 'none' | 'bound_equipment';
+
+const getItemUseTargetType = (effectDefs: unknown[]): ItemUseTargetType => {
+  for (const rawEffect of effectDefs) {
+    if (!rawEffect || typeof rawEffect !== 'object' || Array.isArray(rawEffect)) continue;
+    const effect = rawEffect as Record<string, unknown>;
+    if (String(effect.trigger || '') !== 'use') continue;
+    if (String(effect.effect_type || '').trim() !== 'unbind') continue;
+    const params =
+      effect.params && typeof effect.params === 'object' && !Array.isArray(effect.params)
+        ? (effect.params as Record<string, unknown>)
+        : null;
+    if (String(params?.target_type || '').trim() !== 'equipment') continue;
+    if (String(params?.bind_state || '').trim() !== 'bound') continue;
+    return 'bound_equipment';
+  }
+  return 'none';
 };
 
 /**
@@ -252,7 +272,8 @@ class ItemService {
     userId: number,
     characterId: number,
     instanceId: number,
-    qty: number = 1
+    qty: number = 1,
+    options: { targetItemInstanceId?: number } = {},
   ): Promise<{ success: boolean; message: string; effects?: any[]; character?: any; lootResults?: { type: string; name?: string; amount: number }[] }> {
     await lockCharacterInventoryMutex(characterId);
 
@@ -297,6 +318,7 @@ class ItemService {
     const category = String(itemDef.category || '');
     const useType = String(itemDef.use_type || '');
     const effectDefs = Array.isArray(itemDef.effect_defs) ? itemDef.effect_defs : [];
+    const itemUseTargetType = getItemUseTargetType(effectDefs);
   
     // 检查是否可使用
     if (category === 'equipment' || category === 'material' || category === 'gem') {
@@ -313,6 +335,13 @@ class ItemService {
   
     if ((Number(item.qty) || 0) < qty) {
       return { success: false, message: '数量不足' };
+    }
+
+    if (
+      itemUseTargetType === 'bound_equipment' &&
+      (!Number.isInteger(options.targetItemInstanceId) || Number(options.targetItemInstanceId) <= 0)
+    ) {
+      return { success: false, message: '请选择要解绑的装备' };
     }
   
     const cdRound = Number(itemDef.use_cd_round) || 0;
@@ -370,6 +399,7 @@ class ItemService {
     let hasLoot = false;
     let hasLearnTechnique = false;
     let hasExpandEffect = false;
+    let hasEquipmentUnbindEffect = false;
     const lootResults: { type: string; name?: string; amount: number }[] = [];
     const lootItemsToAdd: { itemDefId: string; qty: number }[] = [];
     let totalExpandSize = 0;
@@ -380,9 +410,37 @@ class ItemService {
       if (!rawEffect || typeof rawEffect !== 'object') continue;
       const effect = rawEffect as Record<string, unknown>;
       if (String(effect.trigger || '') !== 'use') continue;
-      if (String(effect.target || 'self') !== 'self') continue;
   
       const effectType = typeof effect.effect_type === 'string' ? effect.effect_type : undefined;
+
+      if (effectType === 'unbind') {
+        const params =
+          effect.params && typeof effect.params === 'object' && !Array.isArray(effect.params)
+            ? (effect.params as Record<string, unknown>)
+            : null;
+        const targetType = String(params?.target_type || '').trim();
+        const bindState = String(params?.bind_state || '').trim();
+        if (targetType !== 'equipment' || bindState !== 'bound') {
+          return { success: false, message: '解绑道具配置错误' };
+        }
+
+        const targetItemInstanceId = Number(options.targetItemInstanceId);
+        if (!Number.isInteger(targetItemInstanceId) || targetItemInstanceId <= 0) {
+          return { success: false, message: '请选择要解绑的装备' };
+        }
+
+        const unbindResult = await unbindEquipmentBindingByInstanceId({
+          characterId,
+          itemInstanceId: targetItemInstanceId,
+        });
+        if (!unbindResult.success) {
+          return { success: false, message: unbindResult.message };
+        }
+        hasEquipmentUnbindEffect = true;
+        continue;
+      }
+
+      if (String(effect.target || 'self') !== 'self') continue;
   
       if (effectType === 'loot') {
         hasLoot = true;
@@ -618,7 +676,8 @@ class ItemService {
       deltaExp === 0 &&
       !hasLoot &&
       !hasLearnTechnique &&
-      !hasExpandEffect
+      !hasExpandEffect &&
+      !hasEquipmentUnbindEffect
     ) {
       return { success: false, message: '该物品暂不支持使用效果' };
     }

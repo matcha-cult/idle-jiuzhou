@@ -128,6 +128,7 @@ export const inventoryUseItem = (body: {
   instanceId?: number;
   itemId?: number;
   qty?: number;
+  targetItemInstanceId?: number;
 }): Promise<InventoryUseResponse> => {
   return api.post('/inventory/use', body);
 };

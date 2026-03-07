@@ -325,11 +325,12 @@ router.post('/use', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
 
-    const { itemId, itemInstanceId, instanceId, qty } = req.body as {
+    const { itemId, itemInstanceId, instanceId, qty, targetItemInstanceId } = req.body as {
       itemId?: unknown;
       itemInstanceId?: unknown;
       instanceId?: unknown;
       qty?: unknown;
+      targetItemInstanceId?: unknown;
     };
     const rawInstanceId = itemInstanceId ?? instanceId ?? itemId;
     if (rawInstanceId === undefined || rawInstanceId === null) {
@@ -346,7 +347,14 @@ router.post('/use', asyncHandler(async (req, res) => {
       throw new BusinessError('qty参数错误');
     }
 
-    const result = await itemService.useItem(userId, characterId, parsedItemId, parsedQty);
+    const parsedTargetItemInstanceId = parseOptionalPositiveInt(targetItemInstanceId);
+    if (Number.isNaN(parsedTargetItemInstanceId)) {
+      throw new BusinessError('targetItemInstanceId参数错误');
+    }
+
+    const result = await itemService.useItem(userId, characterId, parsedItemId, parsedQty, {
+      ...(parsedTargetItemInstanceId !== undefined ? { targetItemInstanceId: parsedTargetItemInstanceId } : {}),
+    });
     if (!result.success) {
       return sendResult(res, result);
     }

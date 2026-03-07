@@ -63,6 +63,7 @@ import InventoryItemCell from '../../shared/InventoryItemCell';
 import { EquipmentDetailAttrList } from './EquipmentDetailAttrList';
 import { SetBonusDisplay } from './SetBonusDisplay';
 import { getEquipmentGrowthFailModeText, useEquipmentGrowthPreview } from './useEquipmentGrowthPreview';
+import { collectEquipmentUnbindCandidates } from './equipmentUnbind';
 import './index.scss';
 
 interface BagModalProps {
@@ -89,6 +90,9 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const [refineSubmitting, setRefineSubmitting] = useState(false);
   const [socketSubmitting, setSocketSubmitting] = useState(false);
   const [rerollSubmitting, setRerollSubmitting] = useState(false);
+  const [equipmentUnbindOpen, setEquipmentUnbindOpen] = useState(false);
+  const [equipmentUnbindSubmitting, setEquipmentUnbindSubmitting] = useState(false);
+  const [selectedUnbindTargetItemId, setSelectedUnbindTargetItemId] = useState<number | undefined>(undefined);
   const [rerollLockIndexes, setRerollLockIndexes] = useState<number[]>([]);
   const [rerollCostTable, setRerollCostTable] = useState<{
     rerollScrollItemDefId: string;
@@ -233,6 +237,14 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     () => (safeActiveId === null ? null : filtered.find((i) => i.id === safeActiveId) ?? null),
     [filtered, safeActiveId]
   );
+  const equipmentUnbindCandidates = useMemo(
+    () => collectEquipmentUnbindCandidates(items),
+    [items],
+  );
+  const selectedUnbindTargetItem = useMemo(
+    () => equipmentUnbindCandidates.find((item) => item.id === selectedUnbindTargetItemId) ?? null,
+    [equipmentUnbindCandidates, selectedUnbindTargetItemId],
+  );
   useEffect(() => {
     if (!enhanceOpen) {
       setRerollLockIndexes([]);
@@ -271,6 +283,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     if (!activeItem.actions.includes('use')) return false;
     if (activeItem.category !== 'consumable') return false;
     if (activeItem.location !== 'bag') return false;
+    if (activeItem.useTargetType !== 'none') return false;
     return Math.floor(activeItem.qty) > 1;
   }, [activeItem]);
   const clampUseQty = useCallback(
@@ -280,6 +293,22 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   useEffect(() => {
     setUseQty(1);
   }, [activeItem?.id]);
+  useEffect(() => {
+    if (!equipmentUnbindOpen) {
+      setSelectedUnbindTargetItemId(undefined);
+      return;
+    }
+    setSelectedUnbindTargetItemId((prev) => {
+      if (prev !== undefined && equipmentUnbindCandidates.some((item) => item.id === prev)) {
+        return prev;
+      }
+      return equipmentUnbindCandidates[0]?.id;
+    });
+  }, [equipmentUnbindCandidates, equipmentUnbindOpen]);
+  useEffect(() => {
+    if (activeItem?.useTargetType === 'boundEquipment') return;
+    setEquipmentUnbindOpen(false);
+  }, [activeItem?.id, activeItem?.useTargetType]);
   useEffect(() => {
     setUseQty((prev) => Math.max(1, Math.min(prev, useQtyMax)));
   }, [useQtyMax]);
@@ -404,6 +433,14 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
   const handleUseItem = useCallback(async () => {
     if (!activeItem) return;
+    if (activeItem.useTargetType === 'boundEquipment') {
+      if (equipmentUnbindCandidates.length <= 0) {
+        message.warning('当前没有可解绑的已绑定装备');
+        return;
+      }
+      setEquipmentUnbindOpen(true);
+      return;
+    }
     const useCount = activeItem.category === 'consumable' ? clampUseQty(useQty) : 1;
 
     setLoading(true);
@@ -486,7 +523,40 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
       void 0;
       setLoading(false);
     }
-  }, [activeItem, message, refresh]);
+  }, [activeItem, clampUseQty, equipmentUnbindCandidates.length, message, refresh, useQty]);
+
+  const handleSubmitEquipmentUnbind = useCallback(async () => {
+    if (!activeItem || activeItem.useTargetType !== 'boundEquipment') return;
+    if (!selectedUnbindTargetItem) {
+      message.warning('请选择要解绑的装备');
+      return;
+    }
+
+    setEquipmentUnbindSubmitting(true);
+    try {
+      const res = await inventoryUseItem({
+        itemInstanceId: activeItem.id,
+        qty: 1,
+        targetItemInstanceId: selectedUnbindTargetItem.id,
+      });
+      if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '使用失败'));
+
+      window.dispatchEvent(new CustomEvent('chat:append', {
+        detail: {
+          channel: 'system',
+          content: `使用【${activeItem.name}】成功，【${selectedUnbindTargetItem.name}】已解除绑定。`,
+        },
+      }));
+
+      await refresh();
+      window.dispatchEvent(new Event('inventory:changed'));
+      setEquipmentUnbindOpen(false);
+    } catch (error: unknown) {
+      message.error(getUnifiedApiErrorMessage(error, '使用失败'));
+    } finally {
+      setEquipmentUnbindSubmitting(false);
+    }
+  }, [activeItem, message, refresh, selectedUnbindTargetItem]);
 
   const socketState = useMemo(() => {
     if (!activeItem?.equip || activeItem.category !== 'equipment') return null;
@@ -1239,6 +1309,58 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
           window.dispatchEvent(new Event('inventory:changed'));
         }}
       />
+
+      <Modal
+        open={equipmentUnbindOpen}
+        onCancel={() => {
+          if (equipmentUnbindSubmitting) return;
+          setEquipmentUnbindOpen(false);
+        }}
+        footer={null}
+        centered
+        destroyOnHidden
+        title="选择解绑装备"
+        maskClosable={!equipmentUnbindSubmitting}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ color: 'var(--text-secondary)' }}>
+            {activeItem ? `使用【${activeItem.name}】后，可将一件已绑定装备恢复为未绑定。` : '请选择要解绑的装备。'}
+          </div>
+          <Select
+            value={selectedUnbindTargetItemId}
+            onChange={(value) => setSelectedUnbindTargetItemId(typeof value === 'number' ? value : undefined)}
+            placeholder="选择已绑定装备"
+            options={equipmentUnbindCandidates.map((item) => {
+              const slotText = item.equip?.equipSlot ? getEquipSlotLabel(item.equip.equipSlot) : '装备';
+              const levelText = `+${item.equip?.strengthenLevel ?? 0} / 精炼+${item.equip?.refineLevel ?? 0}`;
+              const locationText = item.location === 'equipped' ? '已穿戴' : '背包';
+              return {
+                value: item.id,
+                label: `${item.name} · ${slotText} · ${levelText} · ${locationText}`,
+              };
+            })}
+          />
+          {equipmentUnbindCandidates.length <= 0 ? (
+            <div style={{ color: 'var(--color-danger, #ff7875)' }}>当前没有可解绑的已绑定装备</div>
+          ) : null}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <Button
+              disabled={equipmentUnbindSubmitting}
+              onClick={() => setEquipmentUnbindOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              type="primary"
+              loading={equipmentUnbindSubmitting}
+              disabled={!selectedUnbindTargetItem}
+              onClick={() => void handleSubmitEquipmentUnbind()}
+            >
+              确认解绑
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={enhanceOpen}

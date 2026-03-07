@@ -848,6 +848,21 @@
       "enabled": true
     },
     {
+      "id": "dp-common-dungeon-boss-unbind",
+      "name": "秘境BOSS解绑道具通用掉落池",
+      "mode": "prob",
+      "entries": [
+        {
+          "item_def_id": "scroll-jie-fu-fu",
+          "chance": 0.01,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        }
+      ],
+      "enabled": true
+    },
+    {
       "id": "dp-common-monster-caiyao",
       "name": "炼炁化神·采药期公共掉落池",
       "mode": "prob",

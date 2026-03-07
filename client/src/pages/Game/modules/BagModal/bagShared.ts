@@ -28,6 +28,10 @@ import {
 import { coerceAffixes as coerceItemMetaAffixes } from "../../shared/itemMetaFormat";
 import { ITEM_CATEGORY_LABELS } from "../../shared/itemTaxonomy";
 import type { GameItemCategory as SharedGameItemCategory } from "../../shared/itemTaxonomy";
+import {
+  resolveBagItemUseTargetType,
+  type BagItemUseTargetType,
+} from "./equipmentUnbind";
 
 /* ───────── 类型 ───────── */
 
@@ -113,6 +117,7 @@ export type BagItem = {
   locked: boolean;
   desc: string;
   effects: string[];
+  useTargetType: BagItemUseTargetType;
   hasSocketEffect: boolean;
   actions: BagAction[];
   setInfo: SetInfo | null;
@@ -1148,6 +1153,8 @@ const buildEffects = (def?: ItemDefLite): string[] => {
     )
       effects.push(`恢复灵气 ${value}`);
     else if (effectType === "learn_technique") effects.push("学习功法");
+    else if (effectType === "unbind")
+      effects.push("解除一件已绑定装备的绑定状态");
     else if (effectType === "mark") {
       const markText = formatMarkEffectText(e);
       effects.push(markText ?? "施加印记效果");
@@ -1249,6 +1256,7 @@ export const buildBagItem = (it: InventoryItemDto): BagItem | null => {
     locked: !!it.locked,
     desc: def.long_desc || def.description || "",
     effects: buildEffects(def),
+    useTargetType: resolveBagItemUseTargetType(def),
     hasSocketEffect,
     actions: mapActions(category, def.sub_category, def.effect_defs),
     setInfo: buildSetInfo(def),
