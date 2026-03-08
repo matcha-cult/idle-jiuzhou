@@ -46,11 +46,11 @@ type ResearchPanelProps = {
   onCopyResearchBook: (generationId: string, suggestedName: string) => void;
 };
 
-const QUALITY_CLASS_COLOR: Record<'黄' | '玄' | '地' | '天', string> = {
-  天: 'var(--rarity-tian)',
-  地: 'var(--rarity-di)',
-  玄: 'var(--rarity-xuan)',
-  黄: 'var(--rarity-huang)',
+const QUALITY_TAG_CLASS: Record<'黄' | '玄' | '地' | '天', string> = {
+  天: 'q-tian',
+  地: 'q-di',
+  玄: 'q-xuan',
+  黄: 'q-huang',
 };
 
 const QUALITY_TEXT: Record<'黄' | '玄' | '地' | '天', string> = {
@@ -163,7 +163,9 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
           <div className="tech-research-draft">
             <div className="tech-research-draft-name">{panelView.preview.aiSuggestedName}</div>
             <div className="tech-research-draft-meta">
-              <Tag color={QUALITY_CLASS_COLOR[panelView.preview.quality]}>{QUALITY_TEXT[panelView.preview.quality]}</Tag>
+              <Tag className={`tech-research-quality-tag ${QUALITY_TAG_CLASS[panelView.preview.quality]}`}>
+                {QUALITY_TEXT[panelView.preview.quality]}
+              </Tag>
               <Tag color="default">{panelView.preview.type}</Tag>
               <Tag color="default">最高{panelView.preview.maxLayer}层</Tag>
             </div>

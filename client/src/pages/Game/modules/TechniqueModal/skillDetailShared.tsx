@@ -186,7 +186,9 @@ export const renderSkillCardDetails = (skill: TechniqueSkillDetailLike): ReactNo
   return (
     <div className="skill-card-details">
       <div className="skill-card-header">
-        <div className="skill-card-title">{skill.name}</div>
+        <div className="skill-card-title-row">
+          <div className="skill-card-title">{skill.name}</div>
+        </div>
         {sections.metaItems.length > 0 ? (
           <div className="skill-card-meta">
             {sections.metaItems.map((item) => (
