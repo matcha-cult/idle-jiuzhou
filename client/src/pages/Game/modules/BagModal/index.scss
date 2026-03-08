@@ -1,8 +1,11 @@
 @use './rerollRollShared' as rerollRoll;
 @use './qualityTagShared' as qualityTag;
+@use './techniqueBookSkillShared' as techniqueBookSkill;
 @use '../../shared/modalShellLayout' as modalShell;
 
 .bag-modal {
+  @include techniqueBookSkill.technique-book-skill-section();
+
   .ant-modal-content {
     padding: 0;
     border-radius: 14px;

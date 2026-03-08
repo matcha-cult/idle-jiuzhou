@@ -67,10 +67,12 @@ import { useGameItemTaxonomy } from '../../shared/useGameItemTaxonomy';
 import InventoryItemCell from '../../shared/InventoryItemCell';
 import { EquipmentDetailAttrList } from './EquipmentDetailAttrList';
 import { SetBonusDisplay } from './SetBonusDisplay';
+import { TechniqueBookSkillSection } from './TechniqueBookSkillSection';
 import DisassembleModal from './DisassembleModal';
 import CraftModal from './CraftModal';
 import GemSynthesisModal from './GemSynthesisModal';
 import { getEquipmentGrowthFailModeText, useEquipmentGrowthPreview } from './useEquipmentGrowthPreview';
+import { useTechniqueBookSkills } from './useTechniqueBookSkills';
 import { collectEquipmentUnbindCandidates } from './equipmentUnbind';
 import './MobileBagModal.scss';
 
@@ -401,9 +403,14 @@ const ItemSheet: React.FC<SheetProps> = ({
   onToggleLock,
 }) => {
   const equipLines = useMemo(() => buildEquipmentDetailLines(item), [item]);
+  const techniqueBookSkillsState = useTechniqueBookSkills({
+    item,
+    enabled: true,
+  });
   const hasDesc = item.category !== 'equipment' && Boolean(item.desc?.trim());
   const hasEquipAttrs = item.category === 'equipment' && equipLines.length > 0;
   const hasSetInfo = Boolean(item.setInfo && item.setInfo.bonuses.length > 0);
+  const hasTechniqueBookSkills = Boolean(item.learnableTechniqueId);
   const hasEffects = (item.effects?.length ?? 0) > 0;
   const isEquipped = item.location === 'equipped';
   const canBatchUse =
@@ -463,6 +470,17 @@ const ItemSheet: React.FC<SheetProps> = ({
             <div className="mbag-sheet-section">
               <div className="mbag-sheet-section-title">物品描述</div>
               <div className="mbag-sheet-section-text">{item.desc}</div>
+            </div>
+          )}
+
+          {hasTechniqueBookSkills && (
+            <div className="mbag-sheet-section">
+              <TechniqueBookSkillSection
+                skills={techniqueBookSkillsState.skills}
+                loading={techniqueBookSkillsState.loading}
+                error={techniqueBookSkillsState.error}
+                variant="mobile"
+              />
             </div>
           )}
 

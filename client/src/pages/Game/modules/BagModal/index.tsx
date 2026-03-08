@@ -62,7 +62,9 @@ import { getItemQualityMeta } from '../../shared/itemQuality';
 import InventoryItemCell from '../../shared/InventoryItemCell';
 import { EquipmentDetailAttrList } from './EquipmentDetailAttrList';
 import { SetBonusDisplay } from './SetBonusDisplay';
+import { TechniqueBookSkillSection } from './TechniqueBookSkillSection';
 import { getEquipmentGrowthFailModeText, useEquipmentGrowthPreview } from './useEquipmentGrowthPreview';
+import { useTechniqueBookSkills } from './useTechniqueBookSkills';
 import { collectEquipmentUnbindCandidates } from './equipmentUnbind';
 import './index.scss';
 
@@ -237,6 +239,10 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     () => (safeActiveId === null ? null : filtered.find((i) => i.id === safeActiveId) ?? null),
     [filtered, safeActiveId]
   );
+  const techniqueBookSkillsState = useTechniqueBookSkills({
+    item: activeItem,
+    enabled: open,
+  });
   const equipmentUnbindCandidates = useMemo(
     () => collectEquipmentUnbindCandidates(items),
     [items],
@@ -336,6 +342,10 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const hasSetInfo = useMemo(
     () => Boolean(activeItem?.setInfo && activeItem.setInfo.bonuses.length > 0),
     [activeItem]
+  );
+  const hasTechniqueBookSkills = useMemo(
+    () => Boolean(activeItem?.learnableTechniqueId),
+    [activeItem?.learnableTechniqueId],
   );
   const hasEffects = useMemo(() => (activeItem?.effects?.length ?? 0) > 0, [activeItem?.effects]);
 
@@ -1049,6 +1059,17 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                       <div className="bag-detail-section">
                         <div className="bag-detail-title">物品描述</div>
                         <div className="bag-detail-text">{activeItem.desc}</div>
+                      </div>
+                    ) : null}
+
+                    {hasTechniqueBookSkills ? (
+                      <div className="bag-detail-section">
+                        <TechniqueBookSkillSection
+                          skills={techniqueBookSkillsState.skills}
+                          loading={techniqueBookSkillsState.loading}
+                          error={techniqueBookSkillsState.error}
+                          variant="desktop"
+                        />
                       </div>
                     ) : null}
 

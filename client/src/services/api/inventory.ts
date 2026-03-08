@@ -49,6 +49,8 @@ export interface ItemDefLite {
   set_name?: string | null;
   set_bonuses?: unknown;
   set_equipped_count?: number;
+  generated_technique_id?: string | null;
+  generated_technique_name?: string | null;
 }
 
 export interface InventoryItemDto {

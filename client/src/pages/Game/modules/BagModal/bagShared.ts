@@ -94,6 +94,7 @@ export type SetInfo = {
 export type BagItem = {
   id: number;
   itemDefId: string;
+  learnableTechniqueId: string | null;
   name: string;
   category: Exclude<BagCategory, "all">;
   subCategory: string | null;
@@ -713,6 +714,39 @@ const hasLearnTechniqueEffect = (effectDefs: unknown): boolean => {
   });
 };
 
+export const getLearnableTechniqueId = (
+  def?: ItemDefLite,
+): string | null => {
+  const generatedTechniqueId =
+    typeof def?.generated_technique_id === "string"
+      ? def.generated_technique_id.trim()
+      : "";
+  if (generatedTechniqueId) return generatedTechniqueId;
+
+  for (const rawEffect of coerceEffectDefs(def?.effect_defs)) {
+    const effectType = normalizeCategoryToken(rawEffect.effect_type);
+    if (
+      effectType !== "learn_technique" &&
+      effectType !== "learn_generated_technique"
+    ) {
+      continue;
+    }
+
+    const params = toRecord(rawEffect.params);
+    const techniqueId =
+      typeof params.technique_id === "string" ? params.technique_id.trim() : "";
+    if (techniqueId) return techniqueId;
+
+    const generatedId =
+      typeof params.generated_technique_id === "string"
+        ? params.generated_technique_id.trim()
+        : "";
+    if (generatedId) return generatedId;
+  }
+
+  return null;
+};
+
 export const isTechniqueBookSubCategory = (
   subCategoryValue: unknown,
 ): boolean => {
@@ -1299,6 +1333,7 @@ export const buildBagItem = (it: InventoryItemDto): BagItem | null => {
   return {
     id: Number(it.id),
     itemDefId: it.item_def_id,
+    learnableTechniqueId: getLearnableTechniqueId(def),
     name: def.name,
     category,
     subCategory: def.sub_category ?? null,

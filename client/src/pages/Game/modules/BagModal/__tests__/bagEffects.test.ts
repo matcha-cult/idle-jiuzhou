@@ -85,4 +85,93 @@ describe('bagEffects', () => {
 
     expect(bagItem?.effects).toEqual(['学习功法']);
   });
+
+  it('buildBagItem: 普通功法书应解析出可学习功法 ID', () => {
+    const bagItem = buildBagItem({
+      id: 2,
+      item_def_id: 'book-technique-normal',
+      qty: 1,
+      location: 'bag',
+      location_slot: 2,
+      equipped_slot: null,
+      strengthen_level: 0,
+      refine_level: 0,
+      affixes: [],
+      identified: false,
+      locked: false,
+      bind_type: 'none',
+      created_at: '2026-03-08T00:00:00.000Z',
+      def: {
+        id: 'book-technique-normal',
+        name: '《养气诀》',
+        icon: '/assets/items/icon_yqj.png',
+        quality: '黄',
+        category: 'consumable',
+        sub_category: 'technique_book',
+        stack_max: 1,
+        description: '使用后学习养气诀',
+        long_desc: '记载基础吐纳法门。',
+        tags: ['秘籍', '功法'],
+        effect_defs: [
+          {
+            trigger: 'use',
+            target: 'self',
+            effect_type: 'learn_technique',
+            params: {
+              technique_id: 'tech-yangqi-jue',
+            },
+          },
+        ],
+        base_attrs: {},
+        equip_slot: null,
+        use_type: 'instant',
+      },
+    });
+
+    expect(bagItem?.learnableTechniqueId).toBe('tech-yangqi-jue');
+  });
+
+  it('buildBagItem: 研修功法书应优先解析注入的生成功法 ID', () => {
+    const bagItem = buildBagItem({
+      id: 3,
+      item_def_id: 'book-generated-technique',
+      qty: 1,
+      location: 'bag',
+      location_slot: 3,
+      equipped_slot: null,
+      strengthen_level: 0,
+      refine_level: 0,
+      affixes: [],
+      identified: false,
+      locked: false,
+      bind_type: 'none',
+      created_at: '2026-03-08T00:00:00.000Z',
+      def: {
+        id: 'book-generated-technique',
+        name: '《太虚剑诀》秘卷',
+        icon: '/assets/items/icon_bygj.png',
+        quality: '玄',
+        category: 'consumable',
+        sub_category: 'technique_book',
+        stack_max: 1,
+        description: 'AI研修生成的功法秘卷，使用后学习对应功法',
+        long_desc: '通过洞府研修推演而成的秘卷。',
+        tags: ['秘籍', '功法', '研修生成'],
+        effect_defs: [
+          {
+            trigger: 'use',
+            target: 'self',
+            effect_type: 'learn_generated_technique',
+          },
+        ],
+        base_attrs: {},
+        equip_slot: null,
+        use_type: 'instant',
+        generated_technique_id: 'generated-technique-taixu-jianjue',
+        generated_technique_name: '太虚剑诀',
+      },
+    });
+
+    expect(bagItem?.learnableTechniqueId).toBe('generated-technique-taixu-jianjue');
+  });
 });
