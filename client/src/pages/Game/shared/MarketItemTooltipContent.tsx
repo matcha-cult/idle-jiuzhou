@@ -193,23 +193,6 @@ const translateEquipSlot = (value?: string | null): string => {
   return raw;
 };
 
-const translateUseType = (value?: string | null): string => {
-  const raw = (value ?? '').trim();
-  if (!raw) return '';
-  const m: Record<string, string> = {
-    instant: '立即生效',
-    open: '可开启',
-    equip: '可装备',
-    passive: '被动',
-    none: '无',
-    use: '可使用',
-    consume: '消耗',
-  };
-  if (m[raw]) return m[raw];
-  if (hasLatin(raw)) return '';
-  return raw;
-};
-
 const translateCategory = (value?: string | null): string => {
   const raw = (value ?? '').trim();
   if (!raw) return '';
@@ -284,10 +267,8 @@ const MarketItemTooltipContent: React.FC<{ item: MarketTooltipItemData }> = ({ i
 
     const equipSlot = translateEquipSlot(item.equipSlot);
     if (equipSlot) tags.push({ text: `部位：${equipSlot}` });
-    // const useType = translateUseType(item.useType);
-    // if (useType) tags.push({ text: `类型：${useType}` });
     return tags;
-  }, [item.category, item.categoryLabel, item.equipSlot, item.quality, item.useType]);
+  }, [item.category, item.categoryLabel, item.equipSlot, item.quality]);
 
   const equipMetaLines = useMemo(() => {
     if (!isEquip) return [];
