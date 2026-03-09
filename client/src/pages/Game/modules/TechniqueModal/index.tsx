@@ -40,12 +40,15 @@ import {
   resolveTechniqueResearchPublishErrorMessage,
 } from './researchNaming';
 import { getSkillInlineSummary, renderSkillInlineDetails, renderSkillTooltip } from './skillDetailShared';
+import {
+  formatTechniqueBonusAmount,
+  getMergedUnlockedTechniqueBonuses,
+  type TechniqueBonus,
+} from './bonusShared';
 import './index.scss';
 
 
 type TechQuality = '黄' | '玄' | '地' | '天';
-
-type TechniqueBonus = { label: string; value: string };
 
 type TechniqueSkill = { 
   id: string; 
@@ -155,32 +158,6 @@ const passiveLabel: Record<string, string> = {
   shuxing_shuzhi: '属性数值',
 };
 
-const PERCENT_PASSIVE_KEYS = new Set<string>([
-  'max_qixue',
-  'wugong',
-  'fagong',
-  'wufang',
-  'fafang',
-  'shuxing_shuzhi',
-  'mingzhong',
-  'shanbi',
-  'zhaojia',
-  'baoji',
-  'baoshang',
-  'kangbao',
-  'zengshang',
-  'zhiliao',
-  'jianliao',
-  'xixue',
-  'lengque',
-  'kongzhi_kangxing',
-  'jin_kangxing',
-  'mu_kangxing',
-  'shui_kangxing',
-  'huo_kangxing',
-  'tu_kangxing',
-]);
-
 const normalizePassiveKey = (raw: string): string =>
   raw
     .trim()
@@ -190,7 +167,6 @@ const normalizePassiveKey = (raw: string): string =>
 
 const getTechniqueUnlockedInfo = (t: Technique): { bonuses: TechniqueBonus[]; skills: TechniqueSkill[] } => {
   const unlockedLayers = t.layers.slice(0, Math.max(0, Math.min(t.layer, t.layers.length)));
-  const bonusList = unlockedLayers.flatMap((lv) => lv.bonuses);
   const skillMap = new Map<string, TechniqueSkill>();
   unlockedLayers.forEach((lv) => {
     lv.skills.forEach((s) => {
@@ -199,7 +175,7 @@ const getTechniqueUnlockedInfo = (t: Technique): { bonuses: TechniqueBonus[]; sk
   });
 
   return {
-    bonuses: bonusList,
+    bonuses: getMergedUnlockedTechniqueBonuses(t.layers, t.layer),
     skills: Array.from(skillMap.values()),
   };
 };
@@ -273,18 +249,6 @@ const renderTechniqueTooltip = (t: Technique): React.ReactNode => {
   );
 };
 
-const formatPassiveValue = (key: string, value: number): string => {
-  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
-  const abs = Math.abs(value);
-  const absPercent = abs * 100;
-  const formatSigned = (n: number) => {
-    const fixed = Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
-    return `${sign}${fixed}`;
-  };
-  if (PERCENT_PASSIVE_KEYS.has(key)) return `${formatSigned(absPercent)}%`;
-  return formatSigned(abs);
-};
-
 const coercePassiveEntries = (raw: unknown): PassiveEntry[] => {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -339,8 +303,10 @@ const buildTechniqueView = (
     layer: Math.max(0, ct?.current_layer ?? 0),
     layers: layers.map((lv) => {
       const passives = coercePassiveEntries(lv.passives).map((p) => ({
+        key: p.key,
         label: passiveLabel[p.key] || p.key,
-        value: formatPassiveValue(p.key, p.value),
+        value: formatTechniqueBonusAmount(p.key, p.value),
+        amount: p.value,
       }));
       const unlockSkills = (Array.isArray(lv.unlock_skill_ids) ? lv.unlock_skill_ids : []).map((id) => {
         const def = skillMap.get(id) ?? null;
@@ -1129,9 +1095,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
         name: t.name,
         quality: t.quality,
         role,
-        bonuses: t.layers
-          .slice(0, Math.max(0, Math.min(t.layer, t.layers.length)))
-          .flatMap((lv) => lv.bonuses),
+        bonuses: getMergedUnlockedTechniqueBonuses(t.layers, t.layer),
       };
     });
 
