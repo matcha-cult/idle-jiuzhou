@@ -696,6 +696,12 @@ const logTechniqueGenerationTaskFailure = (params: {
   console.error('[TechniqueGeneration] AI功法生成任务失败:', params);
 };
 
+const summarizeHttpErrorResponse = (responseText: string): string => {
+  const normalized = responseText.trim().replace(/\s+/g, ' ');
+  if (!normalized) return '';
+  return normalized.slice(0, 300);
+};
+
 const tryCallExternalGenerator = async (quality: TechniqueQuality): Promise<TechniqueGenerationAttemptResult> => {
   const endpoint = resolveTechniqueTextModelEndpoint(asString(process.env.AI_TECHNIQUE_MODEL_URL));
   const apiKey = asString(process.env.AI_TECHNIQUE_MODEL_KEY);
@@ -739,9 +745,13 @@ const tryCallExternalGenerator = async (quality: TechniqueQuality): Promise<Tech
       signal: controller.signal,
     });
     if (!resp.ok) {
+      const responseText = await resp.text();
+      const responseSummary = summarizeHttpErrorResponse(responseText);
       return buildTechniqueGenerationAttemptFailure({
         stage: 'http_error',
-        reason: `模型接口返回非成功状态：${resp.status}（endpoint=${endpoint}）`,
+        reason: responseSummary
+          ? `模型接口返回非成功状态：${resp.status}（endpoint=${endpoint}，body=${responseSummary}）`
+          : `模型接口返回非成功状态：${resp.status}（endpoint=${endpoint}）`,
         modelName,
         promptSnapshot,
       });

@@ -28,7 +28,7 @@ const NOW_ISO = '2026-03-08T12:00:00.000Z';
 const NOW = new Date(NOW_ISO);
 
 test('buildTechniqueResearchCooldownState: 无最近研修记录时不应进入冷却', () => {
-  const state = buildTechniqueResearchCooldownState(null, NOW);
+  const state = buildTechniqueResearchCooldownState(null, NOW, { bypassCooldown: false });
 
   assert.equal(state.cooldownHours, TECHNIQUE_RESEARCH_COOLDOWN_HOURS);
   assert.equal(state.cooldownUntil, null);
@@ -37,7 +37,7 @@ test('buildTechniqueResearchCooldownState: 无最近研修记录时不应进入�
 });
 
 test('buildTechniqueResearchCooldownState: 72 小时内应返回剩余冷却秒数', () => {
-  const state = buildTechniqueResearchCooldownState('2026-03-07T12:00:00.000Z', NOW);
+  const state = buildTechniqueResearchCooldownState('2026-03-07T12:00:00.000Z', NOW, { bypassCooldown: false });
 
   assert.equal(state.cooldownHours, TECHNIQUE_RESEARCH_COOLDOWN_HOURS);
   assert.equal(state.cooldownUntil, '2026-03-10T12:00:00.000Z');
@@ -46,9 +46,18 @@ test('buildTechniqueResearchCooldownState: 72 小时内应返回剩余冷却秒�
 });
 
 test('buildTechniqueResearchCooldownState: 超过冷却后应允许再次领悟', () => {
-  const state = buildTechniqueResearchCooldownState('2026-03-05T11:59:59.000Z', NOW);
+  const state = buildTechniqueResearchCooldownState('2026-03-05T11:59:59.000Z', NOW, { bypassCooldown: false });
 
   assert.equal(state.cooldownUntil, '2026-03-08T11:59:59.000Z');
+  assert.equal(state.cooldownRemainingSeconds, 0);
+  assert.equal(state.isCoolingDown, false);
+});
+
+test('buildTechniqueResearchCooldownState: 显式跳过冷却时应直接返回无冷却状态', () => {
+  const state = buildTechniqueResearchCooldownState('2026-03-07T12:00:00.000Z', NOW, { bypassCooldown: true });
+
+  assert.equal(state.cooldownHours, 0);
+  assert.equal(state.cooldownUntil, null);
   assert.equal(state.cooldownRemainingSeconds, 0);
   assert.equal(state.isCoolingDown, false);
 });

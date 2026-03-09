@@ -39,9 +39,6 @@ export type TechniqueTextModelRequestPayload = {
   model: string;
   seed: number;
   temperature: number;
-  response_format: {
-    type: 'json_object';
-  };
   messages: [
     {
       role: 'system';
@@ -103,7 +100,6 @@ export const buildTechniqueTextModelPayload = (params: {
   model: params.modelName,
   seed: params.seed ?? generateTechniqueTextModelSeed(),
   temperature: TECHNIQUE_TEXT_MODEL_TEMPERATURE,
-  response_format: { type: 'json_object' },
   messages: [
     {
       role: 'system',

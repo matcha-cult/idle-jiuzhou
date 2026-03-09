@@ -46,7 +46,7 @@ test('已带完整 chat completions 地址时应保持不变', () => {
   );
 });
 
-test('请求 payload 应统一使用 temperature 1.0', () => {
+test('请求 payload 应统一使用供应商兼容字段', () => {
   const payload = buildTechniqueTextModelPayload({
     modelName: 'gpt-4o-mini',
     systemMessage: 'system prompt',
@@ -56,7 +56,6 @@ test('请求 payload 应统一使用 temperature 1.0', () => {
   assert.equal(payload.model, 'gpt-4o-mini');
   assert.equal(payload.temperature, TECHNIQUE_TEXT_MODEL_TEMPERATURE);
   assert.equal(payload.temperature, 1.0);
-  assert.deepEqual(payload.response_format, { type: 'json_object' });
   assert.deepEqual(payload.messages, [
     { role: 'system', content: 'system prompt' },
     { role: 'user', content: '{"quality":"天"}' },

@@ -3,7 +3,7 @@
  *
  * 作用（做什么 / 不做什么）：
  * 1. 做什么：集中定义洞府研修冷却时长，并提供状态接口与创建任务前共用的冷却计算函数。
- * 2. 做什么：统一剩余时间的中文文案格式，避免 service 在多处拼接不同口径的提示文本。
+ * 2. 做什么：集中收敛开发环境跳过冷却的规则，避免状态接口与创建任务校验各写一套环境判断。
  * 3. 不做什么：不读取数据库、不处理 HTTP 响应、不决定前端展示布局。
  *
  * 输入/输出：
@@ -15,7 +15,8 @@
  *
  * 关键边界条件与坑点：
  * 1. 仅当最近一次研修时间可解析时才计算冷却，避免脏数据把玩家永久锁死。
- * 2. 剩余秒数必须向上取整，保证服务端拦截与前端倒计时在临界秒上口径一致。
+ * 2. 开发环境跳过冷却时必须仍走同一返回结构，保证前端展示和服务端拦截同时生效。
+ * 3. 剩余秒数必须向上取整，保证服务端拦截与前端倒计时在临界秒上口径一致。
  */
 
 export const TECHNIQUE_RESEARCH_COOLDOWN_HOURS = 72;
@@ -32,25 +33,57 @@ export type TechniqueResearchCooldownState = {
   isCoolingDown: boolean;
 };
 
+type TechniqueResearchCooldownOptions = {
+  bypassCooldown?: boolean;
+};
+
+/**
+ * 复用点：
+ * - 当前由 `buildTechniqueResearchCooldownState` 默认消费，统一让状态接口与创建任务校验都遵守同一环境口径。
+ * - 若纯函数测试或未来批处理需要显式指定环境，可通过参数覆盖，避免直接改全局环境变量。
+ *
+ * 设计原因：
+ * - 项目本地 `dev` 脚本未显式注入 `NODE_ENV`，因此沿用仓库现有“非 production 视为开发态”的约定。
+ * - 将环境判断收敛在这里后，业务层只关注冷却状态，不再重复判断运行环境。
+ */
+export const shouldBypassTechniqueResearchCooldown = (
+  nodeEnv: string | undefined = process.env.NODE_ENV,
+): boolean => {
+  return nodeEnv !== 'production';
+};
+
+const buildTechniqueResearchIdleCooldownState = (
+  cooldownHours: number,
+): TechniqueResearchCooldownState => {
+  return {
+    cooldownHours,
+    cooldownUntil: null,
+    cooldownRemainingSeconds: 0,
+    isCoolingDown: false,
+  };
+};
+
 export const buildTechniqueResearchCooldownState = (
   latestStartedAt: string | null,
   now: Date = new Date(),
+  options: TechniqueResearchCooldownOptions = {},
 ): TechniqueResearchCooldownState => {
-  const startedAtMs = latestStartedAt ? new Date(latestStartedAt).getTime() : Number.NaN;
-  if (!Number.isFinite(startedAtMs)) {
-    return {
-      cooldownHours: TECHNIQUE_RESEARCH_COOLDOWN_HOURS,
-      cooldownUntil: null,
-      cooldownRemainingSeconds: 0,
-      isCoolingDown: false,
-    };
+  const bypassCooldown = options.bypassCooldown ?? shouldBypassTechniqueResearchCooldown();
+  const cooldownHours = bypassCooldown ? 0 : TECHNIQUE_RESEARCH_COOLDOWN_HOURS;
+  if (bypassCooldown) {
+    return buildTechniqueResearchIdleCooldownState(cooldownHours);
   }
 
-  const cooldownUntilMs = startedAtMs + TECHNIQUE_RESEARCH_COOLDOWN_HOURS * HOUR_SECONDS * SECOND_MS;
+  const startedAtMs = latestStartedAt ? new Date(latestStartedAt).getTime() : Number.NaN;
+  if (!Number.isFinite(startedAtMs)) {
+    return buildTechniqueResearchIdleCooldownState(cooldownHours);
+  }
+
+  const cooldownUntilMs = startedAtMs + cooldownHours * HOUR_SECONDS * SECOND_MS;
   const remainingSeconds = Math.max(0, Math.ceil((cooldownUntilMs - now.getTime()) / SECOND_MS));
 
   return {
-    cooldownHours: TECHNIQUE_RESEARCH_COOLDOWN_HOURS,
+    cooldownHours,
     cooldownUntil: new Date(cooldownUntilMs).toISOString(),
     cooldownRemainingSeconds: remainingSeconds,
     isCoolingDown: remainingSeconds > 0,

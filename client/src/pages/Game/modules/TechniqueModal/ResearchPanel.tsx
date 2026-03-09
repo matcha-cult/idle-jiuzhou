@@ -76,6 +76,9 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
   const cooldownText = status
     ? (coolingDown ? `剩余${formatTechniqueResearchCooldownRemaining(status.cooldownRemainingSeconds)}` : '可开始')
     : '--';
+  const cooldownRuleText = status?.cooldownHours === 0
+    ? '2. 当前环境已关闭研修冷却，可连续开始领悟。'
+    : `2. 每次开始领悟后会进入冷却，当前默认冷却时长为 ${status?.cooldownHours ?? '--'} 小时。`;
 
   return (
     <div className="tech-pane">
@@ -106,7 +109,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
 
         <div className="tech-research-tips">
           <div>1. 每次开始领悟固定消耗 {status?.fragmentCost ?? '--'} 页功法残页，残页会从背包与仓库中统一扣除。</div>
-          <div>2. 每次开始领悟后会进入冷却，当前默认冷却时长为 {status?.cooldownHours ?? '--'} 小时。</div>
+          <div>{cooldownRuleText}</div>
           <div>3. 结果进入研修页后即视为已查看，抄写前仍可在此处查看草稿详情。</div>
         </div>
 
