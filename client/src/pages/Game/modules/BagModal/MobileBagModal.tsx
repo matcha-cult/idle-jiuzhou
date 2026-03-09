@@ -70,6 +70,7 @@ import { SetBonusDisplay } from './SetBonusDisplay';
 import DisassembleModal from './DisassembleModal';
 import CraftModal from './CraftModal';
 import GemSynthesisModal from './GemSynthesisModal';
+import { formatDisassembleSuccessMessage } from './disassembleRewardText';
 import { getEquipmentGrowthFailModeText, useEquipmentGrowthPreview } from './useEquipmentGrowthPreview';
 import { useTechniqueBookSkills } from './useTechniqueBookSkills';
 import { collectEquipmentUnbindCandidates } from './equipmentUnbind';
@@ -1641,7 +1642,7 @@ const MobileBagModal: React.FC<MobileBagModalProps> = ({ open, onClose }) => {
 
         const res = await disassembleInventoryEquipmentBatch(payloadItems);
         if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '分解失败'));
-        message.success(res.message || '分解成功');
+        message.success(formatDisassembleSuccessMessage(res.message || '分解成功', res.rewards));
       } else {
         const ids = batchCandidates.map((item) => item.id);
         const res = await removeInventoryItemsBatch(ids);

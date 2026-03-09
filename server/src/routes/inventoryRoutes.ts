@@ -649,6 +649,29 @@ router.post('/socket', asyncHandler(async (req, res) => {
 }));
 
 // ============================================
+// 分解奖励预览
+// POST /api/inventory/disassemble/preview
+// Body: { itemId: number, qty: number }
+// ============================================
+router.post('/disassemble/preview', asyncHandler(async (req, res) => {
+    const characterId = req.characterId!;
+    const parsedItemId = parseBodyItemInstanceId(
+      req.body as {
+        itemId?: unknown;
+        itemInstanceId?: unknown;
+        instanceId?: unknown;
+      },
+    );
+    const parsedQty = parsePositiveInt((req.body as { qty?: unknown }).qty);
+    if (parsedQty === null) {
+      throw new BusinessError('qty参数错误');
+    }
+
+    const result = await inventoryService.getDisassembleRewardPreview(characterId, parsedItemId, parsedQty);
+    return sendResult(res, result);
+}));
+
+// ============================================
 // 分解物品
 // POST /api/inventory/disassemble
 // Body: { itemId: number, qty: number }

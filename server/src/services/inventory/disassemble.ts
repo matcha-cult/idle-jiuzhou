@@ -5,24 +5,29 @@
  *       不做事务管理（由 service.ts 的 @Transactional 装饰器统一处理）。
  *
  * 输入/输出：
+ * - getDisassembleRewardPreview(characterId, itemInstanceId, qty) — 单件拆解奖励预览
  * - disassembleEquipment(characterId, userId, itemInstanceId, qty) — 单件拆解
  * - disassembleEquipmentBatch(characterId, userId, items) — 批量拆解
  *
  * 数据流：
- * 1. 查询物品实例（FOR UPDATE）→ 2. 加载静态定义 → 3. 计算拆解奖励 →
- * 4. 扣除物品 → 5. 发放奖励物品/银两
+ * 1. 查询物品实例（预览为只读查询，实际拆解为 FOR UPDATE）→ 2. 加载静态定义 →
+ * 3. 复用同一份 buildDisassembleRewardPlan 计算奖励 → 4. 预览直接返回 / 实际拆解扣除物品并发奖
  *
- * 被引用方：service.ts（InventoryService.disassembleEquipment / disassembleEquipmentBatch）
+ * 被引用方：service.ts（InventoryService.getDisassembleRewardPreview / disassembleEquipment / disassembleEquipmentBatch）
  *
  * 边界条件：
- * 1. 穿戴中的装备不可拆解（equipped 位置）
- * 2. 已锁定物品在批量拆解中自动跳过，不报错
+ * 1. 穿戴中的装备不可拆解，预览与实际拆解都会命中同一校验结果
+ * 2. 前端不再自行推导产物，若奖励物品静态定义缺失，服务端直接返回配置错误，避免展示与结算继续漂移
  */
 import { query } from "../../config/database.js";
 import {
   getItemDefinitionsByIds,
 } from "../staticConfigLoader.js";
-import { buildDisassembleRewardPlan } from "../disassembleRewardPlanner.js";
+import {
+  buildDisassembleRewardPlan,
+  type DisassembleItemRewardPlan,
+  type DisassembleRewardsPlan,
+} from "../disassembleRewardPlanner.js";
 import { lockCharacterInventoryMutex } from "../inventoryMutex.js";
 import { resolveQualityRankFromName } from "../shared/itemQuality.js";
 import { consumeSpecificItemInstance, addCharacterCurrencies } from "./shared/consume.js";
@@ -34,24 +39,25 @@ import type {
 } from "./shared/types.js";
 import { addItemToInventory } from "./bag.js";
 
-// ============================================
-// 单件拆解
-// ============================================
+type SingleDisassembleItemRow = {
+  id: number;
+  item_def_id: string;
+  qty: number;
+  location: InventoryLocation;
+  locked: boolean;
+  instance_quality_rank: number | null;
+  strengthen_level: number;
+  refine_level: number;
+  affixes: unknown;
+};
 
-export const disassembleEquipment = async (
-  characterId: number,
-  userId: number,
-  itemInstanceId: number,
-  qty: number,
-): Promise<{
-  success: boolean;
-  message: string;
-  rewards?: DisassembleRewardsPayload;
-}> => {
-  await lockCharacterInventoryMutex(characterId);
+type ResolvedNamedDisassembleRewardItem = {
+  itemDefId: string;
+  name: string;
+  qty: number;
+};
 
-  const itemResult = await query(
-    `
+const singleDisassembleItemSelect = `
       SELECT
         ii.id,
         ii.item_def_id,
@@ -64,8 +70,19 @@ export const disassembleEquipment = async (
         ii.affixes
       FROM item_instance ii
       WHERE ii.id = $1 AND ii.owner_character_id = $2
-      FOR UPDATE
-    `,
+`;
+
+const loadSingleDisassembleRewardPlan = async (
+  characterId: number,
+  itemInstanceId: number,
+  qty: number,
+  options: { forUpdate: boolean },
+): Promise<
+  | { success: true; rewards: DisassembleRewardsPlan }
+  | { success: false; message: string }
+> => {
+  const itemResult = await query(
+    `${singleDisassembleItemSelect}${options.forUpdate ? "\n      FOR UPDATE" : ""}`,
     [itemInstanceId, characterId],
   );
 
@@ -73,28 +90,13 @@ export const disassembleEquipment = async (
     return { success: false, message: "物品不存在" };
   }
 
-  const item = itemResult.rows[0] as {
-    id: number;
-    item_def_id: string;
-    qty: number;
-    location: InventoryLocation;
-    locked: boolean;
-    instance_quality_rank: number | null;
-    strengthen_level: number;
-    refine_level: number;
-    affixes: unknown;
-  };
-
+  const item = itemResult.rows[0] as SingleDisassembleItemRow;
   const itemDef = getStaticItemDef(item.item_def_id);
   if (!itemDef) {
     return { success: false, message: "物品不存在" };
   }
-  const itemCategory = String(itemDef.category || "");
-  const itemSubCategory = itemDef.sub_category ?? null;
-  const itemEffectDefs = itemDef.effect_defs ?? null;
-  const defQualityRank = resolveQualityRankFromName(itemDef.quality, 1);
-  const resolvedQualityRank = item.instance_quality_rank ?? defQualityRank;
 
+  const itemCategory = String(itemDef.category || "");
   if (item.locked) {
     return { success: false, message: "物品已锁定" };
   }
@@ -122,9 +124,11 @@ export const disassembleEquipment = async (
 
   const rewardPlan = buildDisassembleRewardPlan({
     category: itemCategory,
-    subCategory: itemSubCategory,
-    effectDefs: itemEffectDefs,
-    qualityRankRaw: resolvedQualityRank,
+    subCategory: itemDef.sub_category ?? null,
+    effectDefs: itemDef.effect_defs ?? null,
+    qualityRankRaw:
+      item.instance_quality_rank ??
+      resolveQualityRankFromName(itemDef.quality, 1),
     strengthenLevelRaw: item.strengthen_level,
     refineLevelRaw: item.refine_level,
     affixesRaw: item.affixes,
@@ -134,6 +138,115 @@ export const disassembleEquipment = async (
     return { success: false, message: rewardPlan.message };
   }
 
+  return {
+    success: true,
+    rewards: rewardPlan.rewards,
+  };
+};
+
+const resolveNamedDisassembleRewardItems = (
+  items: DisassembleItemRewardPlan[],
+): {
+  success: boolean;
+  message: string;
+  items?: ResolvedNamedDisassembleRewardItem[];
+} => {
+  const rewardDefMap = getItemDefinitionsByIds(items.map((item) => item.itemDefId));
+  const resolvedItems: ResolvedNamedDisassembleRewardItem[] = [];
+
+  for (const item of items) {
+    const rewardDef = rewardDefMap.get(item.itemDefId);
+    if (!rewardDef) {
+      return { success: false, message: "分解奖励配置错误" };
+    }
+    const rewardName = typeof rewardDef.name === "string" ? rewardDef.name.trim() : "";
+    if (!rewardName) {
+      return { success: false, message: "分解奖励名称配置错误" };
+    }
+    resolvedItems.push({
+      itemDefId: item.itemDefId,
+      name: rewardName,
+      qty: item.qty,
+    });
+  }
+
+  return {
+    success: true,
+    message: "ok",
+    items: resolvedItems,
+  };
+};
+
+export const getDisassembleRewardPreview = async (
+  characterId: number,
+  itemInstanceId: number,
+  qty: number,
+): Promise<{
+  success: boolean;
+  message: string;
+  rewards?: DisassembleRewardsPayload;
+}> => {
+  const rewardPlanResult = await loadSingleDisassembleRewardPlan(
+    characterId,
+    itemInstanceId,
+    qty,
+    { forUpdate: false },
+  );
+  if (!rewardPlanResult.success) {
+    return rewardPlanResult;
+  }
+
+  const resolvedRewardItems = resolveNamedDisassembleRewardItems(
+    rewardPlanResult.rewards.items,
+  );
+  if (!resolvedRewardItems.success || !resolvedRewardItems.items) {
+    return { success: false, message: resolvedRewardItems.message };
+  }
+
+  return {
+    success: true,
+    message: "获取预览成功",
+    rewards: {
+      silver: rewardPlanResult.rewards.silver,
+      items: resolvedRewardItems.items,
+    },
+  };
+};
+
+// ============================================
+// 单件拆解
+// ============================================
+
+export const disassembleEquipment = async (
+  characterId: number,
+  userId: number,
+  itemInstanceId: number,
+  qty: number,
+): Promise<{
+  success: boolean;
+  message: string;
+  rewards?: DisassembleRewardsPayload;
+}> => {
+  await lockCharacterInventoryMutex(characterId);
+
+  const rewardPlanResult = await loadSingleDisassembleRewardPlan(
+    characterId,
+    itemInstanceId,
+    qty,
+    { forUpdate: true },
+  );
+  if (!rewardPlanResult.success) {
+    return rewardPlanResult;
+  }
+
+  const resolvedRewardItems = resolveNamedDisassembleRewardItems(
+    rewardPlanResult.rewards.items,
+  );
+  if (!resolvedRewardItems.success || !resolvedRewardItems.items) {
+    return { success: false, message: resolvedRewardItems.message };
+  }
+
+  const consumeQty = Math.max(1, Math.floor(Number(qty) || 0));
   const consumeRes = await consumeSpecificItemInstance(
     characterId,
     itemInstanceId,
@@ -144,7 +257,9 @@ export const disassembleEquipment = async (
   }
 
   const grantedItemRewards: DisassembleGrantedItemReward[] = [];
-  for (const itemReward of rewardPlan.rewards.items) {
+  for (let index = 0; index < rewardPlanResult.rewards.items.length; index += 1) {
+    const itemReward = rewardPlanResult.rewards.items[index];
+    const resolvedReward = resolvedRewardItems.items[index];
     const addResult = await addItemToInventory(
       characterId,
       userId,
@@ -160,16 +275,17 @@ export const disassembleEquipment = async (
     }
     grantedItemRewards.push({
       itemDefId: itemReward.itemDefId,
+      name: resolvedReward.name,
       qty: itemReward.qty,
       itemIds: addResult.itemIds,
     });
   }
 
-  if (rewardPlan.rewards.silver > 0) {
+  if (rewardPlanResult.rewards.silver > 0) {
     const addCurrencyRes = await addCharacterCurrencies(
       characterId,
       {
-        silver: rewardPlan.rewards.silver,
+        silver: rewardPlanResult.rewards.silver,
       },
     );
     if (!addCurrencyRes.success) {
@@ -180,7 +296,7 @@ export const disassembleEquipment = async (
     success: true,
     message: "分解成功",
     rewards: {
-      silver: rewardPlan.rewards.silver,
+      silver: rewardPlanResult.rewards.silver,
       items: grantedItemRewards,
     },
   };
@@ -266,7 +382,7 @@ export const disassembleEquipmentBatch = async (
   let skippedLockedQtyTotal = 0;
   let disassembledQtyTotal = 0;
   let totalSilver = 0;
-  const rewardItemQtyByDefId = new Map<string, number>();
+  const rewardItemsByDefId = new Map<string, ResolvedNamedDisassembleRewardItem>();
   const staticDefMap = getItemDefinitionsByIds(
     itemResult.rows.map((row) =>
       String((row as { item_def_id?: unknown }).item_def_id || "").trim(),
@@ -332,13 +448,21 @@ export const disassembleEquipmentBatch = async (
       return { success: false, message: rewardPlan.message };
     }
 
+    const namedRewardsResult = resolveNamedDisassembleRewardItems(
+      rewardPlan.rewards.items,
+    );
+    if (!namedRewardsResult.success || !namedRewardsResult.items) {
+      return { success: false, message: namedRewardsResult.message };
+    }
+
     totalSilver += rewardPlan.rewards.silver;
-    for (const itemReward of rewardPlan.rewards.items) {
-      const prevQty = rewardItemQtyByDefId.get(itemReward.itemDefId) ?? 0;
-      rewardItemQtyByDefId.set(
-        itemReward.itemDefId,
-        prevQty + itemReward.qty,
-      );
+    for (const itemReward of namedRewardsResult.items) {
+      const existing = rewardItemsByDefId.get(itemReward.itemDefId);
+      if (existing) {
+        existing.qty += itemReward.qty;
+        continue;
+      }
+      rewardItemsByDefId.set(itemReward.itemDefId, { ...itemReward });
     }
 
     consumeOperations.push({ id: rowId, rowQty, consumeQty: requestQty });
@@ -364,13 +488,13 @@ export const disassembleEquipmentBatch = async (
   }
 
   const grantedItemRewards: DisassembleGrantedItemReward[] = [];
-  for (const [itemDefId, rewardQty] of rewardItemQtyByDefId.entries()) {
-    if (rewardQty <= 0) continue;
+  for (const rewardItem of rewardItemsByDefId.values()) {
+    if (rewardItem.qty <= 0) continue;
     const addRes = await addItemToInventory(
       characterId,
       userId,
-      itemDefId,
-      rewardQty,
+      rewardItem.itemDefId,
+      rewardItem.qty,
       {
         location: "bag",
         obtainedFrom: "disassemble",
@@ -380,8 +504,9 @@ export const disassembleEquipmentBatch = async (
       return addRes as { success: false; message: string };
     }
     grantedItemRewards.push({
-      itemDefId,
-      qty: rewardQty,
+      itemDefId: rewardItem.itemDefId,
+      name: rewardItem.name,
+      qty: rewardItem.qty,
       itemIds: addRes.itemIds,
     });
   }

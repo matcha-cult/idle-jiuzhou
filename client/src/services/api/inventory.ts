@@ -365,6 +365,7 @@ export const socketInventoryGem = (body: InventorySocketRequest): Promise<Invent
 
 export interface InventoryDisassembleItemReward {
   itemDefId: string;
+  name: string;
   qty: number;
   itemIds?: number[];
 }
@@ -374,16 +375,30 @@ export interface InventoryDisassembleRewards {
   items: InventoryDisassembleItemReward[];
 }
 
-export interface InventoryDisassembleResponse {
+export interface InventoryDisassembleRequest {
+  itemId: number;
+  qty: number;
+}
+
+interface InventoryDisassembleResultResponse {
   success: boolean;
   message: string;
   rewards?: InventoryDisassembleRewards;
 }
 
-export const disassembleInventoryEquipment = (body: {
-  itemId: number;
-  qty: number;
-}): Promise<InventoryDisassembleResponse> => {
+export interface InventoryDisassemblePreviewResponse extends InventoryDisassembleResultResponse {}
+
+export const getInventoryDisassembleRewardPreview = (
+  body: InventoryDisassembleRequest,
+): Promise<InventoryDisassemblePreviewResponse> => {
+  return api.post('/inventory/disassemble/preview', body);
+};
+
+export interface InventoryDisassembleResponse extends InventoryDisassembleResultResponse {}
+
+export const disassembleInventoryEquipment = (
+  body: InventoryDisassembleRequest,
+): Promise<InventoryDisassembleResponse> => {
   return api.post('/inventory/disassemble', body);
 };
 

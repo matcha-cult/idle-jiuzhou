@@ -123,6 +123,7 @@ export const DEFAULT_WAREHOUSE_CAPACITY = 1000;
 // 拆解奖励类型
 export type DisassembleGrantedItemReward = {
   itemDefId: string;
+  name: string;
   qty: number;
   itemIds?: number[];
 };

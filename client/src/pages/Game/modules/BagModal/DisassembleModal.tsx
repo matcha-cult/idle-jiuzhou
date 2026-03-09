@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { disassembleInventoryEquipment } from '../../../../services/api';
 import { isDisassemblableBagItem, qualityLabelText } from './bagShared';
 import type { BagCategory, BagQuality } from './bagShared';
+import { formatDisassembleRewardsText, formatDisassembleSuccessMessage } from './disassembleRewardText';
+import { useDisassembleRewardPreview } from './useDisassembleRewardPreview';
 
 type DisassembleCategory = Exclude<BagCategory, 'all'>;
 
@@ -24,13 +26,6 @@ interface DisassembleModalProps {
   onSuccess: () => Promise<void>;
 }
 
-const techniqueBookRewardQtyByQuality: Record<BagQuality, number> = {
-  黄: 2,
-  玄: 4,
-  地: 7,
-  天: 14,
-};
-
 const DisassembleModal: React.FC<DisassembleModalProps> = ({ open, item, onClose, onSuccess }) => {
   const { message } = App.useApp();
   const [submitting, setSubmitting] = useState(false);
@@ -41,23 +36,31 @@ const DisassembleModal: React.FC<DisassembleModalProps> = ({ open, item, onClose
     setDisassembleQty(1);
   }, [open, item?.id]);
 
+  const {
+    previewRewards,
+    loading: previewLoading,
+    errorMessage: previewErrorMessage,
+  } = useDisassembleRewardPreview({
+    open,
+    itemId: item?.id ?? null,
+    qty: disassembleQty,
+  });
+
   const maxQty = useMemo(() => {
     if (!item) return 1;
     return Math.max(1, Math.floor(Number(item.qty) || 1));
   }, [item]);
 
   const rewardPreview = useMemo(() => {
-    if (!item) return '';
-    if (item.category === 'equipment') {
-      const rewardName = item.quality === '黄' || item.quality === '玄' ? '淬灵石' : '蕴灵石';
-      return `${rewardName}×${disassembleQty}`;
-    }
-    if (item.subCategory === 'technique_book') {
-      const qty = techniqueBookRewardQtyByQuality[item.quality] || 2;
-      return `功法残页×${qty * disassembleQty}`;
-    }
-    return '银两（按公式结算）';
-  }, [disassembleQty, item]);
+    return formatDisassembleRewardsText(previewRewards);
+  }, [previewRewards]);
+
+  const rewardPreviewText = useMemo(() => {
+    if (!item) return '-';
+    if (previewLoading) return '计算中...';
+    if (previewErrorMessage) return previewErrorMessage;
+    return rewardPreview || '-';
+  }, [item, previewErrorMessage, previewLoading, rewardPreview]);
 
   const disabledReason = useMemo(() => {
     if (!item) return '请选择可分解物品';
@@ -104,7 +107,7 @@ const DisassembleModal: React.FC<DisassembleModalProps> = ({ open, item, onClose
             style={{ width: 120 }}
           />
         </div>
-        <div>分解后获得：{rewardPreview || '-'}</div>
+        <div>分解后获得：{rewardPreviewText}</div>
         {disabledReason ? <div style={{ color: 'rgba(255,255,255,0.6)' }}>{disabledReason}</div> : null}
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <Button
@@ -129,7 +132,7 @@ const DisassembleModal: React.FC<DisassembleModalProps> = ({ open, item, onClose
               try {
                 const res = await disassembleInventoryEquipment({ itemId: item.id, qty: disassembleQty });
                 if (!res.success) throw new Error(res.message || '分解失败');
-                message.success(res.message || '分解成功');
+                message.success(formatDisassembleSuccessMessage(res.message || '分解成功', res.rewards));
                 await onSuccess();
                 onClose();
               } catch (error: unknown) {

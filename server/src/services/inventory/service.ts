@@ -19,6 +19,7 @@ import type {
   InventoryInfo,
   InventoryItem,
   InventoryItemWithDef,
+  DisassembleRewardsPayload,
   InventoryLocation,
   SlottedInventoryLocation,
 } from "./shared/types.js";
@@ -48,6 +49,7 @@ import {
 } from "./equipment.js";
 import { socketEquipment } from "./socket.js";
 import {
+  getDisassembleRewardPreview as fetchDisassembleRewardPreview,
   disassembleEquipment,
   disassembleEquipmentBatch,
 } from "./disassemble.js";
@@ -145,6 +147,18 @@ class InventoryService {
     };
   }> {
     return getEquipmentGrowthCostPreview(characterId, itemInstanceId);
+  }
+
+  async getDisassembleRewardPreview(
+    characterId: number,
+    itemInstanceId: number,
+    qty: number,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    rewards?: DisassembleRewardsPayload;
+  }> {
+    return fetchDisassembleRewardPreview(characterId, itemInstanceId, qty);
   }
 
   async findEmptySlots(
@@ -348,7 +362,7 @@ class InventoryService {
   ): Promise<{
     success: boolean;
     message: string;
-    rewards?: any;
+    rewards?: DisassembleRewardsPayload;
   }> {
     return await disassembleEquipment(characterId, userId, itemInstanceId, qty);
   }
@@ -365,7 +379,7 @@ class InventoryService {
     disassembledQtyTotal?: number;
     skippedLockedCount?: number;
     skippedLockedQtyTotal?: number;
-    rewards?: any;
+    rewards?: DisassembleRewardsPayload;
   }> {
     return await disassembleEquipmentBatch(characterId, userId, items);
   }

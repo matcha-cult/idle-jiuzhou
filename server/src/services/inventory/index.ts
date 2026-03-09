@@ -76,6 +76,7 @@ export { socketEquipment } from "./socket.js";
 // 拆解
 // ============================================
 export {
+  getDisassembleRewardPreview,
   disassembleEquipment,
   disassembleEquipmentBatch,
 } from "./disassemble.js";

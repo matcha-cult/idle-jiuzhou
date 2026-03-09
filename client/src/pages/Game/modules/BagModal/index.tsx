@@ -62,6 +62,7 @@ import { getItemQualityMeta } from '../../shared/itemQuality';
 import InventoryItemCell from '../../shared/InventoryItemCell';
 import { EquipmentDetailAttrList } from './EquipmentDetailAttrList';
 import { SetBonusDisplay } from './SetBonusDisplay';
+import { formatDisassembleSuccessMessage } from './disassembleRewardText';
 import { getEquipmentGrowthFailModeText, useEquipmentGrowthPreview } from './useEquipmentGrowthPreview';
 import { useTechniqueBookSkills } from './useTechniqueBookSkills';
 import { collectEquipmentUnbindCandidates } from './equipmentUnbind';
@@ -1854,7 +1855,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
 
                     const res = await disassembleInventoryEquipmentBatch(payloadItems);
                     if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '分解失败'));
-                    message.success(res.message || '分解成功');
+                    message.success(formatDisassembleSuccessMessage(res.message || '分解成功', res.rewards));
                   } else {
                     const ids = batchCandidates.map((x) => x.id);
                     const res = await removeInventoryItemsBatch(ids);
