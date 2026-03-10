@@ -203,5 +203,5 @@ export const formatPartnerLearnResult = (
 };
 
 export const resolvePartnerBookLabel = (book: PartnerBookDto): string => {
-  return `${book.name}（${book.techniqueName}）`;
+  return book.name;
 };
