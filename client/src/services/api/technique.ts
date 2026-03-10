@@ -267,6 +267,8 @@ export interface TechniqueResearchStatusResponse {
   message: string;
   code?: string;
   data?: {
+    unlockRealm: string;
+    unlocked: boolean;
     fragmentBalance: number;
     fragmentCost: number;
     cooldownHours: number;

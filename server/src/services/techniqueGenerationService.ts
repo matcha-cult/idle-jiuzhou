@@ -25,7 +25,6 @@ import { addItemToInventory } from './inventory/index.js';
 import { consumeMaterialByDefId } from './inventory/shared/consume.js';
 import { getItemDefinitionById, getTechniqueDefinitions, refreshGeneratedTechniqueSnapshots } from './staticConfigLoader.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
-import { getRealmRankZeroBased } from './shared/realmRules.js';
 import { buildTechniqueResearchJobState } from './shared/techniqueResearchJobShared.js';
 import { normalizeTechniqueName, validateTechniqueCustomName, getTechniqueNameRulesView } from './shared/techniqueNameRules.js';
 import { generateTechniqueCandidateWithIcons } from './shared/techniqueGenerationExecution.js';
@@ -53,6 +52,10 @@ import {
   buildTechniqueResearchCooldownState,
   formatTechniqueResearchCooldownRemaining,
 } from './shared/techniqueResearchCooldown.js';
+import {
+  buildTechniqueResearchUnlockState,
+  type TechniqueResearchUnlockState,
+} from './shared/techniqueResearchUnlock.js';
 
 export type TechniqueGenerationStatus =
   | 'pending'
@@ -169,6 +172,8 @@ export type TechniqueResearchJobView = {
 };
 
 type TechniqueResearchStatusData = {
+  unlockRealm: string;
+  unlocked: boolean;
   fragmentBalance: number;
   fragmentCost: number;
   cooldownHours: number;
@@ -307,16 +312,6 @@ const toDamageType = (raw: unknown): 'physical' | 'magic' | 'true' | null => {
 const clamp = (value: number, min: number, max: number): number => {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
-};
-
-const getRealmRank = (realmRaw: unknown, subRealmRaw?: unknown): number => {
-  return getRealmRankZeroBased(realmRaw, subRealmRaw);
-};
-
-const isRealmSufficient = (currentRealm: unknown, requiredRealm: unknown, currentSubRealm?: unknown): boolean => {
-  const required = asString(requiredRealm);
-  if (!required) return true;
-  return getRealmRank(currentRealm, currentSubRealm) >= getRealmRank(required);
 };
 
 const buildGenerationId = (): string => {
@@ -927,6 +922,38 @@ const remapGeneratedSkillIds = (
 };
 
 class TechniqueGenerationService {
+  private async getTechniqueResearchUnlockStateTx(
+    characterId: number,
+    lockRow: boolean,
+  ): Promise<ServiceResult<TechniqueResearchUnlockState>> {
+    const queryText = lockRow
+      ? `
+        SELECT realm, sub_realm
+        FROM characters
+        WHERE id = $1
+        FOR UPDATE
+      `
+      : `
+        SELECT realm, sub_realm
+        FROM characters
+        WHERE id = $1
+      `;
+    const charRes = await query(queryText, [characterId]);
+    if (charRes.rows.length === 0) {
+      return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
+    }
+
+    const row = charRes.rows[0] as { realm?: string | null; sub_realm?: string | null };
+    return {
+      success: true,
+      message: '获取研修解锁态成功',
+      data: buildTechniqueResearchUnlockState(
+        typeof row.realm === 'string' ? row.realm.trim() : '',
+        typeof row.sub_realm === 'string' && row.sub_realm.trim() ? row.sub_realm.trim() : null,
+      ),
+    };
+  }
+
   private async getResearchFragmentBalanceTx(characterId: number): Promise<number> {
     const fragmentRes = await query(
       `
@@ -1031,7 +1058,8 @@ class TechniqueGenerationService {
   async getResearchStatus(characterId: number): Promise<ServiceResult<TechniqueResearchStatusData>> {
     await this.refundExpiredDraftJobsTx(characterId);
 
-    const [fragmentBalance, draftRes, currentJobRes] = await Promise.all([
+    const [unlockRes, fragmentBalance, draftRes, currentJobRes] = await Promise.all([
+      this.getTechniqueResearchUnlockStateTx(characterId, false),
       this.getResearchFragmentBalanceTx(characterId),
       query(
         `
@@ -1110,6 +1138,12 @@ class TechniqueGenerationService {
         [characterId],
         ),
     ]);
+    if (!unlockRes.success) {
+      return { success: false, message: unlockRes.message, code: unlockRes.code };
+    }
+    if (!unlockRes.data) {
+      return { success: false, message: '获取研修解锁态失败', code: 'RESEARCH_UNLOCK_STATE_INVALID' };
+    }
 
     const draftRow = draftRes.rows[0] as Record<string, unknown> | undefined;
     const currentDraft: GeneratedDraftRow | null = draftRow
@@ -1152,6 +1186,8 @@ class TechniqueGenerationService {
       success: true,
       message: '获取成功',
       data: {
+        unlockRealm: unlockRes.data.unlockRealm,
+        unlocked: unlockRes.data.unlocked,
         fragmentBalance,
         fragmentCost: TECHNIQUE_RESEARCH_FRAGMENT_COST,
         cooldownHours: cooldownState.cooldownHours,
@@ -1177,17 +1213,19 @@ class TechniqueGenerationService {
   }>> {
     await this.refundExpiredDraftJobsTx(characterId);
 
-    const charRes = await query(
-      `
-        SELECT id
-        FROM characters
-        WHERE id = $1
-        FOR UPDATE
-      `,
-      [characterId],
-    );
-    if (charRes.rows.length === 0) {
-      return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
+    const unlockRes = await this.getTechniqueResearchUnlockStateTx(characterId, true);
+    if (!unlockRes.success) {
+      return { success: false, message: unlockRes.message, code: unlockRes.code };
+    }
+    if (!unlockRes.data) {
+      return { success: false, message: '获取研修解锁态失败', code: 'RESEARCH_UNLOCK_STATE_INVALID' };
+    }
+    if (!unlockRes.data.unlocked) {
+      return {
+        success: false,
+        message: `需达到${unlockRes.data.unlockRealm}方可开启洞府研修`,
+        code: 'RESEARCH_REALM_LOCKED',
+      };
     }
 
     const latestJobRes = await query(
@@ -1966,6 +2004,8 @@ export const safeGetTechniqueGenerationStatus = async (characterId: number): Pro
         success: true,
         message: 'AI领悟系统未初始化',
         data: {
+          unlockRealm: buildTechniqueResearchUnlockState('凡人', null).unlockRealm,
+          unlocked: false,
           fragmentBalance: 0,
           fragmentCost: TECHNIQUE_RESEARCH_FRAGMENT_COST,
           cooldownHours: buildTechniqueResearchCooldownState(null).cooldownHours,

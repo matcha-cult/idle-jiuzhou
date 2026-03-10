@@ -73,12 +73,14 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
   const panelView = resolveTechniqueResearchPanelView(status);
   const actionState = resolveTechniqueResearchActionState(status);
   const coolingDown = isTechniqueResearchCoolingDown(status);
-  const cooldownText = status
-    ? (coolingDown ? `剩余${formatTechniqueResearchCooldownRemaining(status.cooldownRemainingSeconds)}` : '可开始')
-    : '--';
+  const cooldownText = !status
+    ? '--'
+    : !status.unlocked
+      ? `未解锁（需${status.unlockRealm}）`
+      : (coolingDown ? `剩余${formatTechniqueResearchCooldownRemaining(status.cooldownRemainingSeconds)}` : '可开始');
   const cooldownRuleText = status?.cooldownHours === 0
-    ? '2. 当前环境已关闭研修冷却，可连续开始领悟。'
-    : `2. 每次开始领悟后会进入冷却，当前默认冷却时长为 ${status?.cooldownHours ?? '--'} 小时。`;
+    ? '当前环境已关闭研修冷却，可连续开始领悟。'
+    : `每次开始领悟后会进入冷却，当前默认冷却时长为 ${status?.cooldownHours ?? '--'} 小时。`;
 
   return (
     <div className="tech-pane">
@@ -108,9 +110,10 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
         </div>
 
         <div className="tech-research-tips">
-          <div>1. 每次开始领悟固定消耗 {status?.fragmentCost ?? '--'} 页功法残页，残页会从背包与仓库中统一扣除。</div>
-          <div>{cooldownRuleText}</div>
-          <div>3. 结果进入研修页后即视为已查看，抄写前仍可在此处查看草稿详情。</div>
+          <div>1. 洞府研修需境界达到 {status?.unlockRealm ?? '--'} 后开启，未达门槛时无法开始领悟。</div>
+          <div>2. 每次开始领悟固定消耗 {status?.fragmentCost ?? '--'} 页功法残页，残页会从背包与仓库中统一扣除。</div>
+          <div>3. {cooldownRuleText}</div>
+          <div>4. 结果进入研修页后即视为已查看，抄写前仍可在此处查看草稿详情。</div>
         </div>
 
         <div className="tech-subtitle">当前研修结果</div>

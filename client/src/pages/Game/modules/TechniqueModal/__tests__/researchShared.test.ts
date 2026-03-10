@@ -8,6 +8,8 @@ import {
 const buildStatus = (
   overrides: Partial<TechniqueResearchStatusData> = {},
 ): TechniqueResearchStatusData => ({
+  unlockRealm: '炼炁化神·结胎期',
+  unlocked: true,
   fragmentBalance: 6_000,
   fragmentCost: 5_000,
   cooldownHours: 72,
@@ -54,6 +56,15 @@ describe('researchShared', () => {
     const actionState = resolveTechniqueResearchActionState(buildStatus({
       cooldownUntil: '2026-03-11T10:00:00.000Z',
       cooldownRemainingSeconds: 3_600,
+    }));
+
+    expect(actionState.canGenerate).toBe(false);
+    expect(actionState.pendingGenerationId).toBeNull();
+  });
+
+  it('resolveTechniqueResearchActionState: 未解锁时应禁用开始领悟', () => {
+    const actionState = resolveTechniqueResearchActionState(buildStatus({
+      unlocked: false,
     }));
 
     expect(actionState.canGenerate).toBe(false);

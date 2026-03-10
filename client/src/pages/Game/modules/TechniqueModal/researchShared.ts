@@ -134,6 +134,7 @@ export const resolveTechniqueResearchActionState = (
   const panelView = resolveTechniqueResearchPanelView(status);
   const canGenerate =
     status !== null &&
+    status.unlocked &&
     panelView.kind !== 'pending' &&
     !isTechniqueResearchCoolingDown(status) &&
     status.fragmentBalance >= status.fragmentCost;
