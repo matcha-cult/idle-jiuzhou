@@ -383,13 +383,6 @@
           "qty_min": 1,
           "qty_max": 1,
           "show_in_ui": true
-        },
-        {
-          "item_def_id": "book-lingbo-weibu",
-          "chance": 0.12,
-          "qty_min": 1,
-          "qty_max": 1,
-          "show_in_ui": true
         }
       ],
       "common_pool_ids": [
@@ -443,6 +436,13 @@
           "chance": 0.35,
           "qty_min": 1,
           "qty_max": 2,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "book-lingbo-weibu",
+          "chance": 0.12,
+          "qty_min": 1,
+          "qty_max": 1,
           "show_in_ui": true
         }
       ],
