@@ -2,28 +2,10 @@ import { query } from '../config/database.js';
 import {
   getCharacterComputedBatchByCharacterIds,
 } from './characterComputedService.js';
+import { computeRankPower } from './shared/rankPower.js';
 
 const MAX_DAILY_CHALLENGES = 20;
 const DEFAULT_RATING = 1000;
-
-const computePower = (row: {
-  wugong?: number;
-  fagong?: number;
-  wufang?: number;
-  fafang?: number;
-  max_qixue?: number;
-  max_lingqi?: number;
-  sudu?: number;
-}): number => {
-  const wugong = Number(row.wugong ?? 0) || 0;
-  const fagong = Number(row.fagong ?? 0) || 0;
-  const wufang = Number(row.wufang ?? 0) || 0;
-  const fafang = Number(row.fafang ?? 0) || 0;
-  const maxQixue = Number(row.max_qixue ?? 0) || 0;
-  const maxLingqi = Number(row.max_lingqi ?? 0) || 0;
-  const sudu = Number(row.sudu ?? 0) || 0;
-  return wugong + fagong + wufang + fafang + maxQixue + maxLingqi + sudu;
-};
 
 const ensureRatingRow = async (characterId: number): Promise<void> => {
   const id = Number(characterId);
@@ -219,7 +201,7 @@ export const getArenaOpponents = async (
       id: snapshot.id,
       name: String(snapshot.nickname || `修士${snapshot.id}`),
       realm: String(snapshot.realm || '凡人'),
-      power: Math.max(0, computePower(snapshot)),
+      power: Math.max(0, computeRankPower(snapshot)),
       score: opp.score,
     });
   }
@@ -282,7 +264,7 @@ export const getArenaRecords = async (
       if (!Number.isFinite(cid) || cid <= 0) return 0;
       const computed = computedMap.get(cid);
       if (!computed) return 0;
-      return Math.max(0, computePower(computed));
+      return Math.max(0, computeRankPower(computed));
     })(),
     result: (r.result === 'win' || r.result === 'lose' || r.result === 'draw' ? r.result : 'draw') as any,
     deltaScore: Number(r.delta_score ?? 0) || 0,

@@ -17,6 +17,7 @@ import path from 'path';
 import { query } from '../config/database.js';
 import { redis } from '../config/redis.js';
 import { buildEquipmentDisplayBaseAttrs } from './equipmentGrowthRules.js';
+import { deleteCharacterRankSnapshot, upsertCharacterRankSnapshot } from './rankSnapshotService.js';
 import {
   getInsightGrowthConfig,
   getItemDefinitionsByIds,
@@ -1103,6 +1104,35 @@ export const getCharacterComputedBatchByCharacterIds = async (
   return out;
 };
 
+export const backfillCharacterRankSnapshots = async (): Promise<void> => {
+  type CharacterIdRow = { id: number | string };
+  const BATCH_SIZE = 200;
+  const result = await query(
+    `
+      SELECT c.id
+      FROM characters c
+      LEFT JOIN character_rank_snapshot crs ON crs.character_id = c.id
+      WHERE crs.character_id IS NULL
+      ORDER BY c.id ASC
+    `,
+    [],
+  );
+
+  const ids = (result.rows as CharacterIdRow[])
+    .map((row) => Number(row.id))
+    .filter((id) => Number.isFinite(id) && id > 0);
+
+  if (ids.length <= 0) return;
+
+  for (let index = 0; index < ids.length; index += BATCH_SIZE) {
+    const chunk = ids.slice(index, index + BATCH_SIZE);
+    const computedMap = await getCharacterComputedBatchByCharacterIds(chunk, { bypassStaticCache: true });
+    for (const computed of computedMap.values()) {
+      await upsertCharacterRankSnapshot(computed);
+    }
+  }
+};
+
 export const invalidateCharacterComputedCache = async (characterId: number): Promise<void> => {
   const cid = Number(characterId);
   if (!Number.isFinite(cid) || cid <= 0) return;
@@ -1112,6 +1142,12 @@ export const invalidateCharacterComputedCache = async (characterId: number): Pro
   } catch {
     // ignore redis failure
   }
+  const computed = await getCharacterComputedByCharacterId(cid, { bypassStaticCache: true });
+  if (!computed) {
+    await deleteCharacterRankSnapshot(cid);
+    return;
+  }
+  await upsertCharacterRankSnapshot(computed);
 };
 
 export const invalidateCharacterComputedCacheByUserId = async (userId: number): Promise<void> => {

@@ -1,15 +1,14 @@
-import { App, Button, Modal, Segmented, Table, Tag } from 'antd';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { IMG_COIN as coin01 } from '../../shared/imageAssets';
-import {
-  getArenaRanks,
-  getRankOverview,
-  type ArenaRankRowDto,
-  type RealmRankRowDto,
-  type SectRankRowDto,
-  type WealthRankRowDto,
+import { Button, Modal, Segmented, Table, Tag } from 'antd';
+import { useMemo, useState } from 'react';
+import type {
+  ArenaRankRowDto,
+  RealmRankRowDto,
+  SectRankRowDto,
+  WealthRankRowDto,
 } from '../../../../services/api';
+import { IMG_COIN as coin01 } from '../../shared/imageAssets';
 import { useIsMobile } from '../../shared/responsive';
+import { RANK_TAB_KEYS, RANK_TAB_META, RANK_TAB_META_MAP, useRankRows, type RankTab } from './rankShared';
 import './index.scss';
 
 interface RankModalProps {
@@ -17,77 +16,38 @@ interface RankModalProps {
   onClose: () => void;
 }
 
-type RankTab = 'realm' | 'sect' | 'wealth' | 'arena';
-const rankTabKeys: RankTab[] = ['realm', 'sect', 'wealth', 'arena'];
-
 const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
-  const { message } = App.useApp();
   const [tab, setTab] = useState<RankTab>('realm');
   const isMobile = useIsMobile();
-  const [loading, setLoading] = useState(false);
-  const [realmRanks, setRealmRanks] = useState<RealmRankRowDto[]>([]);
-  const [sectRanks, setSectRanks] = useState<SectRankRowDto[]>([]);
-  const [wealthRanks, setWealthRanks] = useState<WealthRankRowDto[]>([]);
-  const [arenaRanks, setArenaRanks] = useState<ArenaRankRowDto[]>([]);
-
-  const refreshRanks = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [overviewRes, arenaRes] = await Promise.all([getRankOverview(50, 30), getArenaRanks(50)]);
-      if (!overviewRes.success || !overviewRes.data) throw new Error(overviewRes.message || '加载排行榜失败');
-      setRealmRanks(overviewRes.data.realm ?? []);
-      setSectRanks(overviewRes.data.sect ?? []);
-      setWealthRanks(overviewRes.data.wealth ?? []);
-      if (arenaRes.success) setArenaRanks(arenaRes.data ?? []);
-    } catch (error: unknown) {
-      void 0;
-      setRealmRanks([]);
-      setSectRanks([]);
-      setWealthRanks([]);
-      setArenaRanks([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [message]);
-
-  useEffect(() => {
-    if (!open) return;
-    setTab('realm');
-    void refreshRanks();
-  }, [open, refreshRanks]);
+  const { rankRowsByTab, loadingByTab } = useRankRows(open, tab);
+  const loading = loadingByTab[tab];
+  const realmRanks: RealmRankRowDto[] = rankRowsByTab.realm;
+  const sectRanks: SectRankRowDto[] = rankRowsByTab.sect;
+  const wealthRanks: WealthRankRowDto[] = rankRowsByTab.wealth;
+  const arenaRanks: ArenaRankRowDto[] = rankRowsByTab.arena;
 
   const leftItems = useMemo(
-    () => [
-      { key: 'realm' as const, label: '境界排行榜' },
-      { key: 'sect' as const, label: '宗门排行榜' },
-      { key: 'wealth' as const, label: '财富排行榜' },
-      { key: 'arena' as const, label: '竞技场排行榜' },
-    ],
+    () => RANK_TAB_META.map((item) => ({ key: item.key, label: item.label })),
     [],
   );
 
   const mobileMenuOptions = useMemo(
-    () => [
-      { value: 'realm', label: '境界' },
-      { value: 'sect', label: '宗门' },
-      { value: 'wealth', label: '财富' },
-      { value: 'arena', label: '竞技' },
-    ],
+    () => RANK_TAB_META.map((item) => ({ value: item.key, label: item.shortLabel })),
     [],
   );
 
-  const renderPaneTop = (title: string, subtitle: string) => (
+  const renderPaneTop = (tabKey: RankTab) => (
     <div className="rank-pane-top">
       <div className="rank-top-row">
-        <div className="rank-title">{title}</div>
+        <div className="rank-title">{RANK_TAB_META_MAP[tabKey].label}</div>
       </div>
-      <div className="rank-subtitle">{subtitle}</div>
+      <div className="rank-subtitle">{RANK_TAB_META_MAP[tabKey].subtitle}</div>
     </div>
   );
 
   const renderRealmRank = () => (
     <div className="rank-pane">
-      {renderPaneTop('境界排行榜', '按境界与战力综合排序')}
+      {renderPaneTop('realm')}
       <div className="rank-pane-body">
         {isMobile ? (
           <div className="rank-mobile-list">
@@ -132,7 +92,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
 
   const renderSectRank = () => (
     <div className="rank-pane">
-      {renderPaneTop('宗门排行榜', '按宗门综合实力排序')}
+      {renderPaneTop('sect')}
       <div className="rank-pane-body">
         {isMobile ? (
           <div className="rank-mobile-list">
@@ -175,7 +135,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
               { title: '宗门', dataIndex: 'name', key: 'name', width: 180 },
               { title: '等级', dataIndex: 'level', key: 'level', width: 90, render: (v: number) => <Tag color="blue">Lv.{v}</Tag> },
               { title: '宗主', dataIndex: 'leader', key: 'leader', width: 140 },
-              { title: '成员', key: 'members', width: 120, render: (_: unknown, row: SectRankRowDto) => `${row.members}/${row.memberCap}` },
+              { title: '成员', key: 'members', width: 120, render: (_value: number, row: SectRankRowDto) => `${row.members}/${row.memberCap}` },
               { title: '实力', dataIndex: 'power', key: 'power', render: (v: number) => v.toLocaleString() },
             ]}
             dataSource={sectRanks}
@@ -187,7 +147,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
 
   const renderWealthRank = () => (
     <div className="rank-pane">
-      {renderPaneTop('财富排行榜', '按灵石与银两总量排序')}
+      {renderPaneTop('wealth')}
       <div className="rank-pane-body">
         {isMobile ? (
           <div className="rank-mobile-list">
@@ -256,7 +216,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
 
   const renderArenaRank = () => (
     <div className="rank-pane">
-      {renderPaneTop('竞技场排行榜', '按竞技场积分排序')}
+      {renderPaneTop('arena')}
       <div className="rank-pane-body">
         {isMobile ? (
           <div className="rank-mobile-list">
@@ -298,7 +258,7 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
               {
                 title: '胜负',
                 key: 'wl',
-                render: (_: unknown, row: ArenaRankRowDto) => `${row.winCount}/${row.loseCount}`,
+                render: (_value: number, row: ArenaRankRowDto) => `${row.winCount}/${row.loseCount}`,
               },
             ]}
             dataSource={arenaRanks}
@@ -345,21 +305,21 @@ const RankModal: React.FC<RankModalProps> = ({ open, onClose }) => {
                 options={mobileMenuOptions}
                 onChange={(value) => {
                   if (typeof value !== 'string') return;
-                  if (!rankTabKeys.includes(value as RankTab)) return;
+                  if (!RANK_TAB_KEYS.includes(value as RankTab)) return;
                   setTab(value as RankTab);
                 }}
               />
             </div>
           ) : (
             <div className="rank-left-list">
-              {leftItems.map((it) => (
+              {leftItems.map((item) => (
                 <Button
-                  key={it.key}
-                  type={tab === it.key ? 'primary' : 'default'}
+                  key={item.key}
+                  type={tab === item.key ? 'primary' : 'default'}
                   className="rank-left-item"
-                  onClick={() => setTab(it.key)}
+                  onClick={() => setTab(item.key)}
                 >
-                  {it.label}
+                  {item.label}
                 </Button>
               ))}
             </div>

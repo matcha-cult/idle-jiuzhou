@@ -7,7 +7,7 @@ import {
   normalizeAutoDisassembleSetting,
   type AutoDisassembleRuleSet,
 } from './autoDisassembleRules.js';
-import { getCharacterComputedByUserId } from './characterComputedService.js';
+import { getCharacterComputedByUserId, invalidateCharacterComputedCache } from './characterComputedService.js';
 import { withUnlockedFeatures } from './featureUnlockService.js';
 
 export interface Character {
@@ -150,6 +150,7 @@ export const createCharacter = async (
   await createInventoryForCharacter(characterId);
 
   await initCharacterAchievements(characterId);
+  await invalidateCharacterComputedCache(characterId);
 
   const computedCharacter = await getCharacterComputedByUserId(userId);
   if (!computedCharacter) {

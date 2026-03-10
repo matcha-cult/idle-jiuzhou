@@ -1,37 +1,8 @@
 import { query } from '../config/database.js';
-import { REALM_ORDER } from './shared/realmRules.js';
-import { getCharacterComputedBatchByCharacterIds } from './characterComputedService.js';
 
 const clampLimit = (limit?: number, fallback: number = 50): number => {
   const n = Number.isFinite(Number(limit)) ? Math.floor(Number(limit)) : fallback;
   return Math.max(1, Math.min(200, n));
-};
-
-const REALM_RANK_MAP = new Map<string, number>(REALM_ORDER.map((r, idx) => [r, idx]));
-
-const getRealmRank = (realmRaw: unknown): number => {
-  const realm = String(realmRaw || '').trim();
-  return REALM_RANK_MAP.get(realm) ?? 0;
-};
-
-const computePower = (row: {
-  wugong?: number;
-  fagong?: number;
-  wufang?: number;
-  fafang?: number;
-  max_qixue?: number;
-  max_lingqi?: number;
-  sudu?: number;
-}): number => {
-  return (
-    (Number(row.wugong ?? 0) || 0)
-    + (Number(row.fagong ?? 0) || 0)
-    + (Number(row.wufang ?? 0) || 0)
-    + (Number(row.fafang ?? 0) || 0)
-    + (Number(row.max_qixue ?? 0) || 0)
-    + (Number(row.max_lingqi ?? 0) || 0)
-    + (Number(row.sudu ?? 0) || 0)
-  );
 };
 
 export type RealmRankRow = {
@@ -74,43 +45,30 @@ export const getRealmRanks = async (
   const l = clampLimit(limit, 50);
   const res = await query(
     `
-      SELECT id, nickname, realm
-      FROM characters
-      WHERE nickname IS NOT NULL AND nickname <> ''
+      SELECT
+        ROW_NUMBER() OVER (ORDER BY realm_rank DESC, power DESC, character_id ASC)::int AS rank,
+        nickname AS name,
+        realm,
+        power
+      FROM character_rank_snapshot
+      WHERE nickname <> ''
+      ORDER BY rank
+      LIMIT $1
     `,
-    []
+    [l]
   );
+  type RealmRankQueryRow = {
+    rank: number;
+    name: string;
+    realm: string;
+    power: string | number;
+  };
 
-  const ids = res.rows
-    .map((row) => Number((row as Record<string, unknown>).id))
-    .filter((id) => Number.isFinite(id) && id > 0);
-  const computedMap = await getCharacterComputedBatchByCharacterIds(ids);
-
-  const rows = res.rows.map((row) => {
-    const record = row as Record<string, unknown>;
-    const id = Number(record.id);
-    const computed = computedMap.get(id);
-    const power = computed ? Math.max(0, computePower(computed)) : 0;
-    return {
-      id,
-      name: String(record.nickname ?? ''),
-      realm: String(record.realm ?? '凡人'),
-      power,
-      realmRank: getRealmRank(record.realm),
-    };
-  });
-
-  rows.sort((a, b) => {
-    if (a.realmRank !== b.realmRank) return b.realmRank - a.realmRank;
-    if (a.power !== b.power) return b.power - a.power;
-    return a.id - b.id;
-  });
-
-  const data: RealmRankRow[] = rows.slice(0, l).map((row, index) => ({
-    rank: index + 1,
-    name: row.name,
-    realm: row.realm,
-    power: row.power,
+  const data = (res.rows as RealmRankQueryRow[]).map((row) => ({
+    rank: Number(row.rank),
+    name: String(row.name),
+    realm: String(row.realm),
+    power: Number(row.power),
   }));
   return { success: true, message: 'ok', data };
 };

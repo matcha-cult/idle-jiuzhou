@@ -18,13 +18,15 @@ import { initGameTimeTable } from './gameTimeTable.js';
 import { initMainQuestTables } from './mainQuestTable.js';
 import { initArenaTables } from './arenaTable.js';
 import { initAchievementTables } from './achievementTable.js';
-import { ensureMigrationHistoryTable } from './migrationHistoryTable.js';
+import { ensureMigrationHistoryTable, runDbMigrationOnce } from './migrationHistoryTable.js';
 import { initIdleTables } from './idleTable.js';
 import { initInsightTables } from './insightTable.js';
 import { initTechniqueGenerationTables } from './techniqueGenerationTable.js';
 import { initFeatureUnlockTables } from './featureUnlockTable.js';
 import { initPartnerTables } from './partnerTable.js';
 import { initPartnerRecruitTables } from './partnerRecruitTable.js';
+import { initCharacterRankSnapshotTable } from './characterRankSnapshotTable.js';
+import { backfillCharacterRankSnapshots } from '../services/characterComputedService.js';
 import { loadAllSeeds } from '../services/seedService.js';
 
 // 用户表结构定义
@@ -97,6 +99,9 @@ export const initTables = async (): Promise<void> => {
     
   // 初始化角色表
   await initCharacterTable();
+
+  // 初始化角色排行榜快照表
+  await initCharacterRankSnapshotTable();
     
   // 初始化签到表
   await initSignInTable();
@@ -172,6 +177,12 @@ export const initTables = async (): Promise<void> => {
     
   // 加载种子数据
   await loadAllSeeds();
+
+  await runDbMigrationOnce({
+    migrationKey: 'character_rank_snapshot_backfill_v1',
+    description: '为现有角色初始化排行榜快照',
+    execute: backfillCharacterRankSnapshots,
+  });
     
   console.log('========== 初始化完成 ==========\n');
 };

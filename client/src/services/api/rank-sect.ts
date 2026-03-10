@@ -49,6 +49,20 @@ export const getRankOverview = (limitPlayers: number = 50, limitSects: number = 
   return api.get('/rank/overview', { params: { limitPlayers, limitSects } });
 };
 
+export const getRealmRanks = (limit: number = 50): Promise<{ success: boolean; message: string; data?: RealmRankRowDto[] }> => {
+  return api.get('/rank/realm', { params: { limit } });
+};
+
+export const getSectRanks = (limit: number = 30): Promise<{ success: boolean; message: string; data?: SectRankRowDto[] }> => {
+  return api.get('/rank/sect', { params: { limit } });
+};
+
+export const getWealthRanks = (
+  limit: number = 50
+): Promise<{ success: boolean; message: string; data?: WealthRankRowDto[] }> => {
+  return api.get('/rank/wealth', { params: { limit } });
+};
+
 export const getArenaRanks = (
   limit: number = 50
 ): Promise<{ success: boolean; message: string; data?: ArenaRankRowDto[] }> => {
