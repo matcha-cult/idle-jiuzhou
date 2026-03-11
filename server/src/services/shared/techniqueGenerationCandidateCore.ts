@@ -19,11 +19,9 @@
  */
 import { randomUUID } from 'crypto';
 import type { SkillEffect } from '../../battle/types.js';
+import { callConfiguredTextModel } from '../ai/openAITextClient.js';
 import {
-  buildTechniqueTextModelPayload,
-  extractTechniqueTextModelContent,
   parseTechniqueTextModelJsonObject,
-  resolveTechniqueTextModelEndpoint,
 } from './techniqueTextModelShared.js';
 import { resolveTechniqueGenerationRequestFailure } from './techniqueGenerationRequestFailure.js';
 import {
@@ -240,12 +238,6 @@ const sanitizeCandidateFromModel = (
   };
 };
 
-const summarizeHttpErrorResponse = (responseText: string): string => {
-  const normalized = responseText.trim().replace(/\s+/g, ' ');
-  if (!normalized) return '';
-  return normalized.slice(0, 300);
-};
-
 const buildTechniqueGenerationAttemptFailure = (params: {
   stage: TechniqueGenerationAttemptFailureStage;
   reason: string;
@@ -451,17 +443,7 @@ const tryCallExternalGenerator = async (params: {
   promptContext?: Record<string, unknown>;
 }): Promise<TechniqueGenerationAttemptResult> => {
   const { techniqueType, quality, maxLayer, promptContext } = params;
-  const endpoint = resolveTechniqueTextModelEndpoint(asString(process.env.AI_TECHNIQUE_MODEL_URL));
-  const apiKey = asString(process.env.AI_TECHNIQUE_MODEL_KEY);
-  const modelName = asString(process.env.AI_TECHNIQUE_MODEL_NAME) || 'gpt-4o-mini';
-  if (!endpoint || !apiKey) {
-    return buildTechniqueGenerationAttemptFailure({
-      stage: 'config_missing',
-      reason: '缺少 AI_TECHNIQUE_MODEL_URL 或 AI_TECHNIQUE_MODEL_KEY 配置',
-      modelName,
-    });
-  }
-
+  const modelCallTimeoutMs = 300_000;
   const promptInput = buildTechniqueGeneratorPromptInput({
     techniqueType,
     quality,
@@ -471,50 +453,21 @@ const tryCallExternalGenerator = async (params: {
   const userMessagePayload = promptContext
     ? { ...promptInput, extraContext: promptContext }
     : promptInput;
-  const payload = buildTechniqueTextModelPayload({
-    modelName,
+  const external = await callConfiguredTextModel({
     systemMessage: TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
     userMessage: JSON.stringify(userMessagePayload),
+    timeoutMs: modelCallTimeoutMs,
   });
-  const promptSnapshot = JSON.stringify(payload);
-
-  const controller = new AbortController();
-  const timeoutMs = 300_000;
-  let didTimeout = false;
-  const timer = setTimeout(() => {
-    didTimeout = true;
-    controller.abort();
-  }, timeoutMs);
+  if (!external) {
+    return buildTechniqueGenerationAttemptFailure({
+      stage: 'config_missing',
+      reason: '缺少 AI_TECHNIQUE_MODEL_URL 或 AI_TECHNIQUE_MODEL_KEY 配置',
+      modelName: 'gpt-4o-mini',
+    });
+  }
+  const { content, modelName, promptSnapshot } = external;
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const responseText = await response.text();
-      const responseSummary = summarizeHttpErrorResponse(responseText);
-      return buildTechniqueGenerationAttemptFailure({
-        stage: 'http_error',
-        reason: responseSummary
-          ? `模型接口返回非成功状态：${response.status}（endpoint=${endpoint}，body=${responseSummary}）`
-          : `模型接口返回非成功状态：${response.status}（endpoint=${endpoint}）`,
-        modelName,
-        promptSnapshot,
-      });
-    }
-
-    const body = (await response.json()) as Record<string, unknown>;
-    const content = extractTechniqueTextModelContent(
-      ((body.choices as Array<Record<string, unknown>> | undefined)?.[0]?.message as {
-        content?: string | Array<{ text?: string | null }> | null;
-      } | undefined)?.content,
-    );
     if (!content) {
       return buildTechniqueGenerationAttemptFailure({
         stage: 'empty_response',
@@ -553,8 +506,8 @@ const tryCallExternalGenerator = async (params: {
   } catch (error) {
     const failure = resolveTechniqueGenerationRequestFailure({
       error,
-      didTimeout,
-      timeoutMs,
+      didTimeout: false,
+      timeoutMs: modelCallTimeoutMs,
     });
     return buildTechniqueGenerationAttemptFailure({
       stage: failure.stage,
@@ -562,8 +515,6 @@ const tryCallExternalGenerator = async (params: {
       modelName,
       promptSnapshot,
     });
-  } finally {
-    clearTimeout(timer);
   }
 };
 

@@ -20,11 +20,10 @@
 import dotenv from 'dotenv';
 import { generateTechniqueSkillIconMap } from '../src/services/shared/techniqueSkillImageGenerator.js';
 import {
-  buildTechniqueTextModelPayload,
-  extractTechniqueTextModelContent,
   parseTechniqueTextModelJsonObject,
-  resolveTechniqueTextModelEndpoint,
 } from '../src/services/shared/techniqueTextModelShared.js';
+import { callConfiguredTextModel } from '../src/services/ai/openAITextClient.js';
+import { readTextModelConfig } from '../src/services/ai/modelConfig.js';
 import {
   buildTechniqueGeneratorPromptInput,
   GENERATED_TECHNIQUE_TYPE_LIST,
@@ -261,10 +260,7 @@ const main = async (): Promise<void> => {
   const quality = resolveQualityArg(args.quality);
   const techniqueType = resolveTechniqueTypeByRandom();
   const seed = resolveSeedArg(args.seed);
-  const endpointRaw = asString(process.env.AI_TECHNIQUE_MODEL_URL);
-  const endpoint = resolveTechniqueTextModelEndpoint(endpointRaw);
-  const apiKey = asString(process.env.AI_TECHNIQUE_MODEL_KEY);
-  const modelName = asString(process.env.AI_TECHNIQUE_MODEL_NAME) || 'gpt-4o-mini';
+  const modelConfig = readTextModelConfig();
   const promptInput = buildTechniqueGeneratorPromptInput({
     techniqueType,
     quality,
@@ -272,47 +268,19 @@ const main = async (): Promise<void> => {
     effectTypeEnum: [...TECHNIQUE_EFFECT_TYPE_LIST],
   });
 
-  if (!endpoint) {
+  if (!modelConfig) {
     throw new Error('缺少环境变量 AI_TECHNIQUE_MODEL_URL');
   }
-  if (!apiKey) {
-    throw new Error('缺少环境变量 AI_TECHNIQUE_MODEL_KEY');
-  }
-
-  const payload = buildTechniqueTextModelPayload({
-    modelName,
+  const response = await callConfiguredTextModel({
     systemMessage: TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
     userMessage: JSON.stringify(promptInput),
     seed,
+    timeoutMs: 300_000,
   });
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const responseText = await response.text();
-  if (!response.ok) {
-    throw new Error(`模型请求失败(${response.status}): ${responseText}`);
+  if (!response) {
+    throw new Error('缺少环境变量 AI_TECHNIQUE_MODEL_KEY');
   }
-
-  let responseBody: Record<string, unknown>;
-  try {
-    responseBody = JSON.parse(responseText) as Record<string, unknown>;
-  } catch {
-    throw new Error(`响应不是 JSON：${responseText.slice(0, 300)}`);
-  }
-
-  const choice = ((responseBody.choices as Array<Record<string, unknown>> | undefined) ?? [])[0];
-  const message = choice?.message as Record<string, unknown> | undefined;
-  const content = extractTechniqueTextModelContent(
-    message?.content as string | Array<{ text?: string | null }> | null | undefined,
-  );
-  const parsed = parseModelJson(content);
+  const parsed = parseModelJson(response.content);
   const normalized = normalizeParsedLayers(parsed, techniqueType);
   const imageEnabled = isSkillImageGenEnabled();
   const withIcons = imageEnabled
@@ -327,8 +295,8 @@ const main = async (): Promise<void> => {
   const layers = Array.isArray(finalOutput.layers) ? finalOutput.layers : [];
 
   console.log('\n=== AI 领悟模型联调结果 ===');
-  console.log(`请求地址: ${endpoint}`);
-  console.log(`模型: ${modelName}`);
+  console.log(`SDK BaseURL: ${modelConfig.baseURL}`);
+  console.log(`模型: ${response.modelName}`);
   console.log(`品质: ${quality}`);
   console.log(`功法: ${techniqueName}（${techniqueType}）`);
   console.log(`技能数量: ${skills.length}`);

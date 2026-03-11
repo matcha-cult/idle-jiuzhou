@@ -34,10 +34,7 @@ import {
 } from './staticConfigLoader.js';
 import { partnerService } from './partnerService.js';
 import {
-  buildTechniqueTextModelPayload,
-  extractTechniqueTextModelContent,
   parseTechniqueTextModelJsonObject,
-  resolveTechniqueTextModelEndpoint,
 } from './shared/techniqueTextModelShared.js';
 import { resolveTechniqueGenerationRequestFailure } from './shared/techniqueGenerationRequestFailure.js';
 import {
@@ -63,6 +60,7 @@ import {
 } from './shared/partnerRecruitRules.js';
 import { generatePartnerRecruitAvatar } from './shared/partnerRecruitAvatarGenerator.js';
 import { generateTechniqueCandidateWithIcons } from './shared/techniqueGenerationExecution.js';
+import { callConfiguredTextModel } from './ai/openAITextClient.js';
 import {
   TechniqueGenerationExhaustedError,
   generateTechniqueCandidateWithRetry,
@@ -405,68 +403,26 @@ const buildPreviewFromPartnerDefinition = (
   };
 };
 
-const summarizeHttpErrorResponse = (responseText: string): string => {
-  const normalized = responseText.trim().replace(/\s+/g, ' ');
-  if (!normalized) return '';
-  return normalized.slice(0, 300);
-};
-
 const tryCallPartnerRecruitTextModel = async (
   quality: PartnerRecruitQuality,
 ): Promise<RecruitTextAttemptResult> => {
-  const endpoint = resolveTechniqueTextModelEndpoint(asString(process.env.AI_TECHNIQUE_MODEL_URL));
-  const apiKey = asString(process.env.AI_TECHNIQUE_MODEL_KEY);
-  const modelName = asString(process.env.AI_TECHNIQUE_MODEL_NAME) || 'gpt-4o-mini';
-  if (!endpoint || !apiKey) {
-    return {
-      success: false,
-      reason: '缺少 AI_TECHNIQUE_MODEL_URL 或 AI_TECHNIQUE_MODEL_KEY 配置',
-      modelName,
-    };
-  }
-
-  const payload = buildTechniqueTextModelPayload({
-    modelName,
+  const timeoutMs = 180_000;
+  const external = await callConfiguredTextModel({
     responseFormat: buildPartnerRecruitResponseFormat(quality),
     systemMessage: PARTNER_RECRUIT_PROMPT_SYSTEM_MESSAGE,
     userMessage: JSON.stringify(buildPartnerRecruitPromptInput(quality)),
+    timeoutMs,
   });
-
-  const controller = new AbortController();
-  const timeoutMs = 180_000;
-  let didTimeout = false;
-  const timer = setTimeout(() => {
-    didTimeout = true;
-    controller.abort();
-  }, timeoutMs);
+  if (!external) {
+    return {
+      success: false,
+      reason: '缺少 AI_TECHNIQUE_MODEL_URL 或 AI_TECHNIQUE_MODEL_KEY 配置',
+      modelName: 'gpt-4o-mini',
+    };
+  }
+  const { content, modelName } = external;
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const responseText = await response.text();
-      const responseSummary = summarizeHttpErrorResponse(responseText);
-      return {
-        success: false,
-        reason: responseSummary
-          ? `伙伴生成模型返回非成功状态：${response.status}（${responseSummary}）`
-          : `伙伴生成模型返回非成功状态：${response.status}`,
-        modelName,
-      };
-    }
-    const body = (await response.json()) as Record<string, unknown>;
-    const content = extractTechniqueTextModelContent(
-      ((body.choices as Array<Record<string, unknown>> | undefined)?.[0]?.message as {
-        content?: string | Array<{ text?: string | null }> | null;
-      } | undefined)?.content,
-    );
     const parsed = parseTechniqueTextModelJsonObject(content);
     if (!parsed.success) {
       return {
@@ -498,7 +454,7 @@ const tryCallPartnerRecruitTextModel = async (
   } catch (error) {
     const failure = resolveTechniqueGenerationRequestFailure({
       error,
-      didTimeout,
+      didTimeout: false,
       timeoutMs,
     });
     return {
@@ -506,8 +462,6 @@ const tryCallPartnerRecruitTextModel = async (
       reason: failure.reason,
       modelName,
     };
-  } finally {
-    clearTimeout(timer);
   }
 };
 

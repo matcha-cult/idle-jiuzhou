@@ -3,7 +3,7 @@
  *
  * 作用（做什么 / 不做什么）：
  * 1) 做什么：根据伙伴名字、品质、元素、定位与描述调用图像模型生成头像，并落到本地 uploads 目录。
- * 2) 做什么：把伙伴头像 prompt、模型请求、图片压缩与本地落盘集中到单模块，避免招募 service 内部塞满杂项逻辑。
+ * 2) 做什么：把伙伴头像 prompt、图片压缩与本地落盘集中到单模块，模型 provider 协议由统一图片 client 处理。
  * 3) 不做什么：不写任务状态表、不吞掉业务失败；头像生成失败应由上层触发整单退款。
  *
  * 输入/输出：
@@ -11,32 +11,20 @@
  * - 输出：本地可访问头像路径 `/uploads/partners/*.webp`。
  *
  * 数据流/状态流：
- * partner recruit draft -> buildPartnerRecruitAvatarPrompt -> 图像模型 -> 压缩落盘 -> partnerRecruitService 回写 job/def。
+ * partner recruit draft -> buildPartnerRecruitAvatarPrompt -> imageModelClient -> 压缩落盘 -> partnerRecruitService 回写 job/def。
  *
  * 关键边界条件与坑点：
- * 1) 这里直接复用现有生图环境变量，避免再维护第二套模型接入配置，但不会为缺失配置提供兜底图。
- * 2) 外部模型返回可能是 b64、URL 或不同 provider 结构，解析失败必须向上抛错，让招募任务明确失败退款。
+ * 1) 这里仍复用现有生图环境变量，但业务层不再关心 OpenAI / DashScope 协议差异。
+ * 2) 统一图片 client 只返回标准资源 `{ b64, url }`，头像模块必须明确处理“无图片数据”这种失败分支，不能静默吞掉。
  */
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import sharp from 'sharp';
 import {
-  buildDashScopeImageGenerationPayload,
-  readDashScopeImageGenerationResult,
-} from './dashScopeImageGenerationShared.js';
-
-type ImageProvider = 'openai' | 'dashscope';
-
-type ImageModelConfig = {
-  provider: ImageProvider;
-  endpoint: string;
-  apiKey: string;
-  modelName: string;
-  size: string;
-  timeoutMs: number;
-  responseFormat: string;
-};
+  downloadImageBuffer,
+  generateConfiguredImageAsset,
+} from '../ai/imageModelClient.js';
 
 export type PartnerRecruitAvatarInput = {
   partnerId: string;
@@ -50,94 +38,8 @@ export type PartnerRecruitAvatarInput = {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DEFAULT_IMAGE_MODEL = 'qwen-image-2.0';
-const DEFAULT_IMAGE_SIZE = '512x512';
-const DEFAULT_TIMEOUT_MS = 20_000;
-const DEFAULT_IMAGE_RESPONSE_FORMAT = 'b64_json';
 const OUTPUT_MAX_EDGE = 384;
 const OUTPUT_QUALITY = 84;
-const DASHSCOPE_SYNC_IMAGE_PATH = '/api/v1/services/aigc/multimodal-generation/generation';
-
-const asString = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() : '');
-
-const asPositiveInt = (raw: unknown, fallback: number): number => {
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return fallback;
-  const normalized = Math.floor(n);
-  return normalized > 0 ? normalized : fallback;
-};
-
-const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
-
-const resolveOpenAIImageEndpoint = (raw: string): string => {
-  const endpoint = trimTrailingSlash(raw);
-  if (!endpoint) return '';
-  if (/\/images\/generations$/i.test(endpoint)) return endpoint;
-  if (/\/v1$/i.test(endpoint)) return `${endpoint}/images/generations`;
-  return `${endpoint}/v1/images/generations`;
-};
-
-const resolveDashScopeImageEndpoint = (raw: string): string => {
-  const endpoint = trimTrailingSlash(raw);
-  if (!endpoint) return '';
-  try {
-    const parsed = new URL(endpoint);
-    const cleanPath = parsed.pathname.replace(/\/+$/, '');
-    if (new RegExp(`${DASHSCOPE_SYNC_IMAGE_PATH}$`, 'i').test(cleanPath)) {
-      return `${parsed.origin}${cleanPath}`;
-    }
-    return `${parsed.origin}${DASHSCOPE_SYNC_IMAGE_PATH}`;
-  } catch {
-    if (/\/compatible-mode(\/v1)?$/i.test(endpoint)) {
-      return endpoint.replace(/\/compatible-mode(\/v1)?$/i, DASHSCOPE_SYNC_IMAGE_PATH);
-    }
-    if (/\/v1$/i.test(endpoint)) {
-      return endpoint.replace(/\/v1$/i, DASHSCOPE_SYNC_IMAGE_PATH);
-    }
-    return `${endpoint}${DASHSCOPE_SYNC_IMAGE_PATH}`;
-  }
-};
-
-const normalizeSizeForDashScope = (size: string): string => {
-  const compact = size.replace(/\s+/g, '');
-  if (/^\d+\*\d+$/i.test(compact)) return compact;
-  if (/^\d+x\d+$/i.test(compact)) return compact.replace(/x/gi, '*');
-  return DEFAULT_IMAGE_SIZE.replace('x', '*');
-};
-
-const resolveImageProvider = (endpointRaw: string, modelName: string): ImageProvider => {
-  const endpoint = endpointRaw.toLowerCase();
-  const model = modelName.toLowerCase();
-  if (
-    endpoint.includes('dashscope') ||
-    endpoint.includes('/compatible-mode') ||
-    model.startsWith('qwen-image')
-  ) {
-    return 'dashscope';
-  }
-  return 'openai';
-};
-
-const readImageModelConfig = (): ImageModelConfig => {
-  const endpointRaw = asString(process.env.AI_TECHNIQUE_IMAGE_MODEL_URL);
-  const apiKey = asString(process.env.AI_TECHNIQUE_IMAGE_MODEL_KEY);
-  const modelName = asString(process.env.AI_TECHNIQUE_IMAGE_MODEL_NAME) || DEFAULT_IMAGE_MODEL;
-  if (!endpointRaw || !apiKey) {
-    throw new Error('缺少 AI_TECHNIQUE_IMAGE_MODEL_URL 或 AI_TECHNIQUE_IMAGE_MODEL_KEY 配置');
-  }
-  const provider = resolveImageProvider(endpointRaw, modelName);
-  return {
-    provider,
-    endpoint: provider === 'dashscope'
-      ? resolveDashScopeImageEndpoint(endpointRaw)
-      : resolveOpenAIImageEndpoint(endpointRaw),
-    apiKey,
-    modelName,
-    size: asString(process.env.AI_TECHNIQUE_IMAGE_SIZE) || DEFAULT_IMAGE_SIZE,
-    timeoutMs: asPositiveInt(process.env.AI_TECHNIQUE_IMAGE_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
-    responseFormat: asString(process.env.AI_TECHNIQUE_IMAGE_RESPONSE_FORMAT) || DEFAULT_IMAGE_RESPONSE_FORMAT,
-  };
-};
 
 const buildPartnerRecruitAvatarPrompt = (input: PartnerRecruitAvatarInput): string => {
   return [
@@ -191,105 +93,22 @@ const saveImageBufferToLocal = async (buffer: Buffer, partnerId: string): Promis
   return `/uploads/partners/${fileName}`;
 };
 
-const readBufferFromUrl = async (url: string, timeoutMs: number): Promise<Buffer> => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`下载头像失败：${response.status}`);
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    if (buffer.length <= 0) {
-      throw new Error('下载头像失败：返回空图片');
-    }
-    return buffer;
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
-const extractOpenAICompatibleImage = async (
-  body: Record<string, unknown>,
-  timeoutMs: number,
-): Promise<Buffer> => {
-  const first = Array.isArray(body.data) ? (body.data[0] as Record<string, unknown> | undefined) : undefined;
-  const b64Json = asString(first?.b64_json);
-  if (b64Json) {
-    return Buffer.from(b64Json, 'base64');
-  }
-  const url = asString(first?.url);
-  if (url) {
-    return readBufferFromUrl(url, timeoutMs);
-  }
-  throw new Error('图像模型未返回可用图片数据');
-};
-
-const extractDashScopeImage = async (
-  body: Record<string, unknown>,
-  timeoutMs: number,
-): Promise<Buffer> => {
-  const { b64, url } = readDashScopeImageGenerationResult(body);
-  if (b64) {
-    return Buffer.from(b64, 'base64');
-  }
-  if (url) {
-    return readBufferFromUrl(url, timeoutMs);
-  }
-  throw new Error('图像模型未返回可用图片数据');
-};
-
 export const generatePartnerRecruitAvatar = async (
   input: PartnerRecruitAvatarInput,
 ): Promise<string> => {
-  const config = readImageModelConfig();
   const prompt = buildPartnerRecruitAvatarPrompt(input);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.timeoutMs);
-
-  try {
-    const payload = config.provider === 'dashscope'
-      ? buildDashScopeImageGenerationPayload(
-          config.modelName,
-          prompt,
-          normalizeSizeForDashScope(config.size),
-        )
-      : {
-          model: config.modelName,
-          prompt,
-          size: config.size,
-          response_format: config.responseFormat,
-        };
-    const headers = config.provider === 'dashscope'
-      ? {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiKey}`,
-          'X-DashScope-Async': 'disable',
-        }
-      : {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiKey}`,
-        };
-    const response = await fetch(config.endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const rawText = await response.text();
-      throw new Error(`头像模型请求失败：${response.status} ${rawText.slice(0, 200)}`.trim());
-    }
-    const body = (await response.json()) as Record<string, unknown>;
-    const buffer = config.provider === 'dashscope'
-      ? await extractDashScopeImage(body, config.timeoutMs)
-      : await extractOpenAICompatibleImage(body, config.timeoutMs);
-    if (buffer.length <= 0) {
-      throw new Error('头像模型返回空图片');
-    }
-    return saveImageBufferToLocal(buffer, input.partnerId);
-  } finally {
-    clearTimeout(timer);
+  const generated = await generateConfiguredImageAsset(prompt);
+  if (!generated) {
+    throw new Error('缺少 AI_TECHNIQUE_IMAGE_MODEL_URL 或 AI_TECHNIQUE_IMAGE_MODEL_KEY 配置');
   }
+
+  if (generated.asset.b64) {
+    return saveImageBufferToLocal(Buffer.from(generated.asset.b64, 'base64'), input.partnerId);
+  }
+  if (generated.asset.url) {
+    const buffer = await downloadImageBuffer(generated.asset.url, generated.timeoutMs);
+    return saveImageBufferToLocal(buffer, input.partnerId);
+  }
+
+  throw new Error('图像模型未返回可用图片数据');
 };
