@@ -39,6 +39,7 @@ export type PartnerRecruitPanelView =
 
 export type PartnerRecruitActionState = {
   canGenerate: boolean;
+  showGenerateButton: boolean;
   pendingGenerationId: string | null;
 };
 
@@ -147,6 +148,7 @@ export const resolvePartnerRecruitActionState = (
 
   return {
     canGenerate,
+    showGenerateButton: panelView.kind !== 'pending' && panelView.kind !== 'draft',
     pendingGenerationId: panelView.kind === 'pending' ? panelView.job.generationId : null,
   };
 };

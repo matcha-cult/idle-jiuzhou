@@ -964,7 +964,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
           </div>
         ) : null}
 
-        {recruitPanelView.kind !== 'draft' ? (
+        {recruitActionState.showGenerateButton ? (
           <div className="partner-action-row partner-recruit-action-row">
             <Button
               type="primary"
