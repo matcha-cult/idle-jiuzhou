@@ -63,6 +63,11 @@ const MarketBuyDialog: React.FC<MarketBuyDialogProps> = ({
     unitPrice: listing.unitPrice,
   });
   const qualityClassName = getItemQualityMeta(listing.quality)?.className ?? '';
+  const detailItems: Array<{ label: string; value: string; wide?: boolean }> = [
+    { label: '挂单数量', value: `${listing.qty.toLocaleString()} 件` },
+    { label: '单价', value: `${listing.unitPrice.toLocaleString()} 灵石` },
+    { label: '卖家', value: listing.seller, wide: true },
+  ];
 
   return (
     <Modal
@@ -72,50 +77,79 @@ const MarketBuyDialog: React.FC<MarketBuyDialogProps> = ({
       onOk={() => onConfirm(summary.buyQty)}
       okText={summary.confirmLabel}
       cancelText="取消"
+      centered
       width={420}
       className="market-buy-dialog"
+      wrapClassName="market-buy-dialog-wrap"
       destroyOnHidden
     >
       <div className="market-buy-dialog__body">
-        <div className="market-buy-dialog__item">
-          <img
-            className={`market-buy-dialog__icon ${qualityClassName}`}
-            src={listing.icon}
-            alt={listing.name}
-          />
-          <div className="market-buy-dialog__meta">
-            <div className="market-buy-dialog__name">{listing.name}</div>
-            <div className="market-buy-dialog__seller">卖家：{listing.seller}</div>
+        <div className="market-buy-dialog__summary">
+          <div className="market-buy-dialog__item">
+            <img
+              className={`market-buy-dialog__icon ${qualityClassName}`}
+              src={listing.icon}
+              alt={listing.name}
+            />
+            <div className="market-buy-dialog__meta">
+              <div className="market-buy-dialog__name">{listing.name}</div>
+              <div className="market-buy-dialog__seller">请确认购买数量与本次消耗</div>
+            </div>
+          </div>
+          <div className="market-buy-dialog__chips">
+            <span className="market-buy-dialog__chip">最多可购 {listing.qty.toLocaleString()} 件</span>
+            <span className="market-buy-dialog__chip market-buy-dialog__chip--price">
+              单件 {listing.unitPrice.toLocaleString()} 灵石
+            </span>
           </div>
         </div>
 
-        <div className="market-buy-dialog__grid">
-          <div className="market-buy-dialog__label">挂单数量</div>
-          <div className="market-buy-dialog__value">{listing.qty}</div>
-
-          <div className="market-buy-dialog__label">单价</div>
-          <div className="market-buy-dialog__value">
-            {listing.unitPrice.toLocaleString()} 灵石
+        <div className="market-buy-dialog__panel market-buy-dialog__panel--details">
+          <div className="market-buy-dialog__stats">
+            {detailItems.map((item) => (
+              <div
+                key={item.label}
+                className={`market-buy-dialog__stat${item.wide ? ' market-buy-dialog__stat--wide' : ''}`}
+              >
+                <div className="market-buy-dialog__label">{item.label}</div>
+                <div className="market-buy-dialog__value">{item.value}</div>
+              </div>
+            ))}
           </div>
+        </div>
 
-          <div className="market-buy-dialog__label">购买数量</div>
-          <InputNumber<number>
-            min={1}
-            max={listing.qty}
-            value={summary.buyQty}
-            className="market-buy-dialog__input"
-            onChange={(value) => {
-              if (typeof value !== 'number') {
-                setDraftQty(1);
-                return;
-              }
-              setDraftQty(clampMarketBuyQuantity(value, listing.qty));
-            }}
-          />
-
-          <div className="market-buy-dialog__label">本次总价</div>
-          <div className="market-buy-dialog__value market-buy-dialog__value--price">
-            {summary.totalPrice.toLocaleString()} 灵石
+        <div className="market-buy-dialog__panel market-buy-dialog__panel--action">
+          <div className="market-buy-dialog__purchase-head">
+            <div className="market-buy-dialog__label">购买数量</div>
+            <div className="market-buy-dialog__purchase-tip">
+              输入范围 1 ~ {listing.qty.toLocaleString()}
+            </div>
+          </div>
+          <div className="market-buy-dialog__action-row">
+            <InputNumber<number>
+              min={1}
+              max={listing.qty}
+              value={summary.buyQty}
+              className="market-buy-dialog__input"
+              onChange={(value) => {
+                if (typeof value !== 'number') {
+                  setDraftQty(1);
+                  return;
+                }
+                setDraftQty(clampMarketBuyQuantity(value, listing.qty));
+              }}
+            />
+            <div className="market-buy-dialog__total">
+              <div className="market-buy-dialog__total-meta">
+                <span className="market-buy-dialog__total-label">本次总价</span>
+                <span className="market-buy-dialog__total-formula">
+                  {listing.unitPrice.toLocaleString()} × {summary.buyQty}
+                </span>
+              </div>
+              <div className="market-buy-dialog__total-value">
+                {summary.totalPrice.toLocaleString()} 灵石
+              </div>
+            </div>
           </div>
         </div>
       </div>

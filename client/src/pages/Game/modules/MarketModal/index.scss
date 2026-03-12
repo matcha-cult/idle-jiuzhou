@@ -15,6 +15,10 @@
   overflow: hidden;
 }
 
+.market-buy-dialog-wrap.ant-modal-wrap {
+  overflow: hidden;
+}
+
 .market-modal-shell {
   --market-item-icon-size: 48px;
   --market-item-icon-padding: 3px;
@@ -559,16 +563,31 @@
   gap: 16px;
 }
 
+.market-buy-dialog__summary,
+.market-buy-dialog__panel,
+.market-buy-dialog__total {
+  border: 1px solid var(--border-color-soft);
+  border-radius: 14px;
+  background: var(--panel-bg-soft);
+}
+
+.market-buy-dialog__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
 .market-buy-dialog__item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   min-width: 0;
 }
 
 .market-buy-dialog__icon {
-  width: 54px;
-  height: 54px;
+  width: 58px;
+  height: 58px;
   object-fit: contain;
   display: block;
   border-radius: 12px;
@@ -584,6 +603,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding-top: 2px;
 }
 
 .market-buy-dialog__name {
@@ -595,36 +615,157 @@
 }
 
 .market-buy-dialog__seller {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--text-tertiary);
+  line-height: 1.45;
 }
 
-.market-buy-dialog__grid {
+.market-buy-dialog__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.market-buy-dialog__chip {
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color-soft);
+  background: var(--panel-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.market-buy-dialog__chip--price {
+  color: var(--text-color);
+}
+
+.market-buy-dialog__panel {
+  padding: 12px;
+}
+
+.market-buy-dialog__panel--details {
+  padding: 10px;
+}
+
+.market-buy-dialog__stats {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 10px 12px;
-  align-items: center;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.market-buy-dialog__stat {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color-soft);
+  border-radius: 12px;
+  background: var(--panel-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.market-buy-dialog__stat--wide {
+  grid-column: 1 / -1;
 }
 
 .market-buy-dialog__label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
   color: var(--text-tertiary);
 }
 
 .market-buy-dialog__value {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 800;
   color: var(--text-color);
+  min-width: 0;
+  word-break: break-word;
 }
 
-.market-buy-dialog__value--price {
-  font-size: 14px;
+.market-buy-dialog__panel--action {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.market-buy-dialog__purchase-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 0;
+}
+
+.market-buy-dialog__purchase-tip {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-align: right;
+}
+
+.market-buy-dialog__action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
 }
 
 .market-buy-dialog__input {
   width: 100%;
+
+  .ant-input-number {
+    width: 100%;
+    height: 100%;
+  }
+
+  .ant-input-number-input-wrap {
+    height: 100%;
+  }
+
+  .ant-input-number-input {
+    height: 100%;
+    font-weight: 800;
+  }
+}
+
+.market-buy-dialog__total {
+  display: flex;
+  min-width: 142px;
+  justify-content: space-between;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color-soft);
+  border-radius: 12px;
+  background: var(--panel-bg);
+}
+
+.market-buy-dialog__total-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.market-buy-dialog__total-label {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--text-tertiary);
+}
+
+.market-buy-dialog__total-formula {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.market-buy-dialog__total-value {
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--text-color);
 }
 
 .market-empty {
@@ -1046,6 +1187,157 @@
     overflow-x: hidden;
     overflow-y: auto;
     padding-bottom: 12px;
+  }
+
+  .market-buy-dialog.ant-modal {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    margin: 0;
+  }
+
+  .market-buy-dialog-wrap.ant-modal-wrap.ant-modal-centered {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+  }
+
+  .market-buy-dialog-wrap.ant-modal-wrap.ant-modal-centered::before {
+    display: none;
+  }
+
+  .market-buy-dialog .ant-modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - 16px - env(safe-area-inset-bottom, 0px));
+    overflow: hidden;
+  }
+
+  .market-buy-dialog .ant-modal-header {
+    padding: 12px 14px 8px;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--border-color-soft);
+  }
+
+  .market-buy-dialog .ant-modal-title {
+    font-size: 14px;
+    font-weight: 900;
+  }
+
+  .market-buy-dialog .ant-modal-body {
+    flex: 1;
+    min-height: 0;
+    padding: 10px;
+    overflow-y: auto;
+  }
+
+  .market-buy-dialog .ant-modal-footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 0;
+    padding: 8px 10px 10px;
+    border-top: 1px solid var(--border-color-soft);
+  }
+
+  .market-buy-dialog .ant-modal-footer .ant-btn {
+    width: 100%;
+    height: 36px;
+    margin-inline-start: 0 !important;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .market-buy-dialog__body {
+    gap: 10px;
+  }
+
+  .market-buy-dialog__summary,
+  .market-buy-dialog__panel,
+  .market-buy-dialog__total {
+    padding: 10px;
+  }
+
+  .market-buy-dialog__item {
+    gap: 8px;
+  }
+
+  .market-buy-dialog__icon {
+    width: 46px;
+    height: 46px;
+  }
+
+  .market-buy-dialog__summary {
+    gap: 10px;
+  }
+
+  .market-buy-dialog__name {
+    font-size: 14px;
+  }
+
+  .market-buy-dialog__seller,
+  .market-buy-dialog__purchase-tip,
+  .market-buy-dialog__label,
+  .market-buy-dialog__chip,
+  .market-buy-dialog__total-formula {
+    font-size: 11px;
+  }
+
+  .market-buy-dialog__stats {
+    gap: 6px;
+  }
+
+  .market-buy-dialog__stat {
+    padding: 8px 10px;
+  }
+
+  .market-buy-dialog__value {
+    font-size: 13px;
+  }
+
+  .market-buy-dialog__purchase-head,
+  .market-buy-dialog__action-row {
+    gap: 8px;
+  }
+
+  .market-buy-dialog__purchase-head {
+    flex-direction: column;
+  }
+
+  .market-buy-dialog__action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .market-buy-dialog__purchase-head,
+  .market-buy-dialog__total {
+    align-items: flex-start;
+  }
+
+  .market-buy-dialog__purchase-tip {
+    text-align: left;
+  }
+
+  .market-buy-dialog__input {
+    height: 36px;
+  }
+
+  .market-buy-dialog__input .ant-input-number-input {
+    height: 34px;
+  }
+
+  .market-buy-dialog__total {
+    min-width: 0;
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 10px;
+  }
+
+  .market-buy-dialog__total-value {
+    font-size: 15px;
   }
 }
 
