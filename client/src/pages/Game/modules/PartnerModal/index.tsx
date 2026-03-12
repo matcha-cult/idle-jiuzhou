@@ -381,12 +381,12 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
     setActionKey(`recruit-confirm-${generationId}`);
     try {
       const res = await confirmPartnerRecruitDraft(generationId);
-      if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '确认收下失败'));
-      message.success(res.message || '已确认收下伙伴');
+      if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '确认招募失败'));
+      message.success(res.message || '已确认招募伙伴');
       await Promise.all([refreshRecruitStatus(), refreshOverview()]);
       gameSocket.refreshCharacter();
     } catch (error) {
-      message.error(getUnifiedApiErrorMessage(error as { message?: string }, '确认收下失败'));
+      message.error(getUnifiedApiErrorMessage(error as { message?: string }, '确认招募失败'));
     } finally {
       setActionKey('');
     }
@@ -951,7 +951,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                   void handleConfirmRecruit(recruitPanelView.job.generationId);
                 }}
               >
-                确认收下
+                确认招募
               </Button>
             </div>
           </div>
