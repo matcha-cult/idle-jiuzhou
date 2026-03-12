@@ -25,6 +25,9 @@ import {
   fillPartnerRecruitBaseAttrs,
   validatePartnerRecruitDraft,
 } from '../shared/partnerRecruitRules.js';
+import {
+  PARTNER_RECRUIT_FORM_RULES,
+} from '../shared/partnerRecruitCreativeDirection.js';
 import { buildPartnerBattleAttrs } from '../shared/partnerRules.js';
 
 const DEFAULT_BASE_ATTRS: PartnerRecruitDraft['partner']['baseAttrs'] = {
@@ -178,6 +181,10 @@ test('buildPartnerRecruitPromptInput: 应放开 role 枚举并要求显式提供
   );
   assert.equal(
     promptInput.constraints?.includes('partner.combatStyle 必须严格从 allowedCombatStyles 中选择，用于决定攻击型天生功法走武技还是法诀；physical 表示偏武道，magic 表示偏术法'),
+    true,
+  );
+  assert.equal(
+    PARTNER_RECRUIT_FORM_RULES.every((rule) => promptInput.constraints?.includes(rule) === true),
     true,
   );
 });

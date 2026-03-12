@@ -64,6 +64,9 @@ import {
   validatePartnerRecruitDraft,
 } from './shared/partnerRecruitRules.js';
 import {
+  PARTNER_RECRUIT_FORM_RULES,
+} from './shared/partnerRecruitCreativeDirection.js';
+import {
   buildPartnerRecruitUnlockState,
   type PartnerRecruitUnlockState,
 } from './shared/partnerRecruitUnlock.js';
@@ -135,6 +138,7 @@ const PARTNER_RECRUIT_PROMPT_SYSTEM_MESSAGE = [
   '你要生成一个可招募的仙侠伙伴草稿，字段必须完整且满足输入约束。',
   '字段名必须与输入约束和 response schema 完全一致，不得自创别名。',
   '不要生成现代词汇、科幻词汇、英文名、阿拉伯数字名。',
+  ...PARTNER_RECRUIT_FORM_RULES,
 ].join('\n');
 
 const DEFAULT_ATTACK_SKILL_ICON = '/assets/skills/icon_skill_38.png';

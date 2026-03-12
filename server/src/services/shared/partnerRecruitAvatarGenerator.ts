@@ -25,6 +25,11 @@ import {
   downloadImageBuffer,
   generateConfiguredImageAsset,
 } from '../ai/imageModelClient.js';
+import {
+  PARTNER_RECRUIT_AVATAR_COMPOSITION_RULES,
+  PARTNER_RECRUIT_AVATAR_STYLE_RULES,
+  PARTNER_RECRUIT_FORM_RULES,
+} from './partnerRecruitCreativeDirection.js';
 
 export type PartnerRecruitAvatarInput = {
   partnerId: string;
@@ -43,13 +48,14 @@ const OUTPUT_QUALITY = 84;
 
 const buildPartnerRecruitAvatarPrompt = (input: PartnerRecruitAvatarInput): string => {
   return [
-    `生成中国仙侠角色头像，角色名「${input.name}」`,
-    `角色定位：${input.role}`,
-    `角色品质：${input.quality}`,
+    `生成中国仙侠伙伴头像，角色名「${input.name}」`,
+    `伙伴定位：${input.role}`,
+    `伙伴品质：${input.quality}`,
     `元素倾向：${input.element}`,
-    `角色描述：${input.description}`,
-    '半身角色立绘头像，单人物正面或微侧，东方仙侠服饰，人物面部清晰',
-    '背景简洁，避免武器遮挡面部，避免多人，避免文字水印，避免 Q 版',
+    `伙伴描述：${input.description}`,
+    ...PARTNER_RECRUIT_FORM_RULES,
+    ...PARTNER_RECRUIT_AVATAR_STYLE_RULES,
+    ...PARTNER_RECRUIT_AVATAR_COMPOSITION_RULES,
   ].join('\n');
 };
 
