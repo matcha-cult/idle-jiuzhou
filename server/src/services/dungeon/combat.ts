@@ -27,8 +27,13 @@ import {
   type AutoDisassembleSetting,
   type PendingMailItem,
 } from '../autoDisassembleRewardService.js';
-import { lockCharacterInventoryMutexes } from '../inventoryMutex.js';
+import {
+  addCharacterRewardDelta,
+  applyCharacterRewardDeltas,
+  type CharacterRewardDelta,
+} from '../shared/characterRewardSettlement.js';
 import { resolveQualityRankFromName } from '../shared/itemQuality.js';
+import { lockCharacterRewardSettlementTargets } from '../shared/characterRewardTargetLock.js';
 import { getDungeonDifficultyById, getItemDefinitionById } from '../staticConfigLoader.js';
 import { getDungeonDefById } from './shared/configLoader.js';
 import { touchEntryCount, incEntryCount } from './shared/entryCount.js';
@@ -318,6 +323,7 @@ export const nextDungeonInstance = async (
         )].sort((a, b) => a - b);
         const clearCountMap = new Map<number, number>();
         const autoDisassembleSettings = new Map<number, AutoDisassembleSetting>();
+        const pendingCharacterRewardDeltas = new Map<number, CharacterRewardDelta>();
         const itemMetaCache = new Map<
           string,
           {
@@ -329,9 +335,7 @@ export const nextDungeonInstance = async (
           }
         >();
 
-        if (participantCharacterIds.length > 0) {
-          await lockCharacterInventoryMutexes(participantCharacterIds);
-        }
+        await lockCharacterRewardSettlementTargets(participantCharacterIds);
 
         const appendGrantedItem = (
           list: Array<{ item_def_id: string; qty: number; item_ids: number[] }>,
@@ -457,12 +461,10 @@ export const nextDungeonInstance = async (
             );
           }
 
-          if (rewardBundle.exp > 0 || rewardBundle.silver > 0) {
-            await query(
-              `UPDATE characters SET exp = exp + $1, silver = silver + $2, updated_at = NOW() WHERE id = $3`,
-              [rewardBundle.exp, rewardBundle.silver, characterId]
-            );
-          }
+          addCharacterRewardDelta(pendingCharacterRewardDeltas, characterId, {
+            exp: rewardBundle.exp,
+            silver: rewardBundle.silver,
+          });
 
           const autoDisassembleSetting =
             autoDisassembleSettings.get(characterId) ||
@@ -496,16 +498,9 @@ export const nextDungeonInstance = async (
               addSilver: async (ownerCharacterId, silverGain) => {
                 const safeSilver = Math.max(0, Math.floor(Number(silverGain) || 0));
                 if (safeSilver <= 0) return { success: true, message: '无需增加银两' };
-                const updateRes = await query(
-                  `
-                    UPDATE characters
-                    SET silver = silver + $1,
-                        updated_at = NOW()
-                    WHERE id = $2
-                  `,
-                  [safeSilver, ownerCharacterId]
-                );
-                if (updateRes.rowCount === 0) return { success: false, message: '角色不存在' };
+                addCharacterRewardDelta(pendingCharacterRewardDeltas, ownerCharacterId, {
+                  silver: safeSilver,
+                });
                 return { success: true, message: '银两增加成功' };
               },
             });
@@ -571,6 +566,8 @@ export const nextDungeonInstance = async (
       for (const characterId of taskEventCharacterIds) {
         await recordDungeonClearEvent(characterId, inst.dungeon_id, 1, inst.difficulty_id);
       }
+
+      await applyCharacterRewardDeltas(pendingCharacterRewardDeltas);
 
       return { success: true, data: { instanceId, status: 'cleared', finished: true } };
     }

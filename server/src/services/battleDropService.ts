@@ -7,7 +7,6 @@
  * 3. 分发物品、装备给玩家（组队按战利品条目独立ROLL点分配）
  * 4. 装备通过装备生成模块生成
  */
-import type { PoolClient } from 'pg';
 import { query, withTransactionAuto } from '../config/database.js';
 import { itemService, CreateItemOptions } from './itemService.js';
 import { sendSystemMail, type MailAttachItem } from './mailService.js';
@@ -32,13 +31,13 @@ import {
   getMonsterRealmAdjustedBaseQuantityRange,
   shouldApplyDropQuantityMultiplier,
 } from './shared/dropQuantityMultiplier.js';
-import { lockCharacterInventoryMutexesByClient } from './inventoryMutex.js';
 import {
   addCharacterRewardDelta,
   applyCharacterRewardDeltas,
   type CharacterRewardDelta,
 } from './shared/characterRewardSettlement.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
+import { lockCharacterRewardSettlementTargets } from './shared/characterRewardTargetLock.js';
 import { getRealmOrderIndex } from './shared/realmRules.js';
 
 // ============================================
@@ -394,13 +393,12 @@ class BattleDropService {
     isVictory: boolean,
     options: DistributeBattleRewardsOptions = {}
   ): Promise<DistributeResult> {
-    return withTransactionAuto((client) =>
-      this.distributeBattleRewardsInTransaction(client, monsters, participants, isVictory, options),
+    return withTransactionAuto(() =>
+      this.distributeBattleRewardsInTransaction(monsters, participants, isVictory, options),
     );
   }
 
   private async distributeBattleRewardsInTransaction(
-    client: PoolClient,
     monsters: MonsterData[],
     participants: BattleParticipant[],
     isVictory: boolean,
@@ -568,12 +566,13 @@ class BattleDropService {
     const requiresInventoryMutation = mergedDropsByReceiver.size > 0;
 
     if (requiresInventoryMutation && participantCharacterIds.length > 0) {
-      // 这里只拿背包互斥锁，不提前锁 characters。
-      // 角色资源改为在所有入包完成后统一落库，避免“先 characters 行锁、后背包锁”的反向等待。
-      await lockCharacterInventoryMutexesByClient(client, participantCharacterIds);
+      // 奖励结算统一固定为“先背包互斥锁，再按升序锁 characters 行”。
+      // 这样可以避免同角色并发发奖时，在入包阶段与最终资源落库阶段出现反向等待。
+      await lockCharacterRewardSettlementTargets(participantCharacterIds);
     }
     
-    // 3. 先汇总经验和银两，等所有入包流程结束后再统一写回，缩短 characters 行锁持有时长。
+    // 3. 先汇总经验和银两，等入包/补发/事件记录流程结束后再统一写回，
+    //    避免把角色资源更新散落在多个奖励分支里。
     let totalExp = 0;
     let totalSilver = 0;
     
