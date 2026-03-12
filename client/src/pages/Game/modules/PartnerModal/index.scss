@@ -211,9 +211,7 @@
 
 .partner-list {
   display: grid;
-  // 让桌面端卡片维持稳定宽度并整体居中，避免最后一行单张卡片挂在左侧。
-  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 320px));
-  justify-content: center;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   align-content: start;
 }
@@ -747,10 +745,6 @@
 @media screen and (max-width: 1080px) {
   .partner-modal-left {
     width: 160px;
-  }
-
-  .partner-list {
-    grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 280px));
   }
 
   .partner-upgrade-top {
