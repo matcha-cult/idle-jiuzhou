@@ -103,12 +103,18 @@
 
 .partner-modal-right {
   flex: 1;
+  min-height: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 14px;
   overflow: auto;
+}
+
+.partner-modal-right > .partner-list-card,
+.partner-modal-right > .partner-pane-card {
+  flex-shrink: 0;
 }
 
 .partner-current-card,
@@ -205,7 +211,9 @@
 
 .partner-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  // 让桌面端卡片维持稳定宽度并整体居中，避免最后一行单张卡片挂在左侧。
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 320px));
+  justify-content: center;
   gap: 10px;
   align-content: start;
 }
@@ -742,7 +750,7 @@
   }
 
   .partner-list {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 280px));
   }
 
   .partner-upgrade-top {
@@ -761,6 +769,7 @@
     height: auto;
     flex-direction: column;
     max-height: calc(100dvh - 96px);
+    overflow: hidden;
   }
 
   .partner-modal-left {
