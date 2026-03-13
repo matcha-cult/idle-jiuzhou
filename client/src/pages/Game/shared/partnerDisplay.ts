@@ -24,6 +24,7 @@ import type {
 } from '../../../services/api';
 import { formatPercent, formatRecovery } from './formatAttr';
 import { getAttrLabel, isPercentAttrKey } from './attrDisplay';
+import { formatElementLabel } from './elementTheme';
 import { DEFAULT_ICON, resolveIconUrl } from './resolveIcon';
 
 export const PARTNER_COMBAT_ATTR_ORDER: Array<keyof PartnerBaseAttrsDto> = [
@@ -56,16 +57,6 @@ export const PARTNER_COMBAT_ATTR_ORDER: Array<keyof PartnerBaseAttrsDto> = [
   'lingqi_huifu',
 ];
 
-const PARTNER_ELEMENT_LABELS: Record<string, string> = {
-  none: '无属性',
-  jin: '金',
-  mu: '木',
-  shui: '水',
-  huo: '火',
-  tu: '土',
-  an: '暗',
-};
-
 export const getPartnerAttrLabel = (
   attrKey: keyof PartnerComputedAttrsDto | string,
 ): string => {
@@ -83,7 +74,7 @@ export const formatPartnerAttrValue = (
 };
 
 export const formatPartnerElementLabel = (element: string): string => {
-  return PARTNER_ELEMENT_LABELS[element] ?? '无属性';
+  return formatElementLabel(element, '无属性');
 };
 
 export const resolvePartnerAvatar = (avatar: string | null): string => {

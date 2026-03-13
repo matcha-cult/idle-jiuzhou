@@ -36,6 +36,13 @@ body {
   --rarity-xuan-border-soft: rgba(114, 46, 209, 0.45);
   --rarity-di-border-soft: rgba(250, 140, 22, 0.45);
   --rarity-tian-border-soft: rgba(245, 34, 45, 0.45);
+  --element-none-color: #8c8c8c;
+  --element-jin-color: #d4a017;
+  --element-mu-color: #389e0d;
+  --element-shui-color: #1677ff;
+  --element-huo-color: #f5222d;
+  --element-tu-color: #8c6d1f;
+  --element-an-color: #722ed1;
   --battle-hp-grad-start: #ff5a5a;
   --battle-hp-grad-end: #ff9b9b;
   --battle-qi-grad-start: #1677ff;
@@ -82,6 +89,13 @@ body.theme-dark {
   --rarity-xuan-border-soft: rgba(179, 127, 235, 0.45);
   --rarity-di-border-soft: rgba(255, 192, 105, 0.45);
   --rarity-tian-border-soft: rgba(255, 120, 117, 0.45);
+  --element-none-color: #a3a3a3;
+  --element-jin-color: #fbbf24;
+  --element-mu-color: #73d13d;
+  --element-shui-color: #69b1ff;
+  --element-huo-color: #ff7875;
+  --element-tu-color: #d3ad66;
+  --element-an-color: #b37feb;
   --battle-hp-grad-start: #ff5a5a;
   --battle-hp-grad-end: #ff9b9b;
   --battle-qi-grad-start: #1677ff;

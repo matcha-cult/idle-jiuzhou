@@ -46,6 +46,7 @@ import {
   resolvePartnerNextSelectedId,
   type PartnerPanelKey,
 } from './partnerShared';
+import { getElementTextClassName, getElementToneClassName } from '../../shared/elementTheme';
 import {
   buildPartnerRecruitIndicator,
   formatPartnerRecruitCooldownRemaining,
@@ -484,7 +485,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
                 <div className="partner-list-info">
                   <div className="partner-list-name">{partner.nickname || partner.name}</div>
                   <div className="partner-list-desc">
-                    等级 {partner.level} · {formatPartnerElementLabel(partner.element)} · {partner.role}
+                    等级 {partner.level} · <span className={getElementTextClassName(partner.element)}>{formatPartnerElementLabel(partner.element)}</span> · {partner.role}
                   </div>
                   <div className="partner-tag-row">
                     <Tag color={partner.isActive ? 'green' : 'default'}>{partner.isActive ? '已出战' : '待命中'}</Tag>
@@ -539,7 +540,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
               {selectedPartner.tradeStatus === 'market_listed' ? <Tag color="orange">坊市中</Tag> : null}
             </div>
             <div className="partner-tag-row">
-              <Tag color="blue">{formatPartnerElementLabel(selectedPartner.element)}</Tag>
+              <Tag className={getElementToneClassName(selectedPartner.element)}>{formatPartnerElementLabel(selectedPartner.element)}</Tag>
               <Tag color="cyan">{selectedPartner.role}</Tag>
               <Tag color="purple">功法槽 {selectedPartner.slotCount}</Tag>
             </div>
@@ -838,7 +839,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
             <div className="partner-name">{preview.name}</div>
             <div className="partner-tag-row">
               <Tag color="gold">{preview.quality}</Tag>
-              <Tag color="blue">{formatPartnerElementLabel(preview.element)}</Tag>
+              <Tag className={getElementToneClassName(preview.element)}>{formatPartnerElementLabel(preview.element)}</Tag>
               <Tag color="cyan">{preview.role}</Tag>
               <Tag color="purple">功法槽 {preview.slotCount}</Tag>
             </div>

@@ -13,6 +13,7 @@
   --game-tooltip-max-height: min(62vh, 560px);
   --game-tooltip-min-width: 200px;
   --game-tooltip-max-width: min(320px, calc(100vw - 24px));
+  --element-tag-base-bg: var(--game-tooltip-surface-chip-bg);
 }
 
 .skill-fab-tooltip-content {
@@ -105,18 +106,6 @@ body.theme-dark .skill-fab-tooltip-chip.is-qixue {
   background: rgba(239, 68, 68, 0.18);
   border-color: rgba(239, 68, 68, 0.36);
   color: #f87171;
-}
-
-.skill-fab-tooltip-chip.is-element {
-  background: rgba(234, 179, 8, 0.1);
-  border-color: rgba(234, 179, 8, 0.3);
-  color: #b45309;
-}
-
-body.theme-dark .skill-fab-tooltip-chip.is-element {
-  background: rgba(251, 191, 36, 0.14);
-  border-color: rgba(251, 191, 36, 0.32);
-  color: #fbbf24;
 }
 
 .skill-fab-tooltip-row.is-unusable .skill-fab-tooltip-label {

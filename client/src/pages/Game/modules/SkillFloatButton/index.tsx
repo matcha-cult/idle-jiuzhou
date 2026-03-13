@@ -1,6 +1,7 @@
 import { App, Tooltip } from 'antd';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { getCharacterTechniqueStatus, resolveAssetUrl, type CharacterSkillSlotDto } from '../../../../services/api';
+import { formatElementLabel, getElementToneClassName } from '../../shared/elementTheme';
 import { resolveIconUrl } from '../../shared/resolveIcon';
 import { gameSocket } from '../../../../services/gameSocket';
 import { readIsMobileViewport, useIsMobile } from '../../shared/responsive';
@@ -206,17 +207,6 @@ const formatTargetType = (t: string): string => {
   if (v === 'all_ally') return '全体友方';
   if (v === 'self') return '自身';
   return v || '未知';
-};
-
-const formatElement = (e: string): string => {
-  const v = (e || '').trim();
-  if (v === 'none') return '无';
-  if (v === 'jin') return '金';
-  if (v === 'mu') return '木';
-  if (v === 'shui') return '水';
-  if (v === 'huo') return '火';
-  if (v === 'tu') return '土';
-  return v || '无';
 };
 
 const SKILL_FAB_TOOLTIP_CLASS_NAMES = {
@@ -917,7 +907,7 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
             }));
             const hasCost = costEntries.length > 0;
             const hasCooldown = s.cooldownTurns > 0;
-            const elementLabel = formatElement(s.element);
+            const elementLabel = formatElementLabel(s.element);
             const hasElement = elementLabel !== '无';
             const targetLabel = formatTargetType(s.targetType) + (s.targetCount > 1 ? `×${s.targetCount}` : '');
             const tooltipTitle = (
@@ -950,7 +940,7 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
                     <span className="skill-fab-tooltip-value">
                       <span className="skill-fab-tooltip-chip">{formatDamageType(s.damageType)}</span>
                       <span className="skill-fab-tooltip-chip">{targetLabel}</span>
-                      {hasElement && <span className="skill-fab-tooltip-chip is-element">{elementLabel}</span>}
+                      {hasElement && <span className={`skill-fab-tooltip-chip is-element ${getElementToneClassName(s.element)}`}>{elementLabel}</span>}
                     </span>
                   </div>
                   {unavailableReason ? (

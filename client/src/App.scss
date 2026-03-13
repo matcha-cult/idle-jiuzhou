@@ -91,3 +91,15 @@ body .ant-tag.ant-tag-error.ant-tag-outlined,
 body .ant-tag.ant-tag-error.ant-tag-solid {
   @include appTag.chip-accent(var(--danger-color), var(--app-tag-base-bg), 18%, 10%, 34%, 86%);
 }
+
+body .ant-tag.game-element-tone {
+  @include appTag.element-tone(var(--element-tag-base-bg, var(--app-tag-base-bg)));
+}
+
+body .game-element-tone {
+  @include appTag.element-tone(var(--element-tag-base-bg, var(--app-tag-base-bg)));
+}
+
+body .game-element-text {
+  @include appTag.element-text();
+}

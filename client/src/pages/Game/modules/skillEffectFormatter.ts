@@ -1,5 +1,6 @@
 import { formatMarkEffectText } from "../shared/markEffectText";
 import { translateControlName } from "../shared/controlNameMap";
+import { formatElementLabel as formatSharedElementLabel } from "../shared/elementTheme";
 
 type SkillEffectContext = {
   damageType?: string | null | undefined;
@@ -10,15 +11,6 @@ const DAMAGE_TYPE_LABEL: Record<string, string> = {
   physical: '物理',
   magic: '法术',
   true: '真实',
-};
-
-const ELEMENT_LABEL: Record<string, string> = {
-  none: '无',
-  jin: '金',
-  mu: '木',
-  shui: '水',
-  huo: '火',
-  tu: '土',
 };
 
 const RESOURCE_TYPE_LABEL: Record<string, string> = {
@@ -129,8 +121,7 @@ export const formatDamageTypeLabel = (value: string | null | undefined): string 
 };
 
 export const formatElementLabel = (value: string | null | undefined): string => {
-  if (!value) return '';
-  return ELEMENT_LABEL[value] || value;
+  return formatSharedElementLabel(value);
 };
 
 const describeScaleAttr = (attrRaw: unknown): string => {

@@ -5,6 +5,7 @@ import {
   formatPartnerElementLabel,
   resolvePartnerAvatar,
 } from '../../shared/partnerDisplay';
+import { getElementToneClassName } from '../../shared/elementTheme';
 import { getItemQualityMeta } from '../../shared/itemQuality';
 
 interface MarketPartnerPreviewSheetProps {
@@ -55,7 +56,7 @@ const MarketPartnerPreviewSheet: React.FC<MarketPartnerPreviewSheetProps> = ({
                 <span className={`market-list-sheet-tag market-list-sheet-tag--quality ${getQualityClassName(partner.quality)}`}>
                   {partner.quality}
                 </span>
-                <span className="market-list-sheet-tag">{formatPartnerElementLabel(partner.element)}</span>
+                <span className={`market-list-sheet-tag ${getElementToneClassName(partner.element)}`}>{formatPartnerElementLabel(partner.element)}</span>
                 <span className="market-list-sheet-tag">{partner.role}</span>
                 <span className="market-list-sheet-tag">等级 {partner.level}</span>
               </div>

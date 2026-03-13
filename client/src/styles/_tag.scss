@@ -1,5 +1,5 @@
 /**
- * 作用：统一项目内 Ant Tag 与通用品质标签的渐变、描边和小圆角视觉，减少各模块重复定义。
+ * 作用：统一项目内 Ant Tag、元素标签与通用品质标签的渐变、描边和小圆角视觉，减少各模块重复定义。
  * 不做什么：不负责标签布局间距与业务文案。
  * 输入/输出：输入为基础底色、强调色和圆角；输出为可供全局 `.ant-tag` 与业务模块 class 复用的 mixin。
  * 数据流/状态流：App 全局样式消费 Ant Tag 基础皮肤；业务模块只在需要语义色或自定义 span 标签时复用本文件的 mixin。
@@ -75,5 +75,65 @@
 
   &.q-tian {
     @include chip-accent(var(--rarity-tian), $base-bg, 20%, 12%, 38%, 92%);
+  }
+}
+
+@mixin element-tone($base-bg: var(--panel-bg)) {
+  &.game-element--none {
+    @include chip-accent(var(--element-none-color), $base-bg, 14%, 8%, 28%, 72%);
+  }
+
+  &.game-element--jin {
+    @include chip-accent(var(--element-jin-color), $base-bg, 20%, 12%, 38%, 90%);
+  }
+
+  &.game-element--mu {
+    @include chip-accent(var(--element-mu-color), $base-bg, 20%, 12%, 38%, 90%);
+  }
+
+  &.game-element--shui {
+    @include chip-accent(var(--element-shui-color), $base-bg, 20%, 12%, 38%, 90%);
+  }
+
+  &.game-element--huo {
+    @include chip-accent(var(--element-huo-color), $base-bg, 20%, 12%, 38%, 90%);
+  }
+
+  &.game-element--tu {
+    @include chip-accent(var(--element-tu-color), $base-bg, 20%, 12%, 38%, 90%);
+  }
+
+  &.game-element--an {
+    @include chip-accent(var(--element-an-color), $base-bg, 20%, 12%, 38%, 90%);
+  }
+}
+
+@mixin element-text() {
+  &.game-element--none {
+    color: color-mix(in srgb, var(--element-none-color) 76%, var(--text-secondary));
+  }
+
+  &.game-element--jin {
+    color: color-mix(in srgb, var(--element-jin-color) 88%, var(--text-color));
+  }
+
+  &.game-element--mu {
+    color: color-mix(in srgb, var(--element-mu-color) 88%, var(--text-color));
+  }
+
+  &.game-element--shui {
+    color: color-mix(in srgb, var(--element-shui-color) 88%, var(--text-color));
+  }
+
+  &.game-element--huo {
+    color: color-mix(in srgb, var(--element-huo-color) 88%, var(--text-color));
+  }
+
+  &.game-element--tu {
+    color: color-mix(in srgb, var(--element-tu-color) 88%, var(--text-color));
+  }
+
+  &.game-element--an {
+    color: color-mix(in srgb, var(--element-an-color) 88%, var(--text-color));
   }
 }

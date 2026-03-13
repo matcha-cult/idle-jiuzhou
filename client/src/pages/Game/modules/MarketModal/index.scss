@@ -1633,6 +1633,7 @@
 
 .market-list-sheet {
   --market-sheet-tag-base-bg: var(--panel-bg-soft);
+  --element-tag-base-bg: var(--market-sheet-tag-base-bg);
   position: fixed;
   left: 0;
   right: 0;

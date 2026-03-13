@@ -19,6 +19,7 @@
  */
 import type { ReactNode } from 'react';
 import type { TechniqueResearchJobDto } from '../../../../services/api';
+import { getElementTextClassName } from '../../shared/elementTheme';
 import { buildSkillCostEntries, normalizeSkillCost } from '../../shared/skillCost';
 import {
   formatDamageTypeLabel,
@@ -53,7 +54,7 @@ type SkillDetailItem = {
 
 export type SkillCardSection = {
   metaItems: Array<{ label: string; value: string }>;
-  gridItems: Array<{ label: string; value: string }>;
+  gridItems: Array<{ label: string; value: string; valueClassName?: string }>;
   summaryItems: SkillDetailItem[];
 };
 
@@ -161,7 +162,13 @@ export const getSkillCardSections = (skill: TechniqueSkillDetailLike): SkillCard
   if (damageTypeText) gridItems.push({ label: '伤害', value: damageTypeText });
 
   const elementText = formatElementLabel(skill.element);
-  if (elementText && elementText !== '无') gridItems.push({ label: '五行', value: elementText });
+  if (elementText && elementText !== '无') {
+    gridItems.push({
+      label: '五行',
+      value: elementText,
+      valueClassName: getElementTextClassName(skill.element),
+    });
+  }
 
   return {
     metaItems,
@@ -220,7 +227,7 @@ export const renderSkillCardDetails = (skill: TechniqueSkillDetailLike): ReactNo
           {sections.gridItems.map((item) => (
             <div key={`${item.label}-${item.value}`} className="skill-card-grid-item">
               <span className="skill-card-grid-label">{item.label}</span>
-              <span className="skill-card-grid-value">{item.value}</span>
+              <span className={`skill-card-grid-value${item.valueClassName ? ` ${item.valueClassName}` : ''}`}>{item.value}</span>
             </div>
           ))}
         </div>
