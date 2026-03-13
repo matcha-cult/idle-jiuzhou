@@ -25,7 +25,9 @@ import { redis } from '../../config/redis.js';
 // 类型定义
 // ============================================
 
-export interface CacheLayerOptions<T> {
+type CacheKey = string | number;
+
+export interface CacheLayerOptions<K extends CacheKey, T> {
   /** Redis 键前缀（如 'equip:snapshot:'） */
   keyPrefix: string;
   /** Redis TTL（秒） */
@@ -33,20 +35,20 @@ export interface CacheLayerOptions<T> {
   /** 内存 TTL（毫秒） */
   memoryTtlMs: number;
   /** 缓存未命中时的数据加载函数，返回 null 表示数据不存在 */
-  loader: (id: number) => Promise<T | null>;
+  loader: (key: K) => Promise<T | null>;
   /** 自定义序列化（默认 JSON.stringify） */
   serialize?: (value: T) => string;
   /** 自定义反序列化（默认 JSON.parse） */
   deserialize?: (raw: string) => T;
 }
 
-export interface CacheLayer<T> {
+export interface CacheLayer<K extends CacheKey, T> {
   /** 读取缓存，未命中则调用 loader 加载并回填 */
-  get: (id: number) => Promise<T | null>;
+  get: (key: K) => Promise<T | null>;
   /** 直接设置缓存值（跳过 loader） */
-  set: (id: number, value: T) => Promise<void>;
-  /** 删除指定 id 的缓存 */
-  invalidate: (id: number) => Promise<void>;
+  set: (key: K, value: T) => Promise<void>;
+  /** 删除指定 key 的缓存 */
+  invalidate: (key: K) => Promise<void>;
   /** 清除所有内存缓存（Redis 缓存依赖 TTL 自然过期） */
   invalidateAll: () => void;
 }
@@ -59,7 +61,7 @@ export interface CacheLayer<T> {
  * 创建一个双层缓存实例
  *
  * 复用点：所有需要 内存+Redis 双层缓存的场景均可使用，
- *   包括角色属性、装备快照、功法配置等。
+ *   包括角色属性、装备快照、排行榜分页结果、邮件红点计数等。
  *
  * 使用示例：
  *   const equipCache = createCacheLayer({
@@ -70,7 +72,9 @@ export interface CacheLayer<T> {
  *   });
  *   const data = await equipCache.get(characterId);
  */
-export function createCacheLayer<T>(options: CacheLayerOptions<T>): CacheLayer<T> {
+export function createCacheLayer<K extends CacheKey, T>(
+  options: CacheLayerOptions<K, T>,
+): CacheLayer<K, T> {
   const {
     keyPrefix,
     redisTtlSec,
@@ -80,27 +84,27 @@ export function createCacheLayer<T>(options: CacheLayerOptions<T>): CacheLayer<T
     deserialize = JSON.parse as (raw: string) => T,
   } = options;
 
-  const memoryCache = new Map<number, { payload: T; expiresAt: number }>();
+  const memoryCache = new Map<K, { payload: T; expiresAt: number }>();
 
-  function redisKey(id: number): string {
-    return `${keyPrefix}${id}`;
+  function redisKey(key: K): string {
+    return `${keyPrefix}${String(key)}`;
   }
 
-  async function get(id: number): Promise<T | null> {
+  async function get(key: K): Promise<T | null> {
     // 1. 内存层
-    const mem = memoryCache.get(id);
+    const mem = memoryCache.get(key);
     if (mem && mem.expiresAt > Date.now()) {
       return mem.payload;
     }
     // 内存过期则删除
-    if (mem) memoryCache.delete(id);
+    if (mem) memoryCache.delete(key);
 
     // 2. Redis 层
     try {
-      const raw = await redis.get(redisKey(id));
+      const raw = await redis.get(redisKey(key));
       if (raw !== null) {
         const value = deserialize(raw);
-        memoryCache.set(id, { payload: value, expiresAt: Date.now() + memoryTtlMs });
+        memoryCache.set(key, { payload: value, expiresAt: Date.now() + memoryTtlMs });
         return value;
       }
     } catch {
@@ -108,13 +112,13 @@ export function createCacheLayer<T>(options: CacheLayerOptions<T>): CacheLayer<T
     }
 
     // 3. Loader（DB 查询）
-    const loaded = await loader(id);
+    const loaded = await loader(key);
     if (loaded === null) return null;
 
     // 回填两层
-    memoryCache.set(id, { payload: loaded, expiresAt: Date.now() + memoryTtlMs });
+    memoryCache.set(key, { payload: loaded, expiresAt: Date.now() + memoryTtlMs });
     try {
-      await redis.set(redisKey(id), serialize(loaded), 'EX', redisTtlSec);
+      await redis.set(redisKey(key), serialize(loaded), 'EX', redisTtlSec);
     } catch {
       // Redis 不可用时仅保留内存缓存
     }
@@ -122,19 +126,19 @@ export function createCacheLayer<T>(options: CacheLayerOptions<T>): CacheLayer<T
     return loaded;
   }
 
-  async function set(id: number, value: T): Promise<void> {
-    memoryCache.set(id, { payload: value, expiresAt: Date.now() + memoryTtlMs });
+  async function set(key: K, value: T): Promise<void> {
+    memoryCache.set(key, { payload: value, expiresAt: Date.now() + memoryTtlMs });
     try {
-      await redis.set(redisKey(id), serialize(value), 'EX', redisTtlSec);
+      await redis.set(redisKey(key), serialize(value), 'EX', redisTtlSec);
     } catch {
       // Redis 不可用时仅保留内存缓存
     }
   }
 
-  async function invalidate(id: number): Promise<void> {
-    memoryCache.delete(id);
+  async function invalidate(key: K): Promise<void> {
+    memoryCache.delete(key);
     try {
-      await redis.del(redisKey(id));
+      await redis.del(redisKey(key));
     } catch {
       // 忽略
     }

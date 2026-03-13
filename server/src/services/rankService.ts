@@ -1,9 +1,13 @@
 import { query } from '../config/database.js';
+import { createCacheLayer } from './shared/cacheLayer.js';
 
 const clampLimit = (limit?: number, fallback: number = 50): number => {
   const n = Number.isFinite(Number(limit)) ? Math.floor(Number(limit)) : fallback;
   return Math.max(1, Math.min(200, n));
 };
+
+const RANK_CACHE_REDIS_TTL_SEC = 30;
+const RANK_CACHE_MEMORY_TTL_MS = 5_000;
 
 export type RealmRankRow = {
   rank: number;
@@ -39,10 +43,41 @@ export type ArenaRankRow = {
   loseCount: number;
 };
 
-export const getRealmRanks = async (
-  limit?: number
-): Promise<{ success: boolean; message: string; data?: RealmRankRow[] }> => {
-  const l = clampLimit(limit, 50);
+type RealmRankQueryRow = {
+  rank: number | string;
+  name: string;
+  realm: string;
+  power: string | number;
+};
+
+type WealthRankQueryRow = {
+  rank: number | string;
+  name: string;
+  realm: string;
+  spiritStones: number | string;
+  silver: number | string;
+};
+
+type SectRankQueryRow = {
+  rank: number | string;
+  name: string;
+  level: number | string;
+  leader: string;
+  members: number | string;
+  memberCap: number | string;
+  power: number | string;
+};
+
+type ArenaRankQueryRow = {
+  rank: number | string;
+  name: string;
+  realm: string;
+  score: number | string;
+  winCount: number | string;
+  loseCount: number | string;
+};
+
+const loadRealmRanks = async (limit: number): Promise<RealmRankRow[]> => {
   const res = await query(
     `
       SELECT
@@ -55,28 +90,18 @@ export const getRealmRanks = async (
       ORDER BY rank
       LIMIT $1
     `,
-    [l]
+    [limit],
   );
-  type RealmRankQueryRow = {
-    rank: number;
-    name: string;
-    realm: string;
-    power: string | number;
-  };
 
-  const data = (res.rows as RealmRankQueryRow[]).map((row) => ({
+  return (res.rows as RealmRankQueryRow[]).map((row) => ({
     rank: Number(row.rank),
     name: String(row.name),
     realm: String(row.realm),
     power: Number(row.power),
   }));
-  return { success: true, message: 'ok', data };
 };
 
-export const getWealthRanks = async (
-  limit?: number
-): Promise<{ success: boolean; message: string; data?: WealthRankRow[] }> => {
-  const l = clampLimit(limit, 50);
+const loadWealthRanks = async (limit: number): Promise<WealthRankRow[]> => {
   const res = await query(
     `
       SELECT
@@ -90,16 +115,19 @@ export const getWealthRanks = async (
       ORDER BY rank
       LIMIT $1
     `,
-    [l]
+    [limit],
   );
 
-  return { success: true, message: 'ok', data: res.rows as any };
+  return (res.rows as WealthRankQueryRow[]).map((row) => ({
+    rank: Number(row.rank),
+    name: String(row.name),
+    realm: String(row.realm),
+    spiritStones: Number(row.spiritStones),
+    silver: Number(row.silver),
+  }));
 };
 
-export const getSectRanks = async (
-  limit?: number
-): Promise<{ success: boolean; message: string; data?: SectRankRow[] }> => {
-  const l = clampLimit(limit, 30);
+const loadSectRanks = async (limit: number): Promise<SectRankRow[]> => {
   const res = await query(
     `
       SELECT
@@ -122,16 +150,21 @@ export const getSectRanks = async (
       ORDER BY rank
       LIMIT $1
     `,
-    [l]
+    [limit],
   );
 
-  return { success: true, message: 'ok', data: res.rows as any };
+  return (res.rows as SectRankQueryRow[]).map((row) => ({
+    rank: Number(row.rank),
+    name: String(row.name),
+    level: Number(row.level),
+    leader: String(row.leader),
+    members: Number(row.members),
+    memberCap: Number(row.memberCap),
+    power: Number(row.power),
+  }));
 };
 
-export const getArenaRanks = async (
-  limit?: number
-): Promise<{ success: boolean; message: string; data?: ArenaRankRow[] }> => {
-  const l = clampLimit(limit, 50);
+const loadArenaRanks = async (limit: number): Promise<ArenaRankRow[]> => {
   const res = await query(
     `
       SELECT
@@ -155,9 +188,77 @@ export const getArenaRanks = async (
       ORDER BY rank
       LIMIT $1
     `,
-    [l]
+    [limit],
   );
-  return { success: true, message: 'ok', data: res.rows as any };
+
+  return (res.rows as ArenaRankQueryRow[]).map((row) => ({
+    rank: Number(row.rank),
+    name: String(row.name),
+    realm: String(row.realm),
+    score: Number(row.score),
+    winCount: Number(row.winCount),
+    loseCount: Number(row.loseCount),
+  }));
+};
+
+const realmRankCache = createCacheLayer<number, RealmRankRow[]>({
+  keyPrefix: 'rank:realm:',
+  redisTtlSec: RANK_CACHE_REDIS_TTL_SEC,
+  memoryTtlMs: RANK_CACHE_MEMORY_TTL_MS,
+  loader: loadRealmRanks,
+});
+
+const wealthRankCache = createCacheLayer<number, WealthRankRow[]>({
+  keyPrefix: 'rank:wealth:',
+  redisTtlSec: RANK_CACHE_REDIS_TTL_SEC,
+  memoryTtlMs: RANK_CACHE_MEMORY_TTL_MS,
+  loader: loadWealthRanks,
+});
+
+const sectRankCache = createCacheLayer<number, SectRankRow[]>({
+  keyPrefix: 'rank:sect:',
+  redisTtlSec: RANK_CACHE_REDIS_TTL_SEC,
+  memoryTtlMs: RANK_CACHE_MEMORY_TTL_MS,
+  loader: loadSectRanks,
+});
+
+const arenaRankCache = createCacheLayer<number, ArenaRankRow[]>({
+  keyPrefix: 'rank:arena:',
+  redisTtlSec: RANK_CACHE_REDIS_TTL_SEC,
+  memoryTtlMs: RANK_CACHE_MEMORY_TTL_MS,
+  loader: loadArenaRanks,
+});
+
+export const getRealmRanks = async (
+  limit?: number
+): Promise<{ success: boolean; message: string; data?: RealmRankRow[] }> => {
+  const l = clampLimit(limit, 50);
+  const data = (await realmRankCache.get(l)) ?? [];
+  return { success: true, message: 'ok', data };
+};
+
+export const getWealthRanks = async (
+  limit?: number
+): Promise<{ success: boolean; message: string; data?: WealthRankRow[] }> => {
+  const l = clampLimit(limit, 50);
+  const data = (await wealthRankCache.get(l)) ?? [];
+  return { success: true, message: 'ok', data };
+};
+
+export const getSectRanks = async (
+  limit?: number
+): Promise<{ success: boolean; message: string; data?: SectRankRow[] }> => {
+  const l = clampLimit(limit, 30);
+  const data = (await sectRankCache.get(l)) ?? [];
+  return { success: true, message: 'ok', data };
+};
+
+export const getArenaRanks = async (
+  limit?: number
+): Promise<{ success: boolean; message: string; data?: ArenaRankRow[] }> => {
+  const l = clampLimit(limit, 50);
+  const data = (await arenaRankCache.get(l)) ?? [];
+  return { success: true, message: 'ok', data };
 };
 
 export const getRankOverview = async (

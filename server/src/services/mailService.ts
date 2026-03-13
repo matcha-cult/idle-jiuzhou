@@ -22,6 +22,7 @@ import { getInventoryInfo, moveItemInstanceToBagWithStacking } from './inventory
 import { lockCharacterInventoryMutex } from './inventoryMutex.js';
 import { recordCollectItemEvent } from './taskService.js';
 import { getItemDefinitionsByIds } from './staticConfigLoader.js';
+import { createCacheLayer } from './shared/cacheLayer.js';
 
 // ============================================
 // 类型定义
@@ -99,6 +100,63 @@ type MailAttachItemView = MailAttachItem & {
 };
 
 const MAIL_HAS_ATTACHMENTS_SQL = '(attach_silver > 0 OR attach_spirit_stones > 0 OR attach_items IS NOT NULL OR attach_instance_ids IS NOT NULL)';
+const MAIL_UNREAD_CACHE_REDIS_TTL_SEC = 30;
+const MAIL_UNREAD_CACHE_MEMORY_TTL_MS = 5_000;
+
+type MailUnreadCounter = {
+  unreadCount: number;
+  unclaimedCount: number;
+};
+
+const buildMailUnreadCacheKey = (userId: number, characterId: number): string => {
+  return `${userId}:${characterId}`;
+};
+
+const parseMailUnreadCacheKey = (
+  cacheKey: string,
+): { userId: number; characterId: number } | null => {
+  const [userIdRaw, characterIdRaw] = cacheKey.split(':', 2);
+  const userId = Number(userIdRaw);
+  const characterId = Number(characterIdRaw);
+  if (!Number.isInteger(userId) || userId <= 0) return null;
+  if (!Number.isInteger(characterId) || characterId <= 0) return null;
+  return { userId, characterId };
+};
+
+const loadMailUnreadCounter = async (cacheKey: string): Promise<MailUnreadCounter | null> => {
+  const parsedKey = parseMailUnreadCacheKey(cacheKey);
+  if (!parsedKey) return null;
+
+  const result = await query(
+    `
+      SELECT
+        COUNT(*) FILTER (WHERE read_at IS NULL) as unread_count,
+        COUNT(*) FILTER (WHERE claimed_at IS NULL AND ${MAIL_HAS_ATTACHMENTS_SQL}) as unclaimed_count
+      FROM mail
+      WHERE (recipient_character_id = $1 OR (recipient_user_id = $2 AND recipient_character_id IS NULL))
+        AND deleted_at IS NULL
+        AND (expire_at IS NULL OR expire_at > NOW())
+    `,
+    [parsedKey.characterId, parsedKey.userId],
+  );
+
+  const row = (result.rows[0] ?? {}) as {
+    unread_count?: string | number;
+    unclaimed_count?: string | number;
+  };
+
+  return {
+    unreadCount: Math.max(0, Math.floor(Number(row.unread_count) || 0)),
+    unclaimedCount: Math.max(0, Math.floor(Number(row.unclaimed_count) || 0)),
+  };
+};
+
+const mailUnreadCounterCache = createCacheLayer<string, MailUnreadCounter>({
+  keyPrefix: 'mail:unread:',
+  redisTtlSec: MAIL_UNREAD_CACHE_REDIS_TTL_SEC,
+  memoryTtlMs: MAIL_UNREAD_CACHE_MEMORY_TTL_MS,
+  loader: loadMailUnreadCounter,
+});
 
 // ============================================
 // MailService Class
@@ -122,6 +180,80 @@ class MailService {
    */
   private buildRecipientScopeSql(characterIdParamIndex: number, userIdParamIndex: number): string {
     return `(recipient_character_id = $${characterIdParamIndex} OR (recipient_user_id = $${userIdParamIndex} AND recipient_character_id IS NULL))`;
+  }
+
+  /**
+   * 统一生成邮件未读计数缓存键。
+   *
+   * 作用：
+   * - 把“账号级邮件 + 角色级邮件”的可见范围绑定到同一缓存键格式；
+   * - 让读取与失效都只依赖单一键规则，避免不同写路径各自拼字符串。
+   *
+   * 输入/输出：
+   * - 输入：userId、characterId
+   * - 输出：稳定的 Redis/内存缓存键后缀
+   *
+   * 边界条件：
+   * 1) 仅接受正整数 userId/characterId，调用方应保证鉴权完成后再进入。
+   * 2) 键格式必须保持稳定，否则旧缓存将无法被统一失效。
+   */
+  private buildUnreadCounterCacheKey(userId: number, characterId: number): string {
+    return buildMailUnreadCacheKey(userId, characterId);
+  }
+
+  /**
+   * 失效指定账号下所有角色可见的邮件红点缓存。
+   *
+   * 作用：
+   * - 统一处理“账号级邮件”对全部角色视图的影响；
+   * - 避免发邮件/已读/删除等多个写路径分别手写查角色 + 删缓存逻辑。
+   *
+   * 输入/输出：
+   * - 输入：recipientUserId，和可选的直接命中角色ID
+   * - 输出：无；保证该账号相关邮件计数缓存被清理
+   *
+   * 边界条件：
+   * 1) 若账号当前没有角色记录，则仅失效显式传入的角色键。
+   * 2) 账号级邮件会被所有该账号角色共享，因此必须按 userId 扩散失效，不能只删当前 characterId。
+   */
+  private async invalidateUnreadCounterCacheForRecipient(
+    recipientUserId: number,
+    recipientCharacterId?: number,
+  ): Promise<void> {
+    const characterIds = new Set<number>();
+    const directCharacterId = recipientCharacterId;
+    if (
+      typeof directCharacterId === 'number'
+      && Number.isInteger(directCharacterId)
+      && directCharacterId > 0
+    ) {
+      characterIds.add(directCharacterId);
+    }
+
+    const characterResult = await query(
+      `
+        SELECT id
+        FROM characters
+        WHERE user_id = $1
+      `,
+      [recipientUserId],
+    );
+
+    for (const row of characterResult.rows as Array<{ id?: unknown }>) {
+      const characterId = Number(row.id);
+      if (!Number.isInteger(characterId) || characterId <= 0) continue;
+      characterIds.add(characterId);
+    }
+
+    if (characterIds.size <= 0) return;
+
+    await Promise.all(
+      Array.from(characterIds, (characterId) =>
+        mailUnreadCounterCache.invalidate(
+          this.buildUnreadCounterCacheKey(recipientUserId, characterId),
+        ),
+      ),
+    );
   }
 
   /**
@@ -455,6 +587,11 @@ class MailService {
         options.metadata ? JSON.stringify(options.metadata) : null
       ]);
 
+      await this.invalidateUnreadCounterCacheForRecipient(
+        options.recipientUserId,
+        options.recipientCharacterId,
+      );
+
       return { success: true, mailId: result.rows[0].id, message: '邮件发送成功' };
     } catch (error) {
       console.error('发送邮件失败:', error);
@@ -651,6 +788,7 @@ class MailService {
       return { success: false, message: '邮件不存在' };
     }
 
+    await this.invalidateUnreadCounterCacheForRecipient(userId, characterId);
     return { success: true, message: '已读' };
   }
 
@@ -662,7 +800,8 @@ class MailService {
   async claimAttachments(
     userId: number,
     characterId: number,
-    mailId: number
+    mailId: number,
+    shouldInvalidateUnreadCounter: boolean = true,
   ): Promise<{ success: boolean; message: string; rewards?: { silver?: number; spiritStones?: number; itemIds?: number[] } }> {
     const collectCounts = new Map<string, number>();
 
@@ -865,6 +1004,10 @@ class MailService {
       await recordCollectItemEvent(characterId, itemDefId, qty);
     }
 
+    if (shouldInvalidateUnreadCounter) {
+      await this.invalidateUnreadCounterCacheForRecipient(userId, characterId);
+    }
+
     return { success: true, message: '领取成功', rewards };
   }
 
@@ -916,7 +1059,7 @@ class MailService {
       const hasItems = attachItems.length > 0 || attachInstanceIds.length > 0;
       if (!hasCurrency && !hasItems) continue;
 
-      const claimResult = await this.claimAttachments(userId, characterId, mailId);
+      const claimResult = await this.claimAttachments(userId, characterId, mailId, false);
 
       if (!claimResult.success) {
         if (this.isBagCapacityMessage(claimResult.message)) {
@@ -946,6 +1089,8 @@ class MailService {
       }
       return { success: true, message: '没有可领取的附件', claimedCount: 0, skippedCount: 0 };
     }
+
+    await this.invalidateUnreadCounterCacheForRecipient(userId, characterId);
 
     if (skippedCount > 0) {
       return {
@@ -987,6 +1132,8 @@ class MailService {
       return { success: false, message: '邮件不存在' };
     }
 
+    await this.invalidateUnreadCounterCacheForRecipient(userId, characterId);
+
     const mail = result.rows[0];
     const hasAttachments = mail.attach_silver > 0 || mail.attach_spirit_stones > 0 ||
                           this.normalizeAttachItems(mail.attach_items).length > 0 ||
@@ -1022,6 +1169,10 @@ class MailService {
 
     const result = await query(sql + ' RETURNING id', [characterId, userId]);
 
+    if (result.rows.length > 0) {
+      await this.invalidateUnreadCounterCacheForRecipient(userId, characterId);
+    }
+
     return {
       success: true,
       message: `已删除${result.rows.length}封邮件`,
@@ -1046,6 +1197,10 @@ class MailService {
       RETURNING id
     `, [characterId, userId]);
 
+    if (result.rows.length > 0) {
+      await this.invalidateUnreadCounterCacheForRecipient(userId, characterId);
+    }
+
     return {
       success: true,
       message: `已读${result.rows.length}封邮件`,
@@ -1062,20 +1217,10 @@ class MailService {
     characterId: number
   ): Promise<{ unreadCount: number; unclaimedCount: number }> {
     try {
-      const result = await query(`
-        SELECT
-          COUNT(*) FILTER (WHERE read_at IS NULL) as unread_count,
-          COUNT(*) FILTER (WHERE claimed_at IS NULL AND ${MAIL_HAS_ATTACHMENTS_SQL}) as unclaimed_count
-        FROM mail
-        WHERE ${this.buildRecipientScopeSql(1, 2)}
-          AND deleted_at IS NULL
-          AND (expire_at IS NULL OR expire_at > NOW())
-      `, [characterId, userId]);
-
-      return {
-        unreadCount: parseInt(result.rows[0].unread_count),
-        unclaimedCount: parseInt(result.rows[0].unclaimed_count)
-      };
+      const cachedCounter = await mailUnreadCounterCache.get(
+        this.buildUnreadCounterCacheKey(userId, characterId),
+      );
+      return cachedCounter ?? { unreadCount: 0, unclaimedCount: 0 };
     } catch (error) {
       console.error('获取未读数量失败:', error);
       return { unreadCount: 0, unclaimedCount: 0 };
