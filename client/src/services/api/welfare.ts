@@ -155,14 +155,21 @@ export const getBattlePassStatus = (): Promise<BattlePassStatusResponse> => {
   return api.get('/battlepass/status');
 };
 
-export type BattlePassRewardItem = {
-  type: string;
-  currency?: string;
-  amount?: number;
-  itemDefId?: string;
-  item_def_id?: string;
-  qty?: number;
-};
+export type BattlePassRewardItem =
+  | {
+      type: 'currency';
+      currency: 'spirit_stones' | 'silver';
+      amount: number;
+      name: string;
+      icon: null;
+    }
+  | {
+      type: 'item';
+      itemDefId: string;
+      qty: number;
+      name: string;
+      icon: string | null;
+    };
 
 export type BattlePassRewardDto = {
   level: number;

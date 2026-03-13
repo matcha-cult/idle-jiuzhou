@@ -2,8 +2,15 @@ import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import { addItemToInventory } from './inventory/index.js';
 import { lockCharacterInventoryMutex } from './inventoryMutex.js';
-import { getBattlePassStaticConfig } from './staticConfigLoader.js';
+import {
+  getBattlePassStaticConfig,
+  type BattlePassRewardEntry,
+} from './staticConfigLoader.js';
 import { getCharacterIdByUserId as getCharacterIdByUserIdShared } from './shared/characterId.js';
+import {
+  getRewardCurrencyDisplayName,
+  resolveRewardItemDisplayMeta,
+} from './shared/rewardDisplay.js';
 
 export type BattlePassTaskDto = {
   id: string;
@@ -57,10 +64,26 @@ export type BattlePassStatusDto = {
   claimedPremiumLevels: number[];
 };
 
+export type BattlePassRewardItemDto =
+  | {
+      type: 'currency';
+      currency: 'spirit_stones' | 'silver';
+      amount: number;
+      name: string;
+      icon: null;
+    }
+  | {
+      type: 'item';
+      itemDefId: string;
+      qty: number;
+      name: string;
+      icon: string | null;
+    };
+
 export type BattlePassRewardDto = {
   level: number;
-  freeRewards: Array<{ type: string; currency?: string; amount?: number; itemDefId?: string; qty?: number }>;
-  premiumRewards: Array<{ type: string; currency?: string; amount?: number; itemDefId?: string; qty?: number }>;
+  freeRewards: BattlePassRewardItemDto[];
+  premiumRewards: BattlePassRewardItemDto[];
 };
 
 export type ClaimRewardResult = {
@@ -69,7 +92,7 @@ export type ClaimRewardResult = {
   data?: {
     level: number;
     track: 'free' | 'premium';
-    rewards: Array<{ type: string; currency?: string; amount?: number; itemDefId?: string; qty?: number }>;
+    rewards: BattlePassRewardItemDto[];
     spiritStones?: number;
     silver?: number;
   };
@@ -108,6 +131,44 @@ const isInCurrentCycle = (taskType: BattlePassTaskType, timestamp: Date | null, 
     return timestamp.getTime() >= start.getTime();
   }
   return true;
+};
+
+const toBattlePassRewardItemDto = (
+  reward: BattlePassRewardEntry,
+): BattlePassRewardItemDto | null => {
+  if (reward.type === 'currency') {
+    if (reward.currency !== 'silver' && reward.currency !== 'spirit_stones') return null;
+    const amount = Number.isFinite(Number(reward.amount)) ? Math.max(0, Number(reward.amount)) : 0;
+    if (amount <= 0) return null;
+    return {
+      type: 'currency',
+      currency: reward.currency,
+      amount,
+      name: getRewardCurrencyDisplayName(reward.currency),
+      icon: null,
+    };
+  }
+
+  if (reward.type !== 'item') return null;
+  const itemDefId = String(reward.item_def_id || '').trim();
+  const qty = Number.isFinite(Number(reward.qty)) ? Math.max(1, Number(reward.qty)) : 1;
+  if (!itemDefId) return null;
+  const itemMeta = resolveRewardItemDisplayMeta(itemDefId);
+  return {
+    type: 'item',
+    itemDefId,
+    qty,
+    name: itemMeta.name,
+    icon: itemMeta.icon,
+  };
+};
+
+const toBattlePassRewardItemDtos = (
+  rewards: BattlePassRewardEntry[],
+): BattlePassRewardItemDto[] => {
+  return rewards
+    .map((reward) => toBattlePassRewardItemDto(reward))
+    .filter((reward): reward is BattlePassRewardItemDto => reward !== null);
 };
 
 const getResolvedSeasonFromStaticConfig = (seasonId?: string, now: Date = new Date()) => {
@@ -403,8 +464,8 @@ class BattlePassService {
     if (!config || config.season.id !== resolvedSeasonId) return [];
     return config.rewards.map((row) => ({
       level: Number(row.level),
-      freeRewards: Array.isArray(row.free) ? row.free : [],
-      premiumRewards: Array.isArray(row.premium) ? row.premium : [],
+      freeRewards: toBattlePassRewardItemDtos(Array.isArray(row.free) ? row.free : []),
+      premiumRewards: toBattlePassRewardItemDtos(Array.isArray(row.premium) ? row.premium : []),
     }));
   }
 
@@ -466,16 +527,17 @@ class BattlePassService {
       return { success: false, message: '奖励配置不存在' };
     }
 
-    const rewards: Array<{ type: string; currency?: string; amount?: number; itemDefId?: string; item_def_id?: string; qty?: number }> =
+    const rewardEntries: BattlePassRewardEntry[] =
       track === 'free'
         ? (Array.isArray(rewardRow.free) ? rewardRow.free : [])
         : (Array.isArray(rewardRow.premium) ? rewardRow.premium : []);
+    const rewards = toBattlePassRewardItemDtos(rewardEntries);
 
     // 发放奖励
     let spiritStonesGained = 0;
     let silverGained = 0;
 
-    for (const reward of rewards) {
+    for (const reward of rewardEntries) {
       if (reward.type === 'currency') {
         const amount = Number(reward.amount) || 0;
         if (reward.currency === 'spirit_stones' && amount > 0) {
@@ -492,7 +554,7 @@ class BattlePassService {
           silverGained += amount;
         }
       } else if (reward.type === 'item') {
-        const itemDefId = reward.itemDefId ?? reward.item_def_id;
+        const itemDefId = reward.item_def_id;
         const qty = Number(reward.qty) || 1;
         if (itemDefId && qty > 0) {
           const addResult = await addItemToInventory(characterId, userId, itemDefId, qty, {

@@ -13,6 +13,7 @@ import {
 } from '../../../../services/api';
 import { useIsMobile } from '../../shared/responsive';
 import { getRealmRankFromLiteral as getRealmRank } from '../../shared/realm';
+import { formatTaskRewardsToText } from '../../shared/taskRewardText';
 import MainQuestPanel from './MainQuestPanel';
 import './index.scss';
 import './MainQuestPanel.scss';
@@ -119,26 +120,6 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
         },
       }),
     );
-  }, []);
-
-  const formatTaskRewardsToText = useCallback((rewards: unknown): string => {
-    const list = Array.isArray(rewards) ? rewards : [];
-    const parts: string[] = [];
-    for (const r of list) {
-      const type = (r as { type?: unknown })?.type;
-      if (type === 'silver') {
-        const amount = Math.max(0, Math.floor(Number((r as { amount?: unknown })?.amount) || 0));
-        if (amount > 0) parts.push(`银两 +${amount.toLocaleString()}`);
-      } else if (type === 'spirit_stones') {
-        const amount = Math.max(0, Math.floor(Number((r as { amount?: unknown })?.amount) || 0));
-        if (amount > 0) parts.push(`灵石 +${amount.toLocaleString()}`);
-      } else if (type === 'item') {
-        const itemDefId = String((r as { itemDefId?: unknown })?.itemDefId ?? '').trim();
-        const qty = Math.max(1, Math.floor(Number((r as { qty?: unknown })?.qty) || 1));
-        if (itemDefId) parts.push(`物品(${itemDefId}) ×${qty.toLocaleString()}`);
-      }
-    }
-    return parts.join('，');
   }, []);
 
   const getRemainingSeconds = useCallback((expiresAt?: string | null): number | null => {
@@ -371,7 +352,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
     } catch (e: unknown) {
       void 0;
     }
-  }, [appendSystemChat, formatTaskRewardsToText, message, refresh]);
+  }, [appendSystemChat, message, refresh]);
 
   const completeTask = useCallback(async (task: TaskItem | null) => {
     if (!task?.id) return;
@@ -402,7 +383,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
     } catch (e: unknown) {
       void 0;
     }
-  }, [appendSystemChat, formatTaskRewardsToText, message, refresh]);
+  }, [appendSystemChat, message, refresh]);
 
   const submitMaterials = useCallback(
     async (task: TaskItem | null) => {

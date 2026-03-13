@@ -213,17 +213,12 @@ const BattlePassModal: React.FC<BattlePassModalProps> = ({ open, onClose }) => {
   );
 
   const formatRewardName = (reward: BattlePassRewardDto['freeRewards'][0]) => {
-    if (reward.type === 'currency') {
-      if (reward.currency === 'spirit_stones') return '灵石';
-      if (reward.currency === 'silver') return '银两';
-      return reward.currency ?? '货币';
-    }
-    return reward.itemDefId ?? reward.item_def_id ?? '物品';
+    return reward.name || '奖励';
   };
 
   const formatRewardAmount = (reward: BattlePassRewardDto['freeRewards'][0]) => {
-    if (reward.type === 'currency') return reward.amount ?? 0;
-    return reward.qty ?? 1;
+    if (reward.type === 'currency') return reward.amount;
+    return reward.qty;
   };
 
   const renderHeader = () => (

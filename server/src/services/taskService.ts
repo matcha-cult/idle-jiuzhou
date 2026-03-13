@@ -5,8 +5,6 @@ import { ensureMainQuestProgressForNewChapters, updateSectionProgress, updateSec
 import { updateAchievementProgress } from './achievementService.js';
 import { Transactional } from '../decorators/transactional.js';
 import {
-  getItemDefinitionById,
-  getItemDefinitionsByIds,
   getMainQuestChapterById,
   getMainQuestSectionById,
   getNpcDefinitions,
@@ -25,6 +23,12 @@ import {
   mergeCharacterRewardDelta,
   type CharacterRewardDelta,
 } from './shared/characterRewardSettlement.js';
+import {
+  getRewardCurrencyDisplayName,
+  resolveRewardItemDisplayMeta,
+  resolveRewardItemDisplayMetaMap,
+  type RewardItemDisplayMeta,
+} from './shared/rewardDisplay.js';
 
 export type TaskCategory = 'main' | 'side' | 'daily' | 'event';
 
@@ -134,6 +138,61 @@ const mapProgressStatusToUiStatus = (v: unknown): TaskStatus => {
 const parseObjectives = (objectives: unknown): RawObjective[] => (Array.isArray(objectives) ? (objectives as RawObjective[]) : []);
 
 const parseRewards = (rewards: unknown): RawReward[] => (Array.isArray(rewards) ? (rewards as RawReward[]) : []);
+
+const collectRewardItemDefIds = (rewardGroups: Iterable<RawReward[]>): string[] => {
+  const itemRewardIds = new Set<string>();
+  for (const rewards of rewardGroups) {
+    for (const reward of rewards) {
+      if (asNonEmptyString(reward?.type) !== 'item') continue;
+      const itemDefId = asNonEmptyString(reward?.item_def_id);
+      if (!itemDefId) continue;
+      itemRewardIds.add(itemDefId);
+    }
+  }
+  return Array.from(itemRewardIds);
+};
+
+const toTaskRewardItemMetaMap = (
+  itemDefIds: Iterable<string>,
+): Map<string, RewardItemDisplayMeta> => {
+  return resolveRewardItemDisplayMetaMap(itemDefIds);
+};
+
+const toTaskRewardDto = (
+  reward: RawReward,
+  itemMeta: Map<string, RewardItemDisplayMeta>,
+): TaskRewardDto | null => {
+  const type = asNonEmptyString(reward?.type) ?? '';
+  if (type === 'silver') {
+    return {
+      type: 'silver',
+      name: getRewardCurrencyDisplayName('silver'),
+      amount: asFiniteNonNegativeInt(reward?.amount, 0),
+    };
+  }
+  if (type === 'spirit_stones') {
+    return {
+      type: 'spirit_stones',
+      name: getRewardCurrencyDisplayName('spirit_stones'),
+      amount: asFiniteNonNegativeInt(reward?.amount, 0),
+    };
+  }
+  if (type !== 'item') return null;
+
+  const itemDefId = asNonEmptyString(reward?.item_def_id);
+  if (!itemDefId) return null;
+  const qtyRange = resolveRewardQtyRange(reward);
+  const meta = itemMeta.get(itemDefId) ?? resolveRewardItemDisplayMeta(itemDefId);
+  const amountMax = qtyRange.max > qtyRange.min ? qtyRange.max : undefined;
+  return {
+    type: 'item',
+    itemDefId,
+    name: meta.name,
+    icon: meta.icon,
+    amount: qtyRange.min,
+    ...(amountMax ? { amountMax } : {}),
+  };
+};
 
 const getProgressValue = (progress: unknown, objectiveId: string): number => {
   if (!objectiveId) return 0;
@@ -296,29 +355,9 @@ export const getTaskOverview = async (
       };
     });
 
-  const itemRewardIds = new Set<string>();
-  for (const r of rows) {
-    const rewards = parseRewards(r.rewards);
-    for (const rw of rewards) {
-      if (asNonEmptyString(rw?.type) !== 'item') continue;
-      const itemDefId = asNonEmptyString(rw?.item_def_id);
-      if (itemDefId) itemRewardIds.add(itemDefId);
-    }
-  }
-
-  const itemMeta = new Map<string, { name: string; icon: string | null }>();
-  if (itemRewardIds.size > 0) {
-    const ids = Array.from(itemRewardIds);
-    const defs = getItemDefinitionsByIds(ids);
-    for (const id of ids) {
-      const def = defs.get(id);
-      if (!def) continue;
-      itemMeta.set(id, {
-        name: String(def.name ?? id),
-        icon: typeof def.icon === 'string' ? def.icon : null,
-      });
-    }
-  }
+  const itemMeta = toTaskRewardItemMetaMap(
+    collectRewardItemDefIds(rows.map((row) => parseRewards(row.rewards))),
+  );
 
   const tasks: TaskOverviewDto[] = rows
     .map((r) => {
@@ -347,31 +386,7 @@ export const getTaskOverview = async (
         .filter((x) => x.text);
 
       const rewards = parseRewards(r.rewards)
-        .map((rw): TaskRewardDto | null => {
-          const type = asNonEmptyString(rw?.type) ?? '';
-          if (type === 'silver') {
-            return { type: 'silver', name: '银两', amount: asFiniteNonNegativeInt(rw?.amount, 0) };
-          }
-          if (type === 'spirit_stones') {
-            return { type: 'spirit_stones', name: '灵石', amount: asFiniteNonNegativeInt(rw?.amount, 0) };
-          }
-          if (type === 'item') {
-            const itemDefId = asNonEmptyString(rw?.item_def_id);
-            if (!itemDefId) return null;
-            const qtyRange = resolveRewardQtyRange(rw);
-            const meta = itemMeta.get(itemDefId) ?? { name: itemDefId, icon: null };
-            const amountMax = qtyRange.max > qtyRange.min ? qtyRange.max : undefined;
-            return {
-              type: 'item',
-              itemDefId,
-              name: meta.name,
-              icon: meta.icon,
-              amount: qtyRange.min,
-              ...(amountMax ? { amountMax } : {}),
-            };
-          }
-          return null;
-        })
+        .map((rw) => toTaskRewardDto(rw, itemMeta))
         .filter((x): x is TaskRewardDto => x !== null && x.amount > 0);
 
       return { id, category, title, realm, giverNpcId, mapId, roomId, status, tracked, description, objectives, rewards };
@@ -456,33 +471,16 @@ export const getBountyTaskOverview = async (characterId: number): Promise<{ task
       .filter((taskId): taskId is string => Boolean(taskId)),
   );
 
-  const itemRewardIds = new Set<string>();
-  for (const r of rows) {
-    const taskId = asNonEmptyString(r.task_id);
-    if (!taskId) continue;
-    const taskDef = taskDefMap.get(taskId);
-    if (!taskDef) continue;
-    const rewards = parseRewards(taskDef.rewards);
-    for (const rw of rewards) {
-      if (asNonEmptyString(rw?.type) !== 'item') continue;
-      const itemDefId = asNonEmptyString(rw?.item_def_id);
-      if (itemDefId) itemRewardIds.add(itemDefId);
-    }
-  }
-
-  const itemMeta = new Map<string, { name: string; icon: string | null }>();
-  if (itemRewardIds.size > 0) {
-    const ids = Array.from(itemRewardIds);
-    const defs = getItemDefinitionsByIds(ids);
-    for (const id of ids) {
-      const def = defs.get(id);
-      if (!def) continue;
-      itemMeta.set(id, {
-        name: String(def.name ?? id),
-        icon: typeof def.icon === 'string' ? def.icon : null,
-      });
-    }
-  }
+  const itemMeta = toTaskRewardItemMetaMap(
+    collectRewardItemDefIds(
+      rows.map((row) => {
+        const taskId = asNonEmptyString(row.task_id);
+        if (!taskId) return [];
+        const taskDef = taskDefMap.get(taskId);
+        return taskDef ? parseRewards(taskDef.rewards) : [];
+      }),
+    ),
+  );
 
   const tasks: BountyTaskOverviewDto[] = rows
     .map((r) => {
@@ -522,31 +520,19 @@ export const getBountyTaskOverview = async (characterId: number): Promise<{ task
       const rewardOut: TaskRewardDto[] = [];
       const extraSpirit = asFiniteNonNegativeInt(r.spirit_stones_reward, 0);
       const extraSilver = asFiniteNonNegativeInt(r.silver_reward, 0);
-      if (extraSilver > 0) rewardOut.push({ type: 'silver', name: '银两', amount: extraSilver });
-      if (extraSpirit > 0) rewardOut.push({ type: 'spirit_stones', name: '灵石', amount: extraSpirit });
+      if (extraSilver > 0) {
+        rewardOut.push({ type: 'silver', name: getRewardCurrencyDisplayName('silver'), amount: extraSilver });
+      }
+      if (extraSpirit > 0) {
+        rewardOut.push({
+          type: 'spirit_stones',
+          name: getRewardCurrencyDisplayName('spirit_stones'),
+          amount: extraSpirit,
+        });
+      }
 
       const taskRewards = parseRewards(taskDef.rewards)
-        .map((rw): TaskRewardDto | null => {
-          const type = asNonEmptyString(rw?.type) ?? '';
-          if (type === 'silver') return { type: 'silver', name: '银两', amount: asFiniteNonNegativeInt(rw?.amount, 0) };
-          if (type === 'spirit_stones') return { type: 'spirit_stones', name: '灵石', amount: asFiniteNonNegativeInt(rw?.amount, 0) };
-          if (type === 'item') {
-            const itemDefId = asNonEmptyString(rw?.item_def_id);
-            if (!itemDefId) return null;
-            const qtyRange = resolveRewardQtyRange(rw);
-            const meta = itemMeta.get(itemDefId) ?? { name: itemDefId, icon: null };
-            const amountMax = qtyRange.max > qtyRange.min ? qtyRange.max : undefined;
-            return {
-              type: 'item',
-              itemDefId,
-              name: meta.name,
-              icon: meta.icon,
-              amount: qtyRange.min,
-              ...(amountMax ? { amountMax } : {}),
-            };
-          }
-          return null;
-        })
+        .map((rw) => toTaskRewardDto(rw, itemMeta))
         .filter((x): x is TaskRewardDto => x !== null && x.amount > 0);
 
       rewardOut.push(...taskRewards);
@@ -1332,9 +1318,7 @@ class TaskService {
         if (!itemDefId) continue;
         const qtyRange = resolveRewardQtyRange(rw);
         const qty = rollRangeIntInclusive(qtyRange.min, qtyRange.max);
-        const itemDef = getItemDefinitionById(itemDefId);
-        const itemName = asNonEmptyString(itemDef?.name);
-        const itemIcon = asNonEmptyString(itemDef?.icon);
+        const itemMeta = resolveRewardItemDisplayMeta(itemDefId);
         const result = await itemService.createItem(userId, characterId, itemDefId, qty, { obtainedFrom: 'task_reward' });
         if (!result.success) return { success: false, message: result.message, rewards: out, rewardDelta };
         out.push({
@@ -1342,8 +1326,8 @@ class TaskService {
           itemDefId,
           qty,
           itemIds: result.itemIds,
-          itemName: itemName || undefined,
-          itemIcon: itemIcon || undefined,
+          itemName: itemMeta.name || undefined,
+          itemIcon: itemMeta.icon || undefined,
         });
         continue;
       }

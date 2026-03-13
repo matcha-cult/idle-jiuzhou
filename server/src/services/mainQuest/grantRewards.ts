@@ -15,10 +15,10 @@ import { query } from '../../config/database.js';
 import { itemService } from '../itemService.js';
 import { grantFeatureUnlocksWithSideEffects } from '../featureUnlockService.js';
 import {
-  getItemDefinitionById,
   getTechniqueDefinitions,
 } from '../staticConfigLoader.js';
 import { assertServiceSuccess } from '../shared/assertServiceSuccess.js';
+import { resolveRewardItemDisplayMeta } from '../shared/rewardDisplay.js';
 import { asString, asNumber, asArray } from '../shared/typeCoercion.js';
 import type { RewardResult } from './types.js';
 
@@ -62,15 +62,19 @@ export const grantSectionRewards = async (
     const itemDefId = asString(item.item_def_id);
     const quantity = Math.max(1, Math.floor(asNumber(item.quantity, 1)));
     if (!itemDefId || quantity <= 0) continue;
-    const itemDef = getItemDefinitionById(itemDefId);
-    const itemName = asString(itemDef?.name);
-    const itemIcon = asString(itemDef?.icon);
+    const itemMeta = resolveRewardItemDisplayMeta(itemDefId);
     const result = await itemService.createItem(userId, characterId, itemDefId, quantity, {
       location: 'bag',
       obtainedFrom: 'main_quest',
     });
     assertServiceSuccess(result);
-    results.push({ type: 'item', itemDefId, quantity, itemName: itemName || undefined, itemIcon: itemIcon || undefined });
+    results.push({
+      type: 'item',
+      itemDefId,
+      quantity,
+      itemName: itemMeta.name || undefined,
+      itemIcon: itemMeta.icon || undefined,
+    });
   }
 
   const techniques = asArray<string>((rewards as { techniques?: unknown }).techniques);

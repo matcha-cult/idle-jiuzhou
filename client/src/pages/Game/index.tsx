@@ -83,6 +83,7 @@ import {
 } from './modules/NpcTalkModal/shared';
 import { PARTNER_FEATURE_UNLOCK_HINT, hasCharacterFeature } from './shared/featureUnlocks';
 import { formatMainQuestRewardTexts } from './shared/mainQuestRewardText';
+import { formatTaskRewardsToText } from './shared/taskRewardText';
 import { useRealtimeMemberPresence } from './shared/useRealtimeMemberPresence';
 
 interface GameProps {
@@ -1151,28 +1152,6 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     }
     return null;
   }, [mainQuestDialogueLoading, npcDialogue.length, npcTalkActionKey, npcTalkLoading]);
-
-  const formatTaskRewardsToText = useCallback((rewards: unknown): string => {
-    const list = Array.isArray(rewards) ? rewards : [];
-    const parts: string[] = [];
-    for (const r of list) {
-      const type = (r as { type?: unknown })?.type;
-      if (type === 'silver') {
-        const amount = Math.max(0, Math.floor(Number((r as { amount?: unknown })?.amount) || 0));
-        if (amount > 0) parts.push(`银两 +${amount.toLocaleString()}`);
-      } else if (type === 'spirit_stones') {
-        const amount = Math.max(0, Math.floor(Number((r as { amount?: unknown })?.amount) || 0));
-        if (amount > 0) parts.push(`灵石 +${amount.toLocaleString()}`);
-      } else if (type === 'item') {
-        const itemDefId = String((r as { itemDefId?: unknown })?.itemDefId ?? '').trim();
-        const itemName = String((r as { itemName?: unknown })?.itemName ?? '').trim();
-        const qty = Math.max(1, Math.floor(Number((r as { qty?: unknown })?.qty) || 1));
-        const name = itemName || itemDefId;
-        if (name) parts.push(`物品「${name}」×${qty.toLocaleString()}`);
-      }
-    }
-    return parts.join('，');
-  }, []);
 
   const buildTaskNpcLine = useCallback((t: NpcTalkTaskOption): string => {
     const title = String(t.title || '').trim() || '这件事';
