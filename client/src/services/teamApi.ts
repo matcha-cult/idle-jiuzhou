@@ -10,6 +10,7 @@ export interface TeamMember {
   id: string;
   characterId: number;
   name: string;
+  monthCardActive: boolean;
   role: 'leader' | 'member';
   realm: string;
   online: boolean;
@@ -22,6 +23,7 @@ export interface TeamInfo {
   name: string;
   leader: string;
   leaderId: number;
+  leaderMonthCardActive: boolean;
   members: TeamMember[];
   memberCount: number;
   maxMembers: number;
@@ -38,6 +40,7 @@ export interface TeamApplication {
   id: string;
   characterId: number;
   name: string;
+  monthCardActive: boolean;
   realm: string;
   avatar: string | null;
   message: string | null;
@@ -49,6 +52,7 @@ export interface TeamEntry {
   id: string;
   name: string;
   leader: string;
+  leaderMonthCardActive: boolean;
   members: number;
   cap: number;
   goal: string;
@@ -63,6 +67,7 @@ export interface TeamInvitation {
   teamName: string;
   goal: string;
   inviterName: string;
+  inviterMonthCardActive: boolean;
   message: string | null;
   time: number;
 }

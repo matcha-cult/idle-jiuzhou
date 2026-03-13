@@ -83,6 +83,7 @@ export type MapObjectDto =
       type: 'player';
       id: string;
       name: string;
+      monthCardActive?: boolean;
       task_marker?: '!' | '?';
       task_tracked?: boolean;
       title?: string;

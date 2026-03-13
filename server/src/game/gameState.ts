@@ -7,6 +7,7 @@ export interface CharacterAttributes {
   id: number;
   userId: number;
   nickname: string;
+  monthCardActive: boolean;
   title: string;
   gender: string;
   avatar: string | null;
@@ -67,6 +68,7 @@ export const dbToCharacterAttributes = (dbRow: Record<string, unknown>): Charact
   id: dbRow.id as number,
   userId: dbRow.user_id as number,
   nickname: dbRow.nickname as string,
+  monthCardActive: Boolean(dbRow.month_card_active),
   title: dbRow.title as string,
   gender: dbRow.gender as string,
   avatar: dbRow.avatar as string | null,

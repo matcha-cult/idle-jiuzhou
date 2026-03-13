@@ -7,6 +7,7 @@
 import { Button, Tag } from 'antd';
 import type { SectApplicationDto } from '../../../../../services/api';
 import type { SectPermissionState } from '../types';
+import PlayerName from '../../../shared/PlayerName';
 import { formatRelativeTimeFromNow } from '../../../shared/time';
 
 interface ManagePanelProps {
@@ -59,7 +60,12 @@ const ManagePanel: React.FC<ManagePanelProps> = ({
               {applications.map((item: SectApplicationDto) => (
                 <div key={item.id} className="sect-mobile-card">
                   <div className="sect-mobile-card-head">
-                    <div className="sect-mobile-card-title">{item.nickname}</div>
+                    <PlayerName
+                      name={item.nickname}
+                      monthCardActive={item.monthCardActive}
+                      ellipsis
+                      className="sect-mobile-card-title"
+                    />
                     <Tag color="cyan">{item.realm}</Tag>
                   </div>
                   <div className="sect-mobile-meta-line">

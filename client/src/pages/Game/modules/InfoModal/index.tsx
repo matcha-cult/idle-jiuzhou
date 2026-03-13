@@ -11,6 +11,7 @@ import {
   type BountyBoardRowDto,
   type BountyItemDefSearchRowDto,
 } from '../../../../services/api';
+import PlayerName from '../../shared/PlayerName';
 import './index.scss';
 
 type InfoTargetType = 'npc' | 'monster' | 'item' | 'player';
@@ -67,6 +68,7 @@ export type InfoTarget =
       type: 'player';
       id: string;
       name: string;
+      monthCardActive?: boolean;
       title?: string;
       gender?: string;
       realm?: string;
@@ -926,7 +928,12 @@ const InfoModal: React.FC<InfoModalProps> = ({ open, target, onClose, onAction }
               <div className="info-modal-name">
                 <span className="info-modal-type">{typeText}</span>
                 <span className="info-modal-title">{titleText}</span>
-                <span className="info-modal-realname">{nameText}</span>
+                <PlayerName
+                  name={nameText}
+                  monthCardActive={showTarget.type === 'player' ? showTarget.monthCardActive : false}
+                  ellipsis
+                  className="info-modal-realname"
+                />
               </div>
               <div className="info-modal-meta">
                 <span>性别：{genderText}</span>

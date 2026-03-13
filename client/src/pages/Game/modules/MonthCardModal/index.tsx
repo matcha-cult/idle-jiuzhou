@@ -2,6 +2,7 @@ import { ClockCircleOutlined, GiftOutlined, UsergroupAddOutlined } from '@ant-de
 import { App, Button, Modal } from 'antd';
 import { useCallback, useMemo, useState } from 'react';
 import { activateMonthCardItem, claimMonthCardReward, getInventoryItems, getMonthCardStatus } from '../../../../services/api';
+import { gameSocket } from '../../../../services/gameSocket';
 import { buildMonthCardDailyRewards, buildMonthCardPanelState, getMonthCardPrivileges, type MonthCardDailyReward } from './monthCardDisplay';
 import './index.scss';
 
@@ -101,6 +102,7 @@ const MonthCardModal: React.FC<MonthCardModalProps> = ({ open, onClose }) => {
         return;
       }
       message.success('使用成功');
+      gameSocket.refreshCharacter();
       await refreshStatus();
       await refreshMonthCardItem();
     } catch {

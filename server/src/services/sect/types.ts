@@ -60,6 +60,7 @@ export interface SectApplicationRow {
 
 export interface SectApplicationListItem extends SectApplicationRow {
   nickname: string;
+  monthCardActive: boolean;
   realm: string;
 }
 
@@ -100,6 +101,7 @@ export interface SectInfo {
   members: Array<{
     characterId: number;
     nickname: string;
+    monthCardActive: boolean;
     realm: string;
     position: SectPosition;
     contribution: number;

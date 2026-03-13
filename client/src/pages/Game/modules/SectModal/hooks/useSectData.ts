@@ -83,6 +83,7 @@ const toMemberVm = (member: SectMemberDto): SectMemberVm => {
   return {
     characterId: Number(member.characterId) || 0,
     nickname: member.nickname,
+    monthCardActive: member.monthCardActive === true,
     realm: member.realm,
     position: member.position,
     positionLabel: POSITION_LABEL_MAP[member.position],
@@ -148,12 +149,14 @@ export const useSectData = ({ open, spiritStones, playerName }: UseSectDataArgs)
 
   const joinedSect = useMemo<SectJoinedSummary | null>(() => {
     if (!mySectInfo?.sect) return null;
-    const leaderName = mySectInfo.members.find((member) => member.position === 'leader')?.nickname ?? '—';
+    const leaderMember = mySectInfo.members.find((member) => member.position === 'leader') ?? null;
+    const leaderName = leaderMember?.nickname ?? '—';
     return {
       id: mySectInfo.sect.id,
       name: mySectInfo.sect.name,
       level: Number(mySectInfo.sect.level) || 1,
       leader: leaderName,
+      leaderMonthCardActive: leaderMember?.monthCardActive === true,
       members: Number(mySectInfo.sect.member_count) || 0,
       memberCap: Number(mySectInfo.sect.max_members) || 0,
       notice: String(mySectInfo.sect.announcement ?? mySectInfo.sect.description ?? '暂无公告'),

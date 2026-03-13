@@ -4,6 +4,7 @@ import { BarChartOutlined, CloseOutlined, LineChartOutlined, SendOutlined } from
 import { gameSocket, type CharacterData, type OnlinePlayerDto } from '../../../../services/gameSocket';
 import type { InfoTarget } from '../InfoModal';
 import { parseBattleLootLine } from '../../shared/battleLoot';
+import PlayerName from '../../shared/PlayerName';
 import StatsShell from './StatsShell';
 import './index.scss';
 
@@ -17,6 +18,7 @@ interface Message {
   clientId?: string;
   senderTitle: string;
   senderName: string;
+  senderMonthCardActive?: boolean;
   content: string;
   channel: ChatChannel;
   timestamp: number;
@@ -40,6 +42,7 @@ interface PrivateTarget {
   id: string;
   name: string;
   title: string;
+  monthCardActive?: boolean;
   characterId?: number;
 }
 
@@ -339,7 +342,7 @@ const buildInitialPrivateTargets = (list: Message[]): PrivateTarget[] => {
     if (!name || name === '系统') continue;
     const id = msg.pmTargetId ?? makePrivateTargetId(0);
     const title = msg.senderTitle?.trim() || '';
-    if (!map.has(id)) map.set(id, { id, name, title });
+    if (!map.has(id)) map.set(id, { id, name, title, monthCardActive: msg.senderMonthCardActive === true });
   }
   return Array.from(map.values());
 };
@@ -401,14 +404,37 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
           if (exist) {
             const nextName = (exist.name?.trim() ? exist.name : isSelf ? exist.name : msg.senderName).trim();
             const nextTitle = (exist.title?.trim() ? exist.title : isSelf ? exist.title : msg.senderTitle).trim();
-            if (nextName === exist.name && nextTitle === exist.title && exist.characterId === otherCharacterId) return prev;
+            const nextMonthCardActive = isSelf ? exist.monthCardActive : msg.senderMonthCardActive === true;
+            if (
+              nextName === exist.name &&
+              nextTitle === exist.title &&
+              exist.characterId === otherCharacterId &&
+              nextMonthCardActive === exist.monthCardActive
+            ) return prev;
             return prev.map((t) =>
-              t.id === pmTargetId ? { ...t, name: nextName || t.name, title: nextTitle || t.title, characterId: otherCharacterId } : t,
+              t.id === pmTargetId
+                ? {
+                    ...t,
+                    name: nextName || t.name,
+                    title: nextTitle || t.title,
+                    monthCardActive: nextMonthCardActive,
+                    characterId: otherCharacterId,
+                  }
+                : t,
             );
           }
           const name = isSelf ? `玩家${otherCharacterId}` : msg.senderName;
           const title = isSelf ? '' : msg.senderTitle;
-          return [...prev, { id: pmTargetId, name, title, characterId: otherCharacterId }];
+          return [
+            ...prev,
+            {
+              id: pmTargetId,
+              name,
+              title,
+              monthCardActive: isSelf ? false : msg.senderMonthCardActive === true,
+              characterId: otherCharacterId,
+            },
+          ];
         });
 
         setMessageBuckets((prev) => {
@@ -417,6 +443,7 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
             clientId: msg.clientId,
             senderTitle: msg.senderTitle ?? '',
             senderName: msg.senderName ?? '',
+            senderMonthCardActive: msg.senderMonthCardActive === true,
             senderCharacterId: msg.senderCharacterId,
             content: msg.content,
             channel: 'private',
@@ -466,6 +493,7 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
           clientId: msg.clientId,
           senderTitle: msg.senderTitle ?? '',
           senderName: msg.senderName ?? '',
+          senderMonthCardActive: msg.senderMonthCardActive === true,
           senderCharacterId: msg.senderCharacterId,
           content: msg.content,
           channel,
@@ -569,10 +597,11 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
     if (!Number.isFinite(characterId) || characterId <= 0) return;
     const id = makePrivateTargetId(characterId);
     const title = target.title?.trim() || '';
+    const monthCardActive = target.monthCardActive === true;
 
     setPrivateTargets((prev) => {
       if (prev.some((t) => t.id === id)) return prev;
-      return [...prev, { id, name, title, characterId }];
+      return [...prev, { id, name, title, monthCardActive, characterId }];
     });
 
     setActivePrivateTargetId(id);
@@ -617,7 +646,12 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
 
   const selfDisplayName = getDisplayName(character?.title ?? '', character?.nickname ?? '');
 
-  const buildPlayerTarget = (senderTitle: string, senderName: string, senderCharacterId?: number): InfoTarget => {
+  const buildPlayerTarget = (
+    senderTitle: string,
+    senderName: string,
+    senderCharacterId?: number,
+    senderMonthCardActive?: boolean,
+  ): InfoTarget => {
     const name = senderName?.trim() || '未知';
     const title = senderTitle?.trim() || '';
     const id = senderCharacterId && senderCharacterId > 0 ? String(senderCharacterId) : `chat-player-${name}`;
@@ -625,6 +659,7 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
       type: 'player',
       id,
       name,
+      monthCardActive: senderMonthCardActive === true,
       title,
       gender: '-',
       realm: '-',
@@ -678,6 +713,7 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
       clientId,
       senderTitle: character?.title ?? '',
       senderName: character?.nickname ?? '我',
+      senderMonthCardActive: character?.monthCardActive === true,
       senderCharacterId: character?.id,
       content,
       channel: actualChannel,
@@ -1086,8 +1122,13 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
               key: 'nickname',
               ellipsis: true,
               render: (_: unknown, record: OnlinePlayerDto) => (
-                <div className="chat-online-name">
-                  <div className="chat-online-nickname">{record.nickname}</div>
+                  <div className="chat-online-name">
+                  <PlayerName
+                    name={record.nickname}
+                    monthCardActive={record.monthCardActive}
+                    ellipsis
+                    className="chat-online-nickname"
+                  />
                   {record.title ? <div className="chat-online-title">{record.title}</div> : null}
                 </div>
               ),
@@ -1106,6 +1147,7 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
                       type: 'player',
                       id: String(record.id),
                       name: record.nickname,
+                      monthCardActive: record.monthCardActive,
                       title: record.title,
                     });
                     if (isMobile) setOnlineDrawerOpen(false);
@@ -1462,7 +1504,13 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
                         if (e.key === 'Enter' || e.key === ' ') setActivePrivateTargetId(t.id);
                       }}
                     >
-                      <div className="chat-private-target-name">{getDisplayName(t.title, t.name)}</div>
+                      <PlayerName
+                        name={t.name}
+                        title={t.title}
+                        monthCardActive={t.monthCardActive}
+                        ellipsis
+                        className="chat-private-target-name"
+                      />
                       <Button
                         type="text"
                         size="small"
@@ -1490,16 +1538,36 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
                       tabIndex={msg.senderName === '系统' ? undefined : 0}
                       onClick={() => {
                         if (msg.senderName === '系统') return;
-                        onSelectPlayer?.(buildPlayerTarget(msg.senderTitle, msg.senderName, msg.senderCharacterId));
+                        onSelectPlayer?.(
+                          buildPlayerTarget(
+                            msg.senderTitle,
+                            msg.senderName,
+                            msg.senderCharacterId,
+                            msg.senderMonthCardActive,
+                          ),
+                        );
                       }}
                       onKeyDown={(e) => {
                         if (msg.senderName === '系统') return;
                         if (e.key === 'Enter' || e.key === ' ') {
-                          onSelectPlayer?.(buildPlayerTarget(msg.senderTitle, msg.senderName, msg.senderCharacterId));
+                          onSelectPlayer?.(
+                            buildPlayerTarget(
+                              msg.senderTitle,
+                              msg.senderName,
+                              msg.senderCharacterId,
+                              msg.senderMonthCardActive,
+                            ),
+                          );
                         }
                       }}
                     >
-                      {getDisplayName(msg.senderTitle, msg.senderName)}:
+                      <PlayerName
+                        name={msg.senderName}
+                        title={msg.senderTitle}
+                        monthCardActive={msg.senderMonthCardActive}
+                        ellipsis
+                      />
+                      :
                     </span>
                     <span className={`message-content ${msg.channel === 'battle' ? 'message-content-battle' : ''}`}>
                       {renderMessageContent(msg)}
@@ -1520,16 +1588,36 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
                   tabIndex={msg.senderName === '系统' ? undefined : 0}
                   onClick={() => {
                     if (msg.senderName === '系统') return;
-                    onSelectPlayer?.(buildPlayerTarget(msg.senderTitle, msg.senderName, msg.senderCharacterId));
+                    onSelectPlayer?.(
+                      buildPlayerTarget(
+                        msg.senderTitle,
+                        msg.senderName,
+                        msg.senderCharacterId,
+                        msg.senderMonthCardActive,
+                      ),
+                    );
                   }}
                   onKeyDown={(e) => {
                     if (msg.senderName === '系统') return;
                     if (e.key === 'Enter' || e.key === ' ') {
-                      onSelectPlayer?.(buildPlayerTarget(msg.senderTitle, msg.senderName, msg.senderCharacterId));
+                      onSelectPlayer?.(
+                        buildPlayerTarget(
+                          msg.senderTitle,
+                          msg.senderName,
+                          msg.senderCharacterId,
+                          msg.senderMonthCardActive,
+                        ),
+                      );
                     }
                   }}
                 >
-                  {getDisplayName(msg.senderTitle, msg.senderName)}:
+                  <PlayerName
+                    name={msg.senderName}
+                    title={msg.senderTitle}
+                    monthCardActive={msg.senderMonthCardActive}
+                    ellipsis
+                  />
+                  :
                 </span>
                 <span className={`message-content ${msg.channel === 'battle' ? 'message-content-battle' : ''}`}>
                   {renderMessageContent(msg)}

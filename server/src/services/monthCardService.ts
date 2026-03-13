@@ -1,5 +1,6 @@
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
+import { getGameServer } from '../game/gameServer.js';
 import { updateAchievementProgress } from './achievementService.js';
 import {
   DEFAULT_MONTH_CARD_ITEM_DEF_ID,
@@ -236,6 +237,7 @@ class MonthCardService {
       );
     }
     await updateAchievementProgress(characterId, 'monthcard:activate', 1);
+    void getGameServer().pushCharacterUpdate(userId);
 
     const daysLeft = Math.max(0, Math.ceil((nextExpireAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
     return {
@@ -308,6 +310,7 @@ class MonthCardService {
       );
     }
     await updateAchievementProgress(characterId, 'monthcard:activate', 1);
+    void getGameServer().pushCharacterUpdate(userId);
 
     const daysLeft = Math.max(0, Math.ceil((expireAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
     return {

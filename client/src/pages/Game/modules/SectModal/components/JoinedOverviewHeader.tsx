@@ -6,6 +6,7 @@
  */
 import { EditOutlined } from '@ant-design/icons';
 import { Button, Tag } from 'antd';
+import PlayerName from '../../../shared/PlayerName';
 import type { SectJoinedSummary } from '../types';
 
 interface JoinedOverviewHeaderProps {
@@ -30,7 +31,14 @@ const JoinedOverviewHeader: React.FC<JoinedOverviewHeaderProps> = ({
           <div className="sect-card-name">{summary.name}</div>
           <div className="sect-card-meta">
             <Tag color="blue">Lv.{summary.level}</Tag>
-            <Tag>宗主 {summary.leader}</Tag>
+            <Tag>
+              宗主{' '}
+              <PlayerName
+                name={summary.leader}
+                monthCardActive={summary.leaderMonthCardActive}
+                ellipsis
+              />
+            </Tag>
             <Tag>
               成员 {summary.members}/{summary.memberCap}
             </Tag>

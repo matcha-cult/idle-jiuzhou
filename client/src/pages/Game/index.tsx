@@ -759,6 +759,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     return list.map((m) => ({
       id: String(m.characterId),
       name: m.name,
+      monthCardActive: m.monthCardActive,
       title: m.role === 'leader' ? '队长' : '队员',
       realm: m.realm,
       avatar: m.avatar,

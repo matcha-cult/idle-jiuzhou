@@ -27,6 +27,7 @@ import {
 import { useIsMobile } from '../../shared/responsive';
 import { REALM_ORDER } from '../../shared/realm';
 import { useRealtimeMemberPresence } from '../../shared/useRealtimeMemberPresence';
+import PlayerName from '../../shared/PlayerName';
 import './index.scss';
 
 type TeamPanelKey = 'my' | 'apply' | 'near' | 'lobby';
@@ -465,7 +466,7 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
             <span className="team-member-icon">
               <UserOutlined />
             </span>
-            <span className="team-member-name">{row.name}</span>
+            <PlayerName name={row.name} monthCardActive={row.monthCardActive} ellipsis className="team-member-name" />
             {row.role === 'leader' ? <Tag color="gold">队长</Tag> : <Tag>队员</Tag>}
             <Tag color={row.online ? 'green' : 'default'}>{row.online ? '在线' : '离线'}</Tag>
           </div>
@@ -595,7 +596,7 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
                         <span className="team-member-icon">
                           <UserOutlined />
                         </span>
-                        <span className="team-member-name">{row.name}</span>
+                        <PlayerName name={row.name} monthCardActive={row.monthCardActive} ellipsis className="team-member-name" />
                       </div>
                       <div className="team-mobile-card-tags">
                         {row.role === 'leader' ? <Tag color="gold">队长</Tag> : <Tag>队员</Tag>}
@@ -713,8 +714,8 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
                 {applications.map((row) => (
                   <div key={row.id} className="team-mobile-card">
                     <div className="team-mobile-card-head">
-                      <div className="team-mobile-card-title">{row.name}</div>
-                      <Tag>{row.realm || '—'}</Tag>
+                  <PlayerName name={row.name} monthCardActive={row.monthCardActive} ellipsis className="team-mobile-card-title" />
+                  <Tag>{row.realm || '—'}</Tag>
                     </div>
                     <div className="team-mobile-message">{String(row.message || '无留言')}</div>
                     <div className="team-mobile-actions">
@@ -739,7 +740,15 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
                 rowKey={(row) => row.id}
                 pagination={false}
                 columns={[
-                  { title: '玩家', dataIndex: 'name', key: 'name', width: 140 },
+                  {
+                    title: '玩家',
+                    dataIndex: 'name',
+                    key: 'name',
+                    width: 140,
+                    render: (value: string, row: TeamApplication) => (
+                      <PlayerName name={value} monthCardActive={row.monthCardActive} ellipsis />
+                    ),
+                  },
                   { title: '境界', dataIndex: 'realm', key: 'realm', width: 160 },
                   {
                     title: '留言',
@@ -786,7 +795,16 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
                 <div className="team-mobile-meta-line">
                   <span className="team-mobile-meta-item">
                     <span className="team-mobile-meta-k">邀请者</span>
-                    <span className="team-mobile-meta-v">{row.inviterName || '—'}</span>
+                    {row.inviterName ? (
+                      <PlayerName
+                        name={row.inviterName}
+                        monthCardActive={row.inviterMonthCardActive}
+                        ellipsis
+                        className="team-mobile-meta-v"
+                      />
+                    ) : (
+                      <span className="team-mobile-meta-v">—</span>
+                    )}
                   </span>
                   <span className="team-mobile-meta-item">
                     <span className="team-mobile-meta-k">目标</span>
@@ -818,7 +836,15 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
             pagination={false}
             columns={[
               { title: '队伍', dataIndex: 'teamName', key: 'teamName', width: 160 },
-              { title: '邀请者', dataIndex: 'inviterName', key: 'inviterName', width: 140 },
+              {
+                title: '邀请者',
+                dataIndex: 'inviterName',
+                key: 'inviterName',
+                width: 140,
+                render: (value: string, row: TeamInvitation) => (
+                  <PlayerName name={value || '—'} monthCardActive={row.inviterMonthCardActive} ellipsis />
+                ),
+              },
               { title: '目标', dataIndex: 'goal', key: 'goal' },
               {
                 title: '留言',
@@ -874,7 +900,16 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
                 <div className="team-mobile-meta-line">
                   <span className="team-mobile-meta-item">
                     <span className="team-mobile-meta-k">队长</span>
-                    <span className="team-mobile-meta-v">{row.leader || '—'}</span>
+                    {row.leader ? (
+                      <PlayerName
+                        name={row.leader}
+                        monthCardActive={row.leaderMonthCardActive}
+                        ellipsis
+                        className="team-mobile-meta-v"
+                      />
+                    ) : (
+                      <span className="team-mobile-meta-v">—</span>
+                    )}
                   </span>
                   <span className="team-mobile-meta-item">
                     <span className="team-mobile-meta-k">目标</span>
@@ -900,7 +935,15 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
             pagination={false}
             columns={[
               { title: '队伍', dataIndex: 'name', key: 'name', width: 160 },
-              { title: '队长', dataIndex: 'leader', key: 'leader', width: 120 },
+              {
+                title: '队长',
+                dataIndex: 'leader',
+                key: 'leader',
+                width: 120,
+                render: (value: string, row: TeamEntry) => (
+                  <PlayerName name={value || '—'} monthCardActive={row.leaderMonthCardActive} ellipsis />
+                ),
+              },
               { title: '人数', key: 'members', width: 120, render: (_: unknown, row: TeamEntry) => `${row.members}/${row.cap}` },
               { title: '目标', dataIndex: 'goal', key: 'goal' },
               { title: '距离', dataIndex: 'distance', key: 'distance', width: 110 },
@@ -962,7 +1005,16 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
                 <div className="team-mobile-meta-line">
                   <span className="team-mobile-meta-item">
                     <span className="team-mobile-meta-k">队长</span>
-                    <span className="team-mobile-meta-v">{row.leader || '—'}</span>
+                    {row.leader ? (
+                      <PlayerName
+                        name={row.leader}
+                        monthCardActive={row.leaderMonthCardActive}
+                        ellipsis
+                        className="team-mobile-meta-v"
+                      />
+                    ) : (
+                      <span className="team-mobile-meta-v">—</span>
+                    )}
                   </span>
                   <span className="team-mobile-meta-item">
                     <span className="team-mobile-meta-k">目标</span>
@@ -994,7 +1046,15 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
             pagination={false}
             columns={[
               { title: '队伍', dataIndex: 'name', key: 'name', width: 170 },
-              { title: '队长', dataIndex: 'leader', key: 'leader', width: 120 },
+              {
+                title: '队长',
+                dataIndex: 'leader',
+                key: 'leader',
+                width: 120,
+                render: (value: string, row: TeamEntry) => (
+                  <PlayerName name={value || '—'} monthCardActive={row.leaderMonthCardActive} ellipsis />
+                ),
+              },
               { title: '人数', key: 'members', width: 120, render: (_: unknown, row: TeamEntry) => `${row.members}/${row.cap}` },
               { title: '目标', dataIndex: 'goal', key: 'goal' },
               { title: '最低境界', dataIndex: 'minRealm', key: 'minRealm', width: 120 },

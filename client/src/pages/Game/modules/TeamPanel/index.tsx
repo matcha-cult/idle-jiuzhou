@@ -1,11 +1,13 @@
 import { Avatar, Button, Tag } from 'antd';
 import { UserOutlined } from '@ant-design/icons';
 import { resolveAvatarUrl } from '../../../../services/api';
+import PlayerName from '../../shared/PlayerName';
 import './index.scss';
 
 export type TeamMember = {
   id: string;
   name: string;
+  monthCardActive?: boolean;
   title?: string;
   realm?: string;
   avatar?: string | null;
@@ -58,9 +60,7 @@ const TeamPanel: React.FC<TeamPanelProps> = ({ members, onSelectMember, onLeaveT
               }}
             >
               <Avatar className="team-member-avatar" size={30} src={resolveAvatarUrl(m.avatar)} icon={<UserOutlined />} />
-              <div className="team-member-name" title={m.name}>
-                {m.name}
-              </div>
+              <PlayerName name={m.name} monthCardActive={m.monthCardActive} ellipsis className="team-member-name" />
               {m.role === 'leader' ? <Tag color="gold">队长</Tag> : null}
               <Tag color={online ? 'green' : 'default'}>{online ? '在线' : '离线'}</Tag>
             </div>

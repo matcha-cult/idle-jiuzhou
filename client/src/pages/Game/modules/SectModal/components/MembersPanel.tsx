@@ -8,6 +8,7 @@
  */
 import { useMemo } from 'react';
 import { Button, Table, Tag } from 'antd';
+import PlayerName from '../../../shared/PlayerName';
 import { useIsMobile } from '../../../shared/responsive';
 import { useRealtimeMemberPresence } from '../../../shared/useRealtimeMemberPresence';
 import type { SectMemberVm, SectPermissionState } from '../types';
@@ -104,7 +105,12 @@ const MembersPanel: React.FC<MembersPanelProps> = ({
                 <div key={member.characterId} className={`sect-mobile-card${online ? '' : ' is-offline'}`}>
                   <div className="sect-mobile-card-head">
                     <div className="sect-mobile-card-title-wrap">
-                      <div className="sect-mobile-card-title">{member.nickname}</div>
+                      <PlayerName
+                        name={member.nickname}
+                        monthCardActive={member.monthCardActive}
+                        ellipsis
+                        className="sect-mobile-card-title"
+                      />
                       <div className={`sect-member-online-text${online ? ' is-online' : ''}`}>{getOfflineText(member.characterId)}</div>
                     </div>
                     <Tag color={member.position === 'leader' ? 'gold' : 'blue'}>{member.positionLabel}</Tag>
@@ -181,7 +187,12 @@ const MembersPanel: React.FC<MembersPanelProps> = ({
                 const online = isMemberOnline(row.characterId);
                 return (
                   <div className="sect-member-name-wrap">
-                    <span className="sect-member-name">{value}</span>
+                    <PlayerName
+                      name={value}
+                      monthCardActive={row.monthCardActive}
+                      ellipsis
+                      className="sect-member-name"
+                    />
                     <span className={`sect-member-online-text${online ? ' is-online' : ''}`}>{getOfflineText(row.characterId)}</span>
                   </div>
                 );

@@ -42,6 +42,7 @@ export interface SectJoinedSummary {
   name: string;
   level: number;
   leader: string;
+  leaderMonthCardActive: boolean;
   members: number;
   memberCap: number;
   notice: string;
@@ -53,6 +54,7 @@ export interface SectJoinedSummary {
 export interface SectMemberVm {
   characterId: number;
   nickname: string;
+  monthCardActive: boolean;
   realm: string;
   position: SectPositionDto;
   positionLabel: string;

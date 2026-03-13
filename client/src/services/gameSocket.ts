@@ -65,6 +65,7 @@ export interface CharacterData {
   id: number;
   userId: number;
   nickname: string;
+  monthCardActive: boolean;
   title: string;
   gender: string;
   avatar: string | null;
@@ -143,6 +144,7 @@ export interface ChatMessageDto {
   senderUserId: number;
   senderCharacterId: number;
   senderName: string;
+  senderMonthCardActive: boolean;
   senderTitle: string;
   pmTargetCharacterId?: number;
 }
@@ -230,6 +232,7 @@ type PartnerRecruitStatusListener = (data: PartnerRecruitStatusPayload) => void;
 export interface OnlinePlayerDto {
   id: number;
   nickname: string;
+  monthCardActive: boolean;
   title: string;
   realm: string;
 }
@@ -444,9 +447,10 @@ class GameSocketService {
         if (!id || id <= 0) return null;
         const nickname = toStringSafe(item.nickname).trim();
         if (!nickname) return null;
+        const monthCardActive = item.monthCardActive === true;
         const title = toStringSafe(item.title).trim();
         const realm = toStringSafe(item.realm).trim();
-        return { id, nickname, title, realm };
+        return { id, nickname, monthCardActive, title, realm };
       };
 
       if (!isRecord(payload)) return;

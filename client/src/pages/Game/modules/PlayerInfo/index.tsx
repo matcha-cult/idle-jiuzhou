@@ -14,6 +14,7 @@ import {
 } from '../../../../services/api';
 import { CHARACTER_PRIMARY_ATTR_META_LIST } from '../../shared/characterPrimaryAttrMeta';
 import { formatPercent, formatRecovery } from '../../shared/formatAttr';
+import PlayerName from '../../shared/PlayerName';
 import './index.scss';
 
 const CHARACTER_REFRESH_INTERVAL_MS = 30_000;
@@ -273,7 +274,12 @@ const PlayerInfo: React.FC = () => {
         <div className="player-top-right">
           <div className="player-name">
             <span className="player-title">{character.title}</span>
-            <span className="player-name-text">{character.nickname}</span>
+            <PlayerName
+              name={character.nickname}
+              monthCardActive={character.monthCardActive}
+              ellipsis
+              className="player-name-text"
+            />
           </div>
           <div className="player-meta-row">
             <span className="player-meta-tag">ID: {character.id}</span>

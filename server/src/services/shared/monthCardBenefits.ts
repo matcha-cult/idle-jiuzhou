@@ -31,6 +31,14 @@ const HOUR_SECONDS = 3_600;
 export const DEFAULT_MONTH_CARD_ID = 'monthcard-001';
 export const DEFAULT_MONTH_CARD_ITEM_DEF_ID = 'cons-monthcard-001';
 
+type MonthCardActiveCharacterRow = {
+  character_id: number | string;
+};
+
+const normalizeCharacterIds = (characterIds: number[]): number[] => {
+  return [...new Set(characterIds.map((id) => Math.floor(Number(id))).filter((id) => Number.isFinite(id) && id > 0))];
+};
+
 const normalizeNumber = (value: number | string | undefined): number => {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   if (typeof value === 'string') {
@@ -98,4 +106,37 @@ export const getActiveMonthCardCooldownReductionRate = async (
   );
 
   return result.rows.length > 0 ? reductionRate : 0;
+};
+
+export const getMonthCardActiveMapByCharacterIds = async (
+  characterIds: number[],
+  monthCardId: string = DEFAULT_MONTH_CARD_ID,
+  now: Date = new Date(),
+): Promise<Map<number, boolean>> => {
+  const ids = normalizeCharacterIds(characterIds);
+  const result = new Map<number, boolean>();
+
+  for (const id of ids) {
+    result.set(id, false);
+  }
+  if (ids.length === 0) return result;
+
+  const rows = await query(
+    `
+      SELECT character_id
+      FROM month_card_ownership
+      WHERE character_id = ANY($1::int[])
+        AND month_card_id = $2
+        AND expire_at > $3::timestamptz
+    `,
+    [ids, monthCardId, now.toISOString()],
+  );
+
+  for (const row of rows.rows as MonthCardActiveCharacterRow[]) {
+    const characterId = Math.floor(Number(row.character_id));
+    if (!Number.isFinite(characterId) || characterId <= 0) continue;
+    result.set(characterId, true);
+  }
+
+  return result;
 };

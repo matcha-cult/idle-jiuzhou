@@ -21,6 +21,7 @@ import { mailService } from "../services/mailService.js";
 import { notifyPartnerRecruitStatus } from "../services/partnerRecruitPush.js";
 import { getSectIndicatorByCharacterId } from "../services/sect/indicator.js";
 import { notifyTechniqueResearchStatus } from "../services/techniqueResearchPush.js";
+import { getMonthCardActiveMapByCharacterIds } from "../services/shared/monthCardBenefits.js";
 import { AsyncShutdownGate } from "../utils/asyncShutdownGate.js";
 
 // 玩家会话
@@ -35,6 +36,7 @@ interface PlayerSession {
 interface OnlinePlayerDto {
   id: number;
   nickname: string;
+  monthCardActive: boolean;
   title: string;
   realm: string;
 }
@@ -264,7 +266,7 @@ class GameServer {
           }
 
           const now = Date.now();
-          const message = {
+      const message = {
             id: randomUUID(),
             clientId,
             channel,
@@ -273,6 +275,7 @@ class GameServer {
             senderUserId: session.userId,
             senderCharacterId: session.character.id,
             senderName: session.character.nickname,
+            senderMonthCardActive: session.character.monthCardActive,
             senderTitle: session.character.title,
             pmTargetCharacterId:
               payload?.pmTargetCharacterId == null
@@ -452,6 +455,7 @@ class GameServer {
       map.set(c.id, {
         id: c.id,
         nickname: c.nickname,
+        monthCardActive: c.monthCardActive,
         title: c.title,
         realm: c.realm,
       });
@@ -503,6 +507,7 @@ class GameServer {
         joined.push(dto);
       } else if (
         old.nickname !== dto.nickname ||
+        old.monthCardActive !== dto.monthCardActive ||
         old.title !== dto.title ||
         old.realm !== dto.realm
       ) {
@@ -590,6 +595,7 @@ class GameServer {
     if (!prev || !next) return true;
     return (
       prev.nickname !== next.nickname ||
+      prev.monthCardActive !== next.monthCardActive ||
       prev.title !== next.title ||
       prev.realm !== next.realm
     );
@@ -618,8 +624,12 @@ class GameServer {
       await applyStaminaRecoveryByUserId(userId);
       const computed = await getCharacterComputedByUserId(userId);
       if (!computed) return null;
+      const monthCardActiveMap = await getMonthCardActiveMapByCharacterIds([computed.id]);
       const characterWithUnlockedFeatures = await withUnlockedFeatures(
-        computed as unknown as Record<string, unknown> & { id: number },
+        {
+          ...(computed as unknown as Record<string, unknown> & { id: number }),
+          month_card_active: monthCardActiveMap.get(computed.id) ?? false,
+        },
       );
       return dbToCharacterAttributes(
         characterWithUnlockedFeatures,

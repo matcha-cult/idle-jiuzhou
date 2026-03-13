@@ -30,6 +30,7 @@ import {
 } from './shared/dropRateMultiplier.js';
 import { getAdjustedDropQuantityRange } from './shared/dropQuantityMultiplier.js';
 import { getGemLevel, isGemItemDefinition } from './shared/gemItemSemantics.js';
+import { getMonthCardActiveMapByCharacterIds } from './shared/monthCardBenefits.js';
 
 type InfoTargetType = 'npc' | 'monster' | 'item' | 'player';
 
@@ -584,11 +585,13 @@ export const getInfoTargetDetail = async (type: InfoTargetType, id: string): Pro
 
     const name = typeof c.nickname === 'string' && c.nickname.trim() ? c.nickname.trim() : `修士${c.id}`;
     const title = typeof c.title === 'string' && c.title.trim() ? c.title.trim() : '散修';
+    const monthCardActive = (await getMonthCardActiveMapByCharacterIds([c.id])).get(c.id) ?? false;
 
     return {
       type: 'player',
       id: String(c.id),
       name,
+      monthCardActive,
       title,
       gender: normalizeGender(c.gender) ?? '-',
       realm: buildFullRealm(c.realm, c.sub_realm),

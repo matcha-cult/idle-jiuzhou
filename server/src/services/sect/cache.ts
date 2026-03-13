@@ -21,6 +21,7 @@
 
 import { query } from '../../config/database.js';
 import { createCacheLayer } from '../shared/cacheLayer.js';
+import { getMonthCardActiveMapByCharacterIds } from '../shared/monthCardBenefits.js';
 import { withBuildingRequirement } from './buildingRequirement.js';
 import { toNumber } from './db.js';
 import type {
@@ -96,12 +97,16 @@ const loadSectInfo = async (sectId: string): Promise<SectInfo | null> => {
     'SELECT * FROM sect_building WHERE sect_id = $1 ORDER BY building_type',
     [sectId],
   );
+  const monthCardActiveMap = await getMonthCardActiveMapByCharacterIds(
+    membersRes.rows.map((row) => toNumber(row.character_id)),
+  );
 
   return {
     sect,
     members: membersRes.rows.map((row) => ({
       characterId: toNumber(row.character_id),
       nickname: row.nickname,
+      monthCardActive: monthCardActiveMap.get(toNumber(row.character_id)) ?? false,
       realm: row.realm,
       position: row.position,
       contribution: toNumber(row.contribution),
@@ -124,7 +129,13 @@ const loadSectApplications = async (sectId: string): Promise<SectApplicationList
     `,
     [sectId],
   );
-  return res.rows;
+  const monthCardActiveMap = await getMonthCardActiveMapByCharacterIds(
+    res.rows.map((row) => Number(row.character_id)),
+  );
+  return res.rows.map((row) => ({
+    ...row,
+    monthCardActive: monthCardActiveMap.get(Number(row.character_id)) ?? false,
+  }));
 };
 
 const loadMySectApplications = async (characterId: number): Promise<MySectApplicationListItem[]> => {

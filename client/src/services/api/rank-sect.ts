@@ -4,6 +4,7 @@ import api from './core';
 export type RealmRankRowDto = {
   rank: number;
   name: string;
+  monthCardActive: boolean;
   realm: string;
   power: number;
 };
@@ -13,6 +14,7 @@ export type SectRankRowDto = {
   name: string;
   level: number;
   leader: string;
+  leaderMonthCardActive: boolean;
   members: number;
   memberCap: number;
   power: number;
@@ -21,6 +23,7 @@ export type SectRankRowDto = {
 export type WealthRankRowDto = {
   rank: number;
   name: string;
+  monthCardActive: boolean;
   realm: string;
   spiritStones: number;
   silver: number;
@@ -29,6 +32,7 @@ export type WealthRankRowDto = {
 export type ArenaRankRowDto = {
   rank: number;
   name: string;
+  monthCardActive: boolean;
   realm: string;
   score: number;
   winCount: number;
@@ -93,6 +97,7 @@ export type SectDefDto = {
 export type SectMemberDto = {
   characterId: number;
   nickname: string;
+  monthCardActive: boolean;
   realm: string;
   position: SectPositionDto;
   contribution: number;
@@ -233,6 +238,7 @@ export type SectApplicationDto = {
   id: number;
   characterId: number;
   nickname: string;
+  monthCardActive: boolean;
   realm: string;
   message: string | null;
   createdAt: string;

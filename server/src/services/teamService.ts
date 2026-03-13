@@ -5,6 +5,7 @@ import { onUserJoinTeam, onUserLeaveTeam } from './battle/index.js';
 import { updateAchievementProgress } from './achievementService.js';
 import { idleSessionService } from './idle/idleSessionService.js';
 import { createCacheLayer } from './shared/cacheLayer.js';
+import { getMonthCardActiveMapByCharacterIds } from './shared/monthCardBenefits.js';
 import { REALM_ORDER } from './shared/realmRules.js';
 
 /**
@@ -31,6 +32,7 @@ interface TeamMember {
   id: string;
   characterId: number;
   name: string;
+  monthCardActive: boolean;
   role: 'leader' | 'member';
   realm: string;
   online: boolean;
@@ -43,6 +45,7 @@ interface TeamInfo {
   name: string;
   leader: string;
   leaderId: number;
+  leaderMonthCardActive: boolean;
   members: TeamMember[];
   memberCount: number;
   maxMembers: number;
@@ -95,6 +98,7 @@ interface TeamApplicationListItem {
   id: string;
   characterId: number;
   name: string;
+  monthCardActive: boolean;
   realm: string;
   avatar: string | null;
   message: string | null;
@@ -137,7 +141,10 @@ const resolveTeamMemberOnlineMap = (rows: TeamMemberQueryRow[]): Map<number, boo
   return result;
 };
 
-const buildTeamMembers = (rows: TeamMemberQueryRow[]): TeamMember[] => {
+const buildTeamMembers = (
+  rows: TeamMemberQueryRow[],
+  monthCardActiveMap: Map<number, boolean>,
+): TeamMember[] => {
   const onlineMap = resolveTeamMemberOnlineMap(rows);
   const members: TeamMember[] = [];
 
@@ -149,6 +156,7 @@ const buildTeamMembers = (rows: TeamMemberQueryRow[]): TeamMember[] => {
       id: `tm-${characterId}`,
       characterId,
       name: String(row.nickname || ''),
+      monthCardActive: monthCardActiveMap.get(characterId) ?? false,
       role: normalizeTeamMemberRole(row.role),
       realm: getFullRealm(String(row.realm || ''), row.sub_realm),
       online: userId ? (onlineMap.get(userId) ?? false) : false,
@@ -169,7 +177,11 @@ const getTeamMembersByTeamId = async (teamId: string): Promise<TeamMember[]> => 
     [teamId]
   );
 
-  return buildTeamMembers(membersResult.rows as TeamMemberQueryRow[]);
+  const rows = membersResult.rows as TeamMemberQueryRow[];
+  const monthCardActiveMap = await getMonthCardActiveMapByCharacterIds(
+    rows.map((row) => Number(row.character_id)),
+  );
+  return buildTeamMembers(rows, monthCardActiveMap);
 };
 
 /**
@@ -213,6 +225,7 @@ const loadTeamInfoById = async (teamId: string): Promise<TeamInfo | null> => {
     name: team.name,
     leader: team.leader_name,
     leaderId: team.leader_id,
+    leaderMonthCardActive: (await getMonthCardActiveMapByCharacterIds([team.leader_id])).get(team.leader_id) ?? false,
     members,
     memberCount: members.length,
     maxMembers: team.max_members,
@@ -236,10 +249,15 @@ const loadTeamApplicationsByTeamId = async (teamId: string): Promise<TeamApplica
     [teamId],
   );
 
+  const monthCardActiveMap = await getMonthCardActiveMapByCharacterIds(
+    applications.rows.map((row) => Number(row.character_id)),
+  );
+
   return applications.rows.map((row) => ({
     id: row.id,
     characterId: row.character_id,
     name: row.nickname,
+    monthCardActive: monthCardActiveMap.get(Number(row.character_id)) ?? false,
     realm: getFullRealm(row.realm, row.sub_realm),
     avatar: row.avatar,
     message: row.message,
@@ -929,7 +947,7 @@ export const getNearbyTeams = async (characterId: number, mapId?: string) => {
 
   // 查询同地图的公开队伍
   const teamsResult = await query(
-    `SELECT t.id, t.name, t.goal, t.join_min_realm, t.max_members,
+    `SELECT t.id, t.name, t.goal, t.join_min_realm, t.max_members, t.leader_id,
             c.nickname as leader_name,
             (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) as member_count
      FROM teams t
@@ -942,10 +960,11 @@ export const getNearbyTeams = async (characterId: number, mapId?: string) => {
     [currentMapId, characterId]
   );
 
-  const data = teamsResult.rows.map((row: any) => ({
+  const rawRows = teamsResult.rows.map((row: any) => ({
     id: row.id,
     name: row.name,
     leader: row.leader_name,
+    leaderCharacterId: Number(row.leader_id),
     members: parseInt(row.member_count),
     cap: row.max_members,
     goal: row.goal,
@@ -953,7 +972,17 @@ export const getNearbyTeams = async (characterId: number, mapId?: string) => {
     distance: `${Math.floor(Math.random() * 500) + 50}米`, // TODO: 实现真实距离计算
   }));
 
-  return { success: true, data };
+  const leaderMonthCardActiveMap = await getMonthCardActiveMapByCharacterIds(
+    rawRows.map((row) => row.leaderCharacterId),
+  );
+
+  return {
+    success: true,
+    data: rawRows.map(({ leaderCharacterId, ...row }) => ({
+      ...row,
+      leaderMonthCardActive: leaderMonthCardActiveMap.get(leaderCharacterId) ?? false,
+    })),
+  };
 };
 
 /**
@@ -961,7 +990,7 @@ export const getNearbyTeams = async (characterId: number, mapId?: string) => {
  */
 export const getLobbyTeams = async (characterId: number, search?: string, limit: number = 50) => {
   let sql = `
-    SELECT t.id, t.name, t.goal, t.join_min_realm, t.max_members,
+    SELECT t.id, t.name, t.goal, t.join_min_realm, t.max_members, t.leader_id,
            c.nickname as leader_name,
            (SELECT COUNT(*) FROM team_members WHERE team_id = t.id) as member_count
     FROM teams t
@@ -981,17 +1010,28 @@ export const getLobbyTeams = async (characterId: number, search?: string, limit:
 
   const teamsResult = await query(sql, params);
 
-  const data = teamsResult.rows.map((row: any) => ({
+  const rawRows = teamsResult.rows.map((row: any) => ({
     id: row.id,
     name: row.name,
     leader: row.leader_name,
+    leaderCharacterId: Number(row.leader_id),
     members: parseInt(row.member_count),
     cap: row.max_members,
     goal: row.goal,
     minRealm: row.join_min_realm,
   }));
 
-  return { success: true, data };
+  const leaderMonthCardActiveMap = await getMonthCardActiveMapByCharacterIds(
+    rawRows.map((row) => row.leaderCharacterId),
+  );
+
+  return {
+    success: true,
+    data: rawRows.map(({ leaderCharacterId, ...row }) => ({
+      ...row,
+      leaderMonthCardActive: leaderMonthCardActiveMap.get(leaderCharacterId) ?? false,
+    })),
+  };
 };
 
 /**
@@ -1064,7 +1104,7 @@ export const inviteToTeam = async (inviterId: number, inviteeId: number, message
  */
 export const getReceivedInvitations = async (characterId: number) => {
   const invitations = await query(
-    `SELECT ti.id, ti.message, ti.created_at,
+    `SELECT ti.id, ti.message, ti.created_at, ti.inviter_id,
             t.id as team_id, t.name as team_name, t.goal,
             c.nickname as inviter_name
      FROM team_invitations ti
@@ -1075,17 +1115,28 @@ export const getReceivedInvitations = async (characterId: number) => {
     [characterId]
   );
 
-  const data = invitations.rows.map((row: any) => ({
+  const rawRows = invitations.rows.map((row: any) => ({
     id: row.id,
     teamId: row.team_id,
     teamName: row.team_name,
     goal: row.goal,
     inviterName: row.inviter_name,
+    inviterCharacterId: Number(row.inviter_id),
     message: row.message,
     time: new Date(row.created_at).getTime(),
   }));
 
-  return { success: true, data };
+  const inviterMonthCardActiveMap = await getMonthCardActiveMapByCharacterIds(
+    rawRows.map((row) => row.inviterCharacterId),
+  );
+
+  return {
+    success: true,
+    data: rawRows.map(({ inviterCharacterId, ...row }) => ({
+      ...row,
+      inviterMonthCardActive: inviterMonthCardActiveMap.get(inviterCharacterId) ?? false,
+    })),
+  };
 };
 
 /**
