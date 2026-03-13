@@ -101,7 +101,7 @@ const MarketPartnerBuyModal: React.FC<MarketPartnerBuyModalProps> = ({
                 {unitPrice.toLocaleString()} 灵石
               </div>
             </div>
-            <div className="market-list-actions" style={{ marginTop: 16 }}>
+            <div className="market-list-actions">
               <Button type="primary" disabled={!canBuy} onClick={onBuy} block>
                 {isMyOwn ? '不可购买自己的上架' : '确认购买'}
               </Button>
