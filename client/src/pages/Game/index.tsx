@@ -83,6 +83,7 @@ import {
 } from './modules/NpcTalkModal/shared';
 import { PARTNER_FEATURE_UNLOCK_HINT, hasCharacterFeature } from './shared/featureUnlocks';
 import { formatMainQuestRewardTexts } from './shared/mainQuestRewardText';
+import { useRealtimeMemberPresence } from './shared/useRealtimeMemberPresence';
 
 interface GameProps {
   onLogout?: () => void;
@@ -719,6 +720,13 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const teamBattleAutoCloseTimerRef = useRef<number | null>(null);
   const inTeam = Boolean(teamInfo?.id);
   const externalBattleId = arenaBattleId || dungeonBattleId || (inTeam && !isTeamLeader ? teamBattleId : null) || reconnectBattleId;
+  const teamPresenceMembers = useMemo(
+    () => (teamInfo?.members ?? []).map((member) => ({ characterId: member.characterId })),
+    [teamInfo],
+  );
+  const { isCharacterOnline: isTeamCharacterOnline } = useRealtimeMemberPresence(
+    teamPresenceMembers,
+  );
 
   const clearBattleAutoCloseTimer = useCallback(() => {
     if (!teamBattleAutoCloseTimerRef.current) return;
@@ -753,14 +761,14 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       title: m.role === 'leader' ? '队长' : '队员',
       realm: m.realm,
       avatar: m.avatar,
-      online: Boolean(m.online),
+      online: isTeamCharacterOnline(m.characterId),
       hp: 0,
       maxHp: 0,
       qi: 0,
       maxQi: 0,
       role: m.role,
     }));
-  }, [teamInfo]);
+  }, [isTeamCharacterOnline, teamInfo]);
   const characterId = character?.id ?? null;
   const partnerUnlocked = hasCharacterFeature(character, PARTNER_FEATURE_CODE);
   const myBattleUnitId = useMemo(() => (characterId ? `player-${characterId}` : null), [characterId]);

@@ -26,6 +26,7 @@ import {
 } from '../../../../services/teamApi';
 import { useIsMobile } from '../../shared/responsive';
 import { REALM_ORDER } from '../../shared/realm';
+import { useRealtimeMemberPresence } from '../../shared/useRealtimeMemberPresence';
 import './index.scss';
 
 type TeamPanelKey = 'my' | 'apply' | 'near' | 'lobby';
@@ -53,8 +54,6 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
 
   const [teamInfo, setTeamInfo] = useState<TeamInfo | null>(null);
   const [teamRole, setTeamRole] = useState<'leader' | 'member' | null>(null);
-
-  const [members, setMembers] = useState<TeamMember[]>([]);
   const [applications, setApplications] = useState<TeamApplication[]>([]);
   const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
   const [nearbyTeams, setNearbyTeams] = useState<TeamEntry[]>([]);
@@ -75,6 +74,20 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
     if (teamRole === 'leader') return true;
     return teamInfo.leaderId === characterId;
   }, [characterId, teamInfo, teamRole]);
+  const teamPresenceMembers = useMemo(
+    () => (teamInfo?.members ?? []).map((member) => ({ characterId: member.characterId })),
+    [teamInfo],
+  );
+  const { isCharacterOnline: isTeamCharacterOnline } = useRealtimeMemberPresence(
+    teamPresenceMembers,
+  );
+  const members = useMemo<TeamMember[]>(() => {
+    const list = teamInfo?.members ?? [];
+    return list.map((member) => ({
+      ...member,
+      online: isTeamCharacterOnline(member.characterId),
+    }));
+  }, [isTeamCharacterOnline, teamInfo]);
   const [applicationsSeenAt, setApplicationsSeenAt] = useState(0);
   const applicationsSeenKey = useMemo(() => {
     if (!characterId || !teamInfo?.id) return null;
@@ -110,14 +123,6 @@ const TeamModal: React.FC<TeamModalProps> = ({ open, onClose, playerName = '我'
   useEffect(() => {
     lobbyQueryRef.current = lobbyQuery.trim();
   }, [lobbyQuery]);
-
-  useEffect(() => {
-    if (!teamInfo) {
-      setMembers([]);
-      return;
-    }
-    setMembers(teamInfo.members ?? []);
-  }, [teamInfo]);
 
   const menuItems = useMemo(() => {
     const applyLabel =
