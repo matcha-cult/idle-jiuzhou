@@ -4,6 +4,7 @@ import { getGameServer } from '../game/gameServer.js';
 import { onUserJoinTeam, onUserLeaveTeam } from './battle/index.js';
 import { updateAchievementProgress } from './achievementService.js';
 import { idleSessionService } from './idle/idleSessionService.js';
+import { createCacheLayer } from './shared/cacheLayer.js';
 import { REALM_ORDER } from './shared/realmRules.js';
 
 /**
@@ -64,6 +65,46 @@ interface TeamMemberQueryRow {
   sub_realm: string | null;
   avatar: string | null;
 }
+
+interface TeamInfoRow {
+  id: string;
+  name: string;
+  leader_id: number;
+  leader_name: string;
+  max_members: number;
+  goal: string;
+  join_min_realm: string;
+  auto_join_enabled: boolean;
+  auto_join_min_realm: string;
+  current_map_id: string | null;
+  is_public: boolean;
+}
+
+interface TeamApplicationQueryRow {
+  id: string;
+  message: string | null;
+  created_at: string;
+  character_id: number;
+  nickname: string;
+  realm: string;
+  sub_realm: string | null;
+  avatar: string | null;
+}
+
+interface TeamApplicationListItem {
+  id: string;
+  characterId: number;
+  name: string;
+  realm: string;
+  avatar: string | null;
+  message: string | null;
+  time: number;
+}
+
+const TEAM_INFO_CACHE_REDIS_TTL_SEC = 15;
+const TEAM_INFO_CACHE_MEMORY_TTL_MS = 3_000;
+const TEAM_APPLICATIONS_CACHE_REDIS_TTL_SEC = 8;
+const TEAM_APPLICATIONS_CACHE_MEMORY_TTL_MS = 2_000;
 
 const toPositiveInt = (value: unknown): number | null => {
   const n = Math.floor(Number(value));
@@ -129,6 +170,110 @@ const getTeamMembersByTeamId = async (teamId: string): Promise<TeamMember[]> => 
   );
 
   return buildTeamMembers(membersResult.rows as TeamMemberQueryRow[]);
+};
+
+/**
+ * 组队读缓存
+ *
+ * 作用：
+ * 1. 把“队伍详情”和“申请列表”这两条高频读链路集中到单一缓存入口，避免 `getCharacterTeam`、`getTeamById`、`getTeamApplications` 各自重复查库。
+ * 2. 写路径只调用失效函数，不重复关心缓存 key、TTL、回填逻辑。
+ *
+ * 输入/输出：
+ * - 输入：teamId
+ * - 输出：TeamInfo / TeamApplicationListItem[]
+ *
+ * 数据流：
+ * - 读：service -> cacheLayer -> DB loader -> 回填缓存
+ * - 写：service 写入 DB -> invalidateTeam... -> 后续读重新回源
+ *
+ * 关键边界条件与坑点：
+ * 1. `getCharacterTeam` 仍需先按 characterId 查一次 team_id，避免同一队伍详情按角色维度重复缓存。
+ * 2. 成员变动、队长变更、设置更新会影响队伍详情；申请提交/处理/解散会影响申请列表，两个缓存必须按场景分别失效。
+ */
+const loadTeamInfoById = async (teamId: string): Promise<TeamInfo | null> => {
+  const teamResult = await query<TeamInfoRow>(
+    `SELECT t.id, t.name, t.leader_id, c.nickname as leader_name, t.max_members, t.goal, t.join_min_realm,
+            t.auto_join_enabled, t.auto_join_min_realm, t.current_map_id, t.is_public
+     FROM teams t
+     JOIN characters c ON t.leader_id = c.id
+     WHERE t.id = $1`,
+    [teamId],
+  );
+
+  if (teamResult.rows.length === 0) {
+    return null;
+  }
+
+  const team = teamResult.rows[0];
+  const members = await getTeamMembersByTeamId(teamId);
+
+  return {
+    id: team.id,
+    name: team.name,
+    leader: team.leader_name,
+    leaderId: team.leader_id,
+    members,
+    memberCount: members.length,
+    maxMembers: team.max_members,
+    goal: team.goal,
+    joinMinRealm: team.join_min_realm,
+    autoJoinEnabled: team.auto_join_enabled,
+    autoJoinMinRealm: team.auto_join_min_realm,
+    currentMapId: team.current_map_id,
+    isPublic: team.is_public,
+  };
+};
+
+const loadTeamApplicationsByTeamId = async (teamId: string): Promise<TeamApplicationListItem[]> => {
+  const applications = await query<TeamApplicationQueryRow>(
+    `SELECT ta.id, ta.message, ta.created_at,
+            c.id as character_id, c.nickname, c.realm, c.sub_realm, c.avatar
+     FROM team_applications ta
+     JOIN characters c ON ta.applicant_id = c.id
+     WHERE ta.team_id = $1 AND ta.status = 'pending'
+     ORDER BY ta.created_at DESC`,
+    [teamId],
+  );
+
+  return applications.rows.map((row) => ({
+    id: row.id,
+    characterId: row.character_id,
+    name: row.nickname,
+    realm: getFullRealm(row.realm, row.sub_realm),
+    avatar: row.avatar,
+    message: row.message,
+    time: new Date(row.created_at).getTime(),
+  }));
+};
+
+const teamInfoCache = createCacheLayer<string, TeamInfo>({
+  keyPrefix: 'team:info:',
+  redisTtlSec: TEAM_INFO_CACHE_REDIS_TTL_SEC,
+  memoryTtlMs: TEAM_INFO_CACHE_MEMORY_TTL_MS,
+  loader: loadTeamInfoById,
+});
+
+const teamApplicationsCache = createCacheLayer<string, TeamApplicationListItem[]>({
+  keyPrefix: 'team:applications:',
+  redisTtlSec: TEAM_APPLICATIONS_CACHE_REDIS_TTL_SEC,
+  memoryTtlMs: TEAM_APPLICATIONS_CACHE_MEMORY_TTL_MS,
+  loader: loadTeamApplicationsByTeamId,
+});
+
+const invalidateTeamInfoCache = async (teamId: string): Promise<void> => {
+  await teamInfoCache.invalidate(teamId);
+};
+
+const invalidateTeamApplicationsCache = async (teamId: string): Promise<void> => {
+  await teamApplicationsCache.invalidate(teamId);
+};
+
+const invalidateTeamReadCaches = async (teamId: string): Promise<void> => {
+  await Promise.all([
+    invalidateTeamInfoCache(teamId),
+    invalidateTeamApplicationsCache(teamId),
+  ]);
 };
 
 const emitTeamUpdateToUserIds = (userIds: number[], payload: any) => {
@@ -217,39 +362,10 @@ export const getCharacterTeam = async (characterId: number) => {
   }
 
   const { team_id: teamId, role } = memberResult.rows[0];
-    
-  // 获取队伍详情
-  const teamResult = await query(
-    `SELECT t.*, c.nickname as leader_name 
-     FROM teams t 
-     JOIN characters c ON t.leader_id = c.id 
-     WHERE t.id = $1`,
-    [teamId]
-  );
-
-  if (teamResult.rows.length === 0) {
+  const teamInfo = await teamInfoCache.get(teamId);
+  if (!teamInfo) {
     return { success: false, message: '队伍不存在' };
   }
-
-  const team = teamResult.rows[0];
-
-  const members = await getTeamMembersByTeamId(teamId);
-
-  const teamInfo: TeamInfo = {
-    id: team.id,
-    name: team.name,
-    leader: team.leader_name,
-    leaderId: team.leader_id,
-    members,
-    memberCount: members.length,
-    maxMembers: team.max_members,
-    goal: team.goal,
-    joinMinRealm: team.join_min_realm,
-    autoJoinEnabled: team.auto_join_enabled,
-    autoJoinMinRealm: team.auto_join_min_realm,
-    currentMapId: team.current_map_id,
-    isPublic: team.is_public,
-  };
 
   return { success: true, data: teamInfo, role };
 };
@@ -258,39 +374,14 @@ export const getCharacterTeam = async (characterId: number) => {
  * 根据ID获取队伍详情
  */
 export const getTeamById = async (teamId: string) => {
-  const teamResult = await query(
-    `SELECT t.*, c.nickname as leader_name 
-     FROM teams t 
-     JOIN characters c ON t.leader_id = c.id 
-     WHERE t.id = $1`,
-    [teamId]
-  );
-
-  if (teamResult.rows.length === 0) {
+  const teamInfo = await teamInfoCache.get(teamId);
+  if (!teamInfo) {
     return { success: false, message: '队伍不存在' };
   }
 
-  const team = teamResult.rows[0];
-
-  const members = await getTeamMembersByTeamId(teamId);
-
   return {
     success: true,
-    data: {
-      id: team.id,
-      name: team.name,
-      leader: team.leader_name,
-      leaderId: team.leader_id,
-      members,
-      memberCount: members.length,
-      maxMembers: team.max_members,
-      goal: team.goal,
-      joinMinRealm: team.join_min_realm,
-      autoJoinEnabled: team.auto_join_enabled,
-      autoJoinMinRealm: team.auto_join_min_realm,
-      currentMapId: team.current_map_id,
-      isPublic: team.is_public,
-    },
+    data: teamInfo,
   };
 };
 
@@ -346,6 +437,7 @@ export const createTeam = async (characterId: number, name?: string, goal?: stri
     [teamId, characterId]
   );
 
+  await invalidateTeamReadCaches(teamId);
   await notifyTeamMembersChanged(teamId, [characterId], 'create_team');
 
   await updateAchievementProgress(characterId, 'team:create', 1);
@@ -387,6 +479,7 @@ export const disbandTeam = async (characterId: number, teamId: string) => {
 
   // 删除队伍（级联删除成员、申请、邀请）
   await query(`DELETE FROM teams WHERE id = $1`, [teamId]);
+  await invalidateTeamReadCaches(teamId);
 
   return { success: true, message: '队伍已解散' };
 };
@@ -437,6 +530,7 @@ export const leaveTeam = async (characterId: number) => {
       const memberUserIds = await getUserIdsByCharacterIds(memberCharacterIds);
       emitTeamUpdateToUserIds(memberUserIds, { kind: 'disband_team', teamId, time: Date.now() });
       await query(`DELETE FROM teams WHERE id = $1`, [teamId]);
+      await invalidateTeamReadCaches(teamId);
       return { success: true, message: '队伍已解散（无其他成员）' };
     }
   }
@@ -444,6 +538,7 @@ export const leaveTeam = async (characterId: number) => {
   // 移除成员
   await query(`DELETE FROM team_members WHERE character_id = $1`, [characterId]);
 
+  await invalidateTeamInfoCache(teamId);
   await notifyTeamMembersChanged(teamId, [characterId], 'leave_team');
 
   return { success: true, message: '已离开队伍' };
@@ -517,6 +612,7 @@ export const applyToTeam = async (characterId: number, teamId: string, message?:
       `INSERT INTO team_members (team_id, character_id, role) VALUES ($1, $2, 'member')`,
       [teamId, characterId]
     );
+    await invalidateTeamInfoCache(teamId);
     await notifyTeamMembersChanged(teamId, [characterId], 'auto_join');
     await updateAchievementProgress(characterId, 'team:join', 1);
     return { success: true, message: '已自动加入队伍', autoJoined: true };
@@ -528,6 +624,7 @@ export const applyToTeam = async (characterId: number, teamId: string, message?:
     `INSERT INTO team_applications (id, team_id, applicant_id, message) VALUES ($1, $2, $3, $4)`,
     [applicationId, teamId, characterId, message || null]
   );
+  await invalidateTeamApplicationsCache(teamId);
 
   const leaderId = Number(team.leader_id);
   if (Number.isFinite(leaderId)) {
@@ -554,26 +651,7 @@ export const getTeamApplications = async (teamId: string, characterId: number) =
     return { success: false, message: '只有队长才能查看申请' };
   }
 
-  // 获取待处理申请
-  const applications = await query(
-    `SELECT ta.id, ta.message, ta.created_at, 
-            c.id as character_id, c.nickname, c.realm, c.sub_realm, c.avatar
-     FROM team_applications ta
-     JOIN characters c ON ta.applicant_id = c.id
-     WHERE ta.team_id = $1 AND ta.status = 'pending'
-     ORDER BY ta.created_at DESC`,
-    [teamId]
-  );
-
-  const data = applications.rows.map((row: any) => ({
-    id: row.id,
-    characterId: row.character_id,
-    name: row.nickname,
-    realm: getFullRealm(row.realm, row.sub_realm),
-    avatar: row.avatar,
-    message: row.message,
-    time: new Date(row.created_at).getTime(),
-  }));
+  const data = (await teamApplicationsCache.get(teamId)) ?? [];
 
   return { success: true, data };
 };
@@ -640,6 +718,7 @@ export const handleApplication = async (characterId: number, applicationId: stri
     // 更新申请状态
     await updateTeamApplicationStatus(applicationId, app.team_id, applicantId, 'approved');
 
+    await invalidateTeamReadCaches(app.team_id);
     await notifyTeamMembersChanged(app.team_id, [app.applicant_id], 'approve_application');
 
     await updateAchievementProgress(Number(app.applicant_id), 'team:join', 1);
@@ -648,6 +727,7 @@ export const handleApplication = async (characterId: number, applicationId: stri
   } else {
     // 拒绝申请
     await updateTeamApplicationStatus(applicationId, app.team_id, applicantId, 'rejected');
+    await invalidateTeamApplicationsCache(app.team_id);
 
     if (Number.isFinite(applicantId)) {
       const applicantUserIds = await getUserIdsByCharacterIds([applicantId]);
@@ -704,6 +784,7 @@ export const kickMember = async (leaderId: number, targetCharacterId: number) =>
   // 移除成员
   await query(`DELETE FROM team_members WHERE team_id = $1 AND character_id = $2`, [teamId, targetCharacterId]);
 
+  await invalidateTeamInfoCache(teamId);
   await notifyTeamMembersChanged(teamId, [targetCharacterId], 'kick_member');
 
   return { success: true, message: '已踢出成员' };
@@ -749,6 +830,7 @@ export const transferLeader = async (currentLeaderId: number, newLeaderId: numbe
   await query(`UPDATE team_members SET role = 'member' WHERE team_id = $1 AND character_id = $2`, [teamId, currentLeaderId]);
   await query(`UPDATE team_members SET role = 'leader' WHERE team_id = $1 AND character_id = $2`, [teamId, newLeaderId]);
 
+  await invalidateTeamInfoCache(teamId);
   await notifyTeamMembersChanged(teamId, [currentLeaderId, newLeaderId], 'transfer_leader');
 
   return { success: true, message: '队长已转让' };
@@ -822,6 +904,7 @@ export const updateTeamSettings = async (
     values
   );
 
+  await invalidateTeamInfoCache(teamId);
   await notifyTeamMembersChanged(teamId, [characterId], 'update_team_settings');
 
   return { success: true, message: '设置已更新' };
@@ -1078,6 +1161,7 @@ export const handleInvitation = async (characterId: number, invitationId: string
       [characterId, invitationId]
     );
 
+    await invalidateTeamInfoCache(invite.team_id);
     await notifyTeamMembersChanged(invite.team_id, [characterId], 'accept_invitation');
 
     return { success: true, message: '已加入队伍' };

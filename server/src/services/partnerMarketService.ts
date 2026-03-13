@@ -19,6 +19,11 @@
  */
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
+import { createCacheLayer } from './shared/cacheLayer.js';
+import {
+  createCacheVersionManager,
+  parseVersionedCacheBaseKey,
+} from './shared/cacheVersion.js';
 import {
   buildPartnerDisplay,
   loadPartnerTechniqueRows,
@@ -58,6 +63,20 @@ export interface MarketPartnerTradeRecordDto {
   time: number;
 }
 
+type PartnerListingsQuery = {
+  quality: string;
+  element: string;
+  query: string;
+  sort: PartnerMarketSort;
+  page: number;
+  pageSize: number;
+};
+
+type PartnerListingsCacheData = {
+  listings: MarketPartnerListingDto[];
+  total: number;
+};
+
 type PartnerListingRow = {
   id: number;
   partner_snapshot: PartnerDisplayDto | null;
@@ -86,6 +105,8 @@ type CharacterWalletRow = {
 };
 
 const PARTNER_MARKET_TAX_RATE = 0;
+const PARTNER_MARKET_LISTINGS_CACHE_REDIS_TTL_SEC = 8;
+const PARTNER_MARKET_LISTINGS_CACHE_MEMORY_TTL_MS = 2_000;
 
 const clampInt = (n: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, n));
@@ -98,6 +119,13 @@ const parsePositiveInt = (v: number | string | null | undefined): number | null 
 
 const parseMaybeString = (v: string | null | undefined): string =>
   (typeof v === 'string' ? v : '').trim();
+
+const partnerMarketListingsCacheVersion = createCacheVersionManager('partner-market:listings');
+
+const invalidatePartnerMarketListingsCache = async (): Promise<void> => {
+  await partnerMarketListingsCacheVersion.bumpVersion();
+  partnerMarketListingsCache.invalidateAll();
+};
 
 const readPartnerSnapshot = (snapshot: PartnerDisplayDto | null): PartnerDisplayDto | null => {
   if (!snapshot) return null;
@@ -124,6 +152,109 @@ const buildListingDto = (row: PartnerListingRow): MarketPartnerListingDto | null
     listedAt: new Date(String(row.listed_at ?? '')).getTime(),
   };
 };
+
+const normalizePartnerListingsQuery = (params: {
+  quality?: string;
+  element?: string;
+  query?: string;
+  sort?: PartnerMarketSort;
+  page?: number;
+  pageSize?: number;
+}): PartnerListingsQuery => {
+  return {
+    quality: parseMaybeString(params.quality),
+    element: parseMaybeString(params.element),
+    query: parseMaybeString(params.query),
+    sort: params.sort ?? 'timeDesc',
+    page: clampInt(parsePositiveInt(params.page) ?? 1, 1, 1_000_000),
+    pageSize: clampInt(parsePositiveInt(params.pageSize) ?? 20, 1, 100),
+  };
+};
+
+const loadPartnerListingsCacheData = async (
+  params: PartnerListingsQuery,
+): Promise<PartnerListingsCacheData> => {
+  const offset = (params.page - 1) * params.pageSize;
+  const where: string[] = [`mpl.status = 'active'`];
+  const values: Array<string | number> = [];
+
+  if (params.quality && params.quality !== 'all') {
+    values.push(params.quality);
+    where.push(`mpl.partner_quality = $${values.length}`);
+  }
+  if (params.element && params.element !== 'all') {
+    values.push(params.element);
+    where.push(`mpl.partner_element = $${values.length}`);
+  }
+  if (params.query) {
+    values.push(`%${params.query}%`);
+    const searchParam = `$${values.length}`;
+    where.push(
+      `(mpl.partner_name ILIKE ${searchParam} OR mpl.partner_nickname ILIKE ${searchParam} OR seller.nickname ILIKE ${searchParam})`,
+    );
+  }
+
+  const orderBy =
+    params.sort === 'priceAsc'
+      ? 'mpl.unit_price_spirit_stones ASC, mpl.listed_at DESC'
+      : params.sort === 'priceDesc'
+        ? 'mpl.unit_price_spirit_stones DESC, mpl.listed_at DESC'
+        : params.sort === 'levelDesc'
+          ? 'mpl.partner_level DESC, mpl.listed_at DESC'
+          : 'mpl.listed_at DESC';
+
+  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  values.push(params.pageSize);
+  const limitParam = `$${values.length}`;
+  values.push(offset);
+  const offsetParam = `$${values.length}`;
+
+  const listSql = `
+    SELECT
+      mpl.id,
+      mpl.partner_snapshot,
+      mpl.unit_price_spirit_stones,
+      mpl.seller_character_id,
+      seller.nickname AS seller_name,
+      mpl.listed_at
+    FROM market_partner_listing mpl
+    JOIN characters seller ON seller.id = mpl.seller_character_id
+    ${whereSql}
+    ORDER BY ${orderBy}
+    LIMIT ${limitParam} OFFSET ${offsetParam}
+  `;
+  const countSql = `
+    SELECT COUNT(*)::int AS cnt
+    FROM market_partner_listing mpl
+    JOIN characters seller ON seller.id = mpl.seller_character_id
+    ${whereSql}
+  `;
+
+  const [listResult, countResult] = await Promise.all([
+    query(listSql, values),
+    query(countSql, values.slice(0, values.length - 2)),
+  ]);
+
+  const listings = (listResult.rows as PartnerListingRow[])
+    .map((row) => buildListingDto(row))
+    .filter((row): row is MarketPartnerListingDto => row !== null);
+
+  return {
+    listings,
+    total: Number(countResult.rows[0]?.cnt ?? 0),
+  };
+};
+
+const partnerMarketListingsCache = createCacheLayer<string, PartnerListingsCacheData>({
+  keyPrefix: 'partner-market:listings:',
+  redisTtlSec: PARTNER_MARKET_LISTINGS_CACHE_REDIS_TTL_SEC,
+  memoryTtlMs: PARTNER_MARKET_LISTINGS_CACHE_MEMORY_TTL_MS,
+  loader: async (versionedKey) => {
+    const queryParams = parseVersionedCacheBaseKey<PartnerListingsQuery>(versionedKey);
+    if (!queryParams) return null;
+    return loadPartnerListingsCacheData(queryParams);
+  },
+});
 
 const buildTradeRecordDto = (
   row: PartnerTradeRecordRow,
@@ -197,85 +328,18 @@ class PartnerMarketService {
     message: string;
     data?: { listings: MarketPartnerListingDto[]; total: number };
   }> {
-    const page = clampInt(parsePositiveInt(params.page) ?? 1, 1, 1_000_000);
-    const pageSize = clampInt(parsePositiveInt(params.pageSize) ?? 20, 1, 100);
-    const offset = (page - 1) * pageSize;
-    const quality = parseMaybeString(params.quality);
-    const element = parseMaybeString(params.element);
-    const queryText = parseMaybeString(params.query);
-    const sort: PartnerMarketSort = params.sort ?? 'timeDesc';
-
-    const where: string[] = [`mpl.status = 'active'`];
-    const values: Array<string | number> = [];
-
-    if (quality && quality !== 'all') {
-      values.push(quality);
-      where.push(`mpl.partner_quality = $${values.length}`);
-    }
-    if (element && element !== 'all') {
-      values.push(element);
-      where.push(`mpl.partner_element = $${values.length}`);
-    }
-    if (queryText) {
-      values.push(`%${queryText}%`);
-      const searchParam = `$${values.length}`;
-      where.push(
-        `(mpl.partner_name ILIKE ${searchParam} OR mpl.partner_nickname ILIKE ${searchParam} OR seller.nickname ILIKE ${searchParam})`,
-      );
-    }
-
-    const orderBy =
-      sort === 'priceAsc'
-        ? 'mpl.unit_price_spirit_stones ASC, mpl.listed_at DESC'
-        : sort === 'priceDesc'
-          ? 'mpl.unit_price_spirit_stones DESC, mpl.listed_at DESC'
-          : sort === 'levelDesc'
-            ? 'mpl.partner_level DESC, mpl.listed_at DESC'
-            : 'mpl.listed_at DESC';
-
-    const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
-    values.push(pageSize);
-    const limitParam = `$${values.length}`;
-    values.push(offset);
-    const offsetParam = `$${values.length}`;
-
-    const listSql = `
-      SELECT
-        mpl.id,
-        mpl.partner_snapshot,
-        mpl.unit_price_spirit_stones,
-        mpl.seller_character_id,
-        seller.nickname AS seller_name,
-        mpl.listed_at
-      FROM market_partner_listing mpl
-      JOIN characters seller ON seller.id = mpl.seller_character_id
-      ${whereSql}
-      ORDER BY ${orderBy}
-      LIMIT ${limitParam} OFFSET ${offsetParam}
-    `;
-    const countSql = `
-      SELECT COUNT(*)::int AS cnt
-      FROM market_partner_listing mpl
-      JOIN characters seller ON seller.id = mpl.seller_character_id
-      ${whereSql}
-    `;
-
-    const [listResult, countResult] = await Promise.all([
-      query(listSql, values),
-      query(countSql, values.slice(0, values.length - 2)),
-    ]);
-
-    const listings = (listResult.rows as PartnerListingRow[])
-      .map((row) => buildListingDto(row))
-      .filter((row): row is MarketPartnerListingDto => row !== null);
-
+    const normalizedQuery = normalizePartnerListingsQuery(params);
+    const versionedKey = await partnerMarketListingsCacheVersion.buildVersionedKey(
+      JSON.stringify(normalizedQuery),
+    );
+    const data = (await partnerMarketListingsCache.get(versionedKey)) ?? {
+      listings: [],
+      total: 0,
+    };
     return {
       success: true,
       message: 'ok',
-      data: {
-        listings,
-        total: Number(countResult.rows[0]?.cnt ?? 0),
-      },
+      data,
     };
   }
 
@@ -487,6 +551,7 @@ class PartnerMarketService {
       ],
     );
 
+    await invalidatePartnerMarketListingsCache();
     return {
       success: true,
       message: `上架成功，已收取${listingFeeSilver.toString()}银两手续费（未卖出下架将退还）`,
@@ -556,6 +621,7 @@ class PartnerMarketService {
       );
     }
 
+    await invalidatePartnerMarketListingsCache();
     return {
       success: true,
       message: `下架成功，已退还${refundFeeSilver.toString()}银两手续费`,
@@ -758,6 +824,7 @@ class PartnerMarketService {
       ],
     );
 
+    await invalidatePartnerMarketListingsCache();
     return {
       success: true,
       message: '购买成功，伙伴已转入麾下',

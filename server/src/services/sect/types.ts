@@ -58,6 +58,23 @@ export interface SectApplicationRow {
   handled_by: number | null;
 }
 
+export interface SectApplicationListItem extends SectApplicationRow {
+  nickname: string;
+  realm: string;
+}
+
+export interface MySectApplicationListItem {
+  id: number;
+  sectId: string;
+  sectName: string;
+  sectLevel: number;
+  memberCount: number;
+  maxMembers: number;
+  joinType: SectJoinType;
+  createdAt: string;
+  message: string | null;
+}
+
 export interface Result {
   success: boolean;
   message: string;

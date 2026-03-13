@@ -13,11 +13,11 @@
  * 1) 所有写操作使用 @Transactional 保证原子性
  * 2) 纯读操作不加 @Transactional，避免不必要的事务开销
  */
-import { query, getTransactionClient } from '../../config/database.js';
+import { query } from '../../config/database.js';
 import { Transactional } from '../../decorators/transactional.js';
 import { assertMember, generateSectId, getCharacterSectId, hasPermission, positionRank, toNumber } from './db.js';
-import { withBuildingRequirement } from './buildings.js';
-import type { CreateResult, Result, SectBuildingRow, SectDefRow, SectInfo, SectListResult, SectPosition } from './types.js';
+import { getCachedSectInfo, invalidateSectInfoCache } from './cache.js';
+import type { CreateResult, Result, SectDefRow, SectInfo, SectListResult, SectPosition } from './types.js';
 import { updateAchievementProgress } from '../achievementService.js';
 
 const DEFAULT_BUILDINGS: string[] = [
@@ -123,6 +123,7 @@ class SectCoreService {
     }
 
     await this.upsertLog(sectId, 'create', characterId, null, `创建宗门：${name}`);
+    await invalidateSectInfoCache(sectId);
     await updateAchievementProgress(characterId, 'sect:join', 1);
     return { success: true, message: '创建成功', sectId };
   }
@@ -131,54 +132,12 @@ class SectCoreService {
    * 获取宗门信息（纯读操作，不需要事务）
    */
   async getSectInfo(sectId: string): Promise<{ success: boolean; message: string; data?: SectInfo }> {
-    const sectRes = await query('SELECT * FROM sect_def WHERE id = $1', [sectId]);
-    if (sectRes.rows.length === 0) return { success: false, message: '宗门不存在' };
-    const sect = sectRes.rows[0] as SectDefRow;
-
-    const membersRes = await query(
-      `
-        SELECT sm.character_id, sm.position, sm.contribution, sm.weekly_contribution, sm.joined_at, c.nickname, c.realm, c.last_offline_at
-        FROM sect_member sm
-        JOIN characters c ON c.id = sm.character_id
-        WHERE sm.sect_id = $1
-        ORDER BY
-          CASE sm.position
-            WHEN 'leader' THEN 5
-            WHEN 'vice_leader' THEN 4
-            WHEN 'elder' THEN 3
-            WHEN 'elite' THEN 2
-            ELSE 1
-          END DESC,
-          sm.joined_at ASC
-      `,
-      [sectId]
-    );
-
-    const buildingsRes = await query('SELECT * FROM sect_building WHERE sect_id = $1 ORDER BY building_type', [
-      sectId,
-    ]);
-
-    const members = membersRes.rows.map((r) => ({
-      characterId: toNumber(r.character_id),
-      nickname: typeof r.nickname === 'string' ? r.nickname : String(r.character_id),
-      realm: typeof r.realm === 'string' ? r.realm : '凡人',
-      position: r.position as SectPosition,
-      contribution: toNumber(r.contribution),
-      weeklyContribution: toNumber(r.weekly_contribution),
-      joinedAt: String(r.joined_at),
-      lastOfflineAt: r.last_offline_at ? String(r.last_offline_at) : null,
-    }));
-
-    const buildings = buildingsRes.rows.map((row) => withBuildingRequirement(row as SectBuildingRow));
-
+    const data = await getCachedSectInfo(sectId);
+    if (!data) return { success: false, message: '宗门不存在' };
     return {
       success: true,
       message: 'ok',
-      data: {
-        sect,
-        members,
-        buildings,
-      },
+      data,
     };
   }
 
@@ -257,6 +216,7 @@ class SectCoreService {
 
     const logContent = normalized ? `更新宗门公告：${normalized}` : '清空宗门公告';
     await this.upsertLog(me.sectId, 'update_announcement', operatorId, null, logContent);
+    await invalidateSectInfoCache(me.sectId);
     return { success: true, message: '公告更新成功' };
   }
 
@@ -290,6 +250,7 @@ class SectCoreService {
     ]);
 
     await this.upsertLog(me.sectId, 'transfer_leader', currentLeaderId, newLeaderId, '转让宗主');
+    await invalidateSectInfoCache(me.sectId);
     return { success: true, message: '转让成功' };
   }
 
@@ -314,6 +275,7 @@ class SectCoreService {
     await this.upsertLog(me.sectId, 'disband', leaderId, null, `解散宗门：${sect.name}`);
 
     await query('DELETE FROM sect_def WHERE id = $1', [me.sectId]);
+    await invalidateSectInfoCache(me.sectId);
     return { success: true, message: '解散成功' };
   }
 
@@ -332,6 +294,7 @@ class SectCoreService {
       me.sectId,
     ]);
     await this.upsertLog(me.sectId, 'leave', characterId, null, '退出宗门');
+    await invalidateSectInfoCache(me.sectId);
     return { success: true, message: '已退出宗门' };
   }
 
@@ -366,6 +329,7 @@ class SectCoreService {
       me.sectId,
     ]);
     await this.upsertLog(me.sectId, 'kick', operatorId, targetId, '踢出成员');
+    await invalidateSectInfoCache(me.sectId);
     return { success: true, message: '已踢出成员' };
   }
 
@@ -425,6 +389,7 @@ class SectCoreService {
       targetId,
     ]);
     await this.upsertLog(me.sectId, 'appoint', operatorId, targetId, `任命职位：${position}`);
+    await invalidateSectInfoCache(me.sectId);
     return { success: true, message: '任命成功' };
   }
 }

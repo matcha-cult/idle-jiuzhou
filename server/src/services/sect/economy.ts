@@ -13,6 +13,7 @@
 import { query } from '../../config/database.js';
 import { Transactional } from '../../decorators/transactional.js';
 import { assertMember, toNumber } from './db.js';
+import { invalidateSectInfoCache } from './cache.js';
 import { recordSectDonateEventTx } from './quests.js';
 import type { DonateResult } from './types.js';
 
@@ -80,6 +81,7 @@ class SectEconomyService {
 
     const content = `捐献：灵石${donatedSpiritStones}（宗门资金+${addedFunds}，贡献+${addedContribution}）`;
     await this.addLog(member.sectId, 'donate', characterId, null, content);
+    await invalidateSectInfoCache(member.sectId);
     return { success: true, message: '捐献成功', addedFunds, addedContribution };
   }
 }

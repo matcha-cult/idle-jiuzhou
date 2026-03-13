@@ -1,78 +1,22 @@
-import { query, getTransactionClient } from "../../config/database.js";
+import { query } from "../../config/database.js";
 import { Transactional } from "../../decorators/transactional.js";
 import { assertMember, hasPermission, toNumber } from "./db.js";
+import {
+  buildingUpgradeConstants,
+  calcHallUpgradeCost,
+  withBuildingRequirement,
+} from "./buildingRequirement.js";
+import { invalidateSectInfoCache } from "./cache.js";
 import type {
   Result,
-  SectBuildingRequirement,
   SectBuildingRow,
   SectBuildingView,
 } from "./types.js";
 
-const FULLY_UPGRADED_MESSAGE = "建筑已满级";
-const UPGRADE_CLOSED_MESSAGE = "暂未开放";
-const BUILDING_MAX_LEVEL = 50;
-
-const HALL_BUILDING_TYPE = "hall";
+const { BUILDING_MAX_LEVEL, FULLY_UPGRADED_MESSAGE, HALL_BUILDING_TYPE } =
+  buildingUpgradeConstants;
 const HALL_BUILDING_NAME = "宗门大殿";
 const ONLY_HALL_UPGRADE_MESSAGE = "当前仅开放宗门大殿升级";
-
-const calcHallUpgradeCost = (
-  currentLevel: number,
-): { funds: number; buildPoints: number } => {
-  const nextLevel = currentLevel + 1;
-  return {
-    funds: Math.floor(1000 * 1.2 * nextLevel * nextLevel),
-    buildPoints: Math.floor(10 * nextLevel),
-  };
-};
-
-export const getBuildingUpgradeRequirement = (
-  buildingType: string,
-  currentLevel: number,
-): SectBuildingRequirement => {
-  if (buildingType !== HALL_BUILDING_TYPE) {
-    return {
-      upgradable: false,
-      maxLevel: BUILDING_MAX_LEVEL,
-      nextLevel: null,
-      funds: null,
-      buildPoints: null,
-      reason: UPGRADE_CLOSED_MESSAGE,
-    };
-  }
-
-  if (currentLevel >= BUILDING_MAX_LEVEL) {
-    return {
-      upgradable: false,
-      maxLevel: BUILDING_MAX_LEVEL,
-      nextLevel: null,
-      funds: null,
-      buildPoints: null,
-      reason: FULLY_UPGRADED_MESSAGE,
-    };
-  }
-
-  const cost = calcHallUpgradeCost(currentLevel);
-  return {
-    upgradable: true,
-    maxLevel: BUILDING_MAX_LEVEL,
-    nextLevel: currentLevel + 1,
-    funds: cost.funds,
-    buildPoints: cost.buildPoints,
-    reason: null,
-  };
-};
-
-export const withBuildingRequirement = (
-  building: SectBuildingRow,
-): SectBuildingView => {
-  const level = toNumber(building.level);
-  return {
-    ...building,
-    level,
-    requirement: getBuildingUpgradeRequirement(building.building_type, level),
-  };
-};
 
 /**
  * 宗门建筑服务
@@ -195,6 +139,7 @@ class SectBuildingService {
       null,
       `升级建筑：${HALL_BUILDING_NAME}`,
     );
+    await invalidateSectInfoCache(member.sectId);
     return { success: true, message: "升级成功" };
   }
 }

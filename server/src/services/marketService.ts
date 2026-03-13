@@ -29,6 +29,11 @@ import {
   getTaxAmount,
   normalizeMarketBuyQuantity,
 } from "./shared/marketListingPurchaseShared.js";
+import { createCacheLayer } from "./shared/cacheLayer.js";
+import {
+  createCacheVersionManager,
+  parseVersionedCacheBaseKey,
+} from "./shared/cacheVersion.js";
 import { resolveGeneratedTechniqueBookDisplay } from "./shared/generatedTechniqueBookView.js";
 import { mailService } from "./mailService.js";
 
@@ -76,6 +81,25 @@ export type MarketTradeRecordDto = {
   time: number;
 };
 
+type MarketListingsQuery = {
+  category: string | null;
+  quality: string;
+  query: string;
+  minPrice: number | null;
+  maxPrice: number | null;
+  sort: MarketSort;
+  page: number;
+  pageSize: number;
+};
+
+type MarketListingsCacheData = {
+  listings: MarketListingDto[];
+  total: number;
+};
+
+const MARKET_LISTINGS_CACHE_REDIS_TTL_SEC = 8;
+const MARKET_LISTINGS_CACHE_MEMORY_TTL_MS = 2_000;
+
 const clampInt = (n: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, n));
 
@@ -93,6 +117,13 @@ const parseNonNegativeInt = (v: unknown): number | null => {
 
 const parseMaybeString = (v: unknown): string =>
   (typeof v === "string" ? v : "").trim();
+
+const marketListingsCacheVersion = createCacheVersionManager("market:listings");
+
+const invalidateMarketListingsCache = async (): Promise<void> => {
+  await marketListingsCacheVersion.bumpVersion();
+  marketListingsCache.invalidateAll();
+};
 
 /**
  * 复用 item_instance 拆堆复制逻辑，避免“部分上架”和“部分购买”各写一份插入 SQL。
@@ -272,6 +303,179 @@ const toListingDto = (
   };
 };
 
+const normalizeMarketListingsQuery = (params: {
+  category?: string;
+  quality?: string;
+  query?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  sort?: MarketSort;
+  page?: number;
+  pageSize?: number;
+}): MarketListingsQuery => {
+  return {
+    category: normalizeMarketCategoryFilter(params.category),
+    quality: parseMaybeString(params.quality),
+    query: parseMaybeString(params.query),
+    minPrice: parseNonNegativeInt(params.minPrice),
+    maxPrice: parseNonNegativeInt(params.maxPrice),
+    sort: (params.sort ?? "timeDesc") as MarketSort,
+    page: clampInt(parsePositiveInt(params.page) ?? 1, 1, 1000000),
+    pageSize: clampInt(parsePositiveInt(params.pageSize) ?? 20, 1, 100),
+  };
+};
+
+const loadMarketListingsCacheData = async (
+  params: MarketListingsQuery,
+): Promise<MarketListingsCacheData> => {
+  const offset = (params.page - 1) * params.pageSize;
+
+  const allItemDefs = getItemDefinitions();
+  const allItemDefIds = allItemDefs
+    .map((entry) => String(entry.id || "").trim())
+    .filter((id) => id.length > 0);
+  if (allItemDefIds.length === 0) {
+    return { listings: [], total: 0 };
+  }
+
+  const where: string[] = [`ml.status = 'active'`];
+  const values: Array<string | number | string[]> = [];
+
+  values.push(allItemDefIds);
+  where.push(`ml.item_def_id = ANY($${values.length}::varchar[])`);
+
+  if (params.category === null) {
+    return { listings: [], total: 0 };
+  }
+  if (params.category !== "all") {
+    const categoryDefIds = allItemDefs
+      .filter((entry) => resolveMarketItemCategory(entry) === params.category)
+      .map((entry) => String(entry.id || "").trim())
+      .filter((id) => id.length > 0);
+    if (categoryDefIds.length === 0) {
+      return { listings: [], total: 0 };
+    }
+    values.push(categoryDefIds);
+    where.push(`ml.item_def_id = ANY($${values.length}::varchar[])`);
+  }
+  if (params.quality && params.quality !== "all") {
+    const qualityDefIds = allItemDefs
+      .filter((entry) => String(entry.quality || "") === params.quality)
+      .map((entry) => String(entry.id || "").trim())
+      .filter((id) => id.length > 0);
+    values.push(params.quality);
+    const qualityParam = `$${values.length}`;
+    values.push(qualityDefIds);
+    const qualityDefParam = `$${values.length}`;
+    where.push(
+      `(ii.quality = ${qualityParam} OR (ii.quality IS NULL AND ml.item_def_id = ANY(${qualityDefParam}::varchar[])))`,
+    );
+  }
+  if (params.query) {
+    const queryLower = params.query.toLowerCase();
+    const nameMatchedDefIds = allItemDefs
+      .filter((entry) =>
+        String(entry.name || "")
+          .toLowerCase()
+          .includes(queryLower),
+      )
+      .map((entry) => String(entry.id || "").trim())
+      .filter((id) => id.length > 0);
+    values.push(nameMatchedDefIds);
+    const itemNameParam = `$${values.length}`;
+    values.push(`%${params.query}%`);
+    const sellerNameParam = `$${values.length}`;
+    where.push(
+      `(ml.item_def_id = ANY(${itemNameParam}::varchar[]) OR c.nickname ILIKE ${sellerNameParam})`,
+    );
+  }
+  if (params.minPrice !== null) {
+    values.push(params.minPrice);
+    where.push(`ml.unit_price_spirit_stones >= $${values.length}`);
+  }
+  if (params.maxPrice !== null) {
+    values.push(params.maxPrice);
+    where.push(`ml.unit_price_spirit_stones <= $${values.length}`);
+  }
+
+  const orderBy =
+    params.sort === "priceAsc"
+      ? "ml.unit_price_spirit_stones ASC, ml.listed_at DESC"
+      : params.sort === "priceDesc"
+        ? "ml.unit_price_spirit_stones DESC, ml.listed_at DESC"
+        : params.sort === "qtyDesc"
+          ? "ml.qty DESC, ml.listed_at DESC"
+          : "ml.listed_at DESC";
+
+  values.push(params.pageSize);
+  const limitParam = `$${values.length}`;
+  values.push(offset);
+  const offsetParam = `$${values.length}`;
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+
+  const listSql = `
+    SELECT
+      ml.id,
+      ml.item_instance_id,
+      ml.item_def_id,
+      ml.qty,
+      ml.unit_price_spirit_stones,
+      ml.seller_character_id,
+      ml.listed_at,
+      ii.quality AS instance_quality,
+      ii.quality_rank AS instance_quality_rank,
+      ii.strengthen_level,
+      ii.refine_level,
+      ii.socketed_gems,
+      ii.identified,
+      ii.affixes,
+      ii.metadata,
+      c.nickname AS seller_name
+    FROM market_listing ml
+    JOIN item_instance ii ON ii.id = ml.item_instance_id
+    JOIN characters c ON c.id = ml.seller_character_id
+    ${whereSql}
+    ORDER BY ${orderBy}
+    LIMIT ${limitParam} OFFSET ${offsetParam}
+  `;
+
+  const countSql = `
+    SELECT COUNT(*)::int AS cnt
+    FROM market_listing ml
+    JOIN item_instance ii ON ii.id = ml.item_instance_id
+    JOIN characters c ON c.id = ml.seller_character_id
+    ${whereSql}
+  `;
+
+  const [listResult, countResult] = await Promise.all([
+    query(listSql, values),
+    query(countSql, values.slice(0, values.length - 2)),
+  ]);
+  const total = Number(countResult.rows[0]?.cnt ?? 0);
+  const affixPoolCache = new Map<
+    string,
+    ReturnType<typeof loadAffixPoolForReroll>
+  >();
+  const listings: MarketListingDto[] = listResult.rows
+    .map((row) =>
+      toListingDto(row as Record<string, unknown>, affixPoolCache),
+    )
+    .filter((entry): entry is MarketListingDto => entry !== null);
+
+  return { listings, total };
+};
+
+const marketListingsCache = createCacheLayer<string, MarketListingsCacheData>({
+  keyPrefix: "market:listings:",
+  redisTtlSec: MARKET_LISTINGS_CACHE_REDIS_TTL_SEC,
+  memoryTtlMs: MARKET_LISTINGS_CACHE_MEMORY_TTL_MS,
+  loader: async (versionedKey) => {
+    const queryParams = parseVersionedCacheBaseKey<MarketListingsQuery>(versionedKey);
+    if (!queryParams) return null;
+    return loadMarketListingsCacheData(queryParams);
+  },
+});
+
 class MarketService {
   // 纯读方法，不加 @Transactional
   async getMarketListings(params: {
@@ -288,153 +492,15 @@ class MarketService {
     message: string;
     data?: { listings: MarketListingDto[]; total: number };
   }> {
-    const page = clampInt(parsePositiveInt(params.page) ?? 1, 1, 1000000);
-    const pageSize = clampInt(parsePositiveInt(params.pageSize) ?? 20, 1, 100);
-    const offset = (page - 1) * pageSize;
-
-    const category = normalizeMarketCategoryFilter(params.category);
-    const quality = parseMaybeString(params.quality);
-    const q = parseMaybeString(params.query);
-    const minPrice = parseNonNegativeInt(params.minPrice);
-    const maxPrice = parseNonNegativeInt(params.maxPrice);
-    const sort: MarketSort = (params.sort ?? "timeDesc") as MarketSort;
-
-    const allItemDefs = getItemDefinitions();
-    const allItemDefIds = allItemDefs
-      .map((entry) => String(entry.id || "").trim())
-      .filter((id) => id.length > 0);
-    if (allItemDefIds.length === 0) {
-      return { success: true, message: "ok", data: { listings: [], total: 0 } };
-    }
-
-    const where: string[] = [`ml.status = 'active'`];
-    const values: Array<string | number | string[]> = [];
-
-    values.push(allItemDefIds);
-    where.push(`ml.item_def_id = ANY($${values.length}::varchar[])`);
-
-    if (category === null) {
-      return { success: true, message: "ok", data: { listings: [], total: 0 } };
-    }
-    if (category !== "all") {
-      const categoryDefIds = allItemDefs
-        .filter((entry) => resolveMarketItemCategory(entry) === category)
-        .map((entry) => String(entry.id || "").trim())
-        .filter((id) => id.length > 0);
-      if (categoryDefIds.length === 0) {
-        return {
-          success: true,
-          message: "ok",
-          data: { listings: [], total: 0 },
-        };
-      }
-      values.push(categoryDefIds);
-      where.push(`ml.item_def_id = ANY($${values.length}::varchar[])`);
-    }
-    if (quality && quality !== "all") {
-      const qualityDefIds = allItemDefs
-        .filter((entry) => String(entry.quality || "") === quality)
-        .map((entry) => String(entry.id || "").trim())
-        .filter((id) => id.length > 0);
-      values.push(quality);
-      const qualityParam = `$${values.length}`;
-      values.push(qualityDefIds);
-      const qualityDefParam = `$${values.length}`;
-      where.push(
-        `(ii.quality = ${qualityParam} OR (ii.quality IS NULL AND ml.item_def_id = ANY(${qualityDefParam}::varchar[])))`,
-      );
-    }
-    if (q) {
-      const queryLower = q.toLowerCase();
-      const nameMatchedDefIds = allItemDefs
-        .filter((entry) =>
-          String(entry.name || "")
-            .toLowerCase()
-            .includes(queryLower),
-        )
-        .map((entry) => String(entry.id || "").trim())
-        .filter((id) => id.length > 0);
-      values.push(nameMatchedDefIds);
-      const itemNameParam = `$${values.length}`;
-      values.push(`%${q}%`);
-      const sellerNameParam = `$${values.length}`;
-      where.push(
-        `(ml.item_def_id = ANY(${itemNameParam}::varchar[]) OR c.nickname ILIKE ${sellerNameParam})`,
-      );
-    }
-    if (minPrice !== null) {
-      values.push(minPrice);
-      where.push(`ml.unit_price_spirit_stones >= $${values.length}`);
-    }
-    if (maxPrice !== null) {
-      values.push(maxPrice);
-      where.push(`ml.unit_price_spirit_stones <= $${values.length}`);
-    }
-    const orderBy =
-      sort === "priceAsc"
-        ? "ml.unit_price_spirit_stones ASC, ml.listed_at DESC"
-        : sort === "priceDesc"
-          ? "ml.unit_price_spirit_stones DESC, ml.listed_at DESC"
-          : sort === "qtyDesc"
-            ? "ml.qty DESC, ml.listed_at DESC"
-            : "ml.listed_at DESC";
-
-    values.push(pageSize);
-    const limitParam = `$${values.length}`;
-    values.push(offset);
-    const offsetParam = `$${values.length}`;
-
-    const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
-
-    const listSql = `
-      SELECT
-        ml.id,
-        ml.item_instance_id,
-        ml.item_def_id,
-        ml.qty,
-        ml.unit_price_spirit_stones,
-        ml.seller_character_id,
-        ml.listed_at,
-        ii.quality AS instance_quality,
-        ii.quality_rank AS instance_quality_rank,
-        ii.strengthen_level,
-        ii.refine_level,
-        ii.socketed_gems,
-        ii.identified,
-        ii.affixes,
-        ii.metadata,
-        c.nickname AS seller_name
-      FROM market_listing ml
-      JOIN item_instance ii ON ii.id = ml.item_instance_id
-      JOIN characters c ON c.id = ml.seller_character_id
-      ${whereSql}
-      ORDER BY ${orderBy}
-      LIMIT ${limitParam} OFFSET ${offsetParam}
-    `;
-
-    const countSql = `
-      SELECT COUNT(*)::int AS cnt
-      FROM market_listing ml
-      JOIN item_instance ii ON ii.id = ml.item_instance_id
-      JOIN characters c ON c.id = ml.seller_character_id
-      ${whereSql}
-    `;
-
-    const [listResult, countResult] = await Promise.all([
-      query(listSql, values),
-      query(countSql, values.slice(0, values.length - 2)),
-    ]);
-    const total = Number(countResult.rows[0]?.cnt ?? 0);
-    const affixPoolCache = new Map<
-      string,
-      ReturnType<typeof loadAffixPoolForReroll>
-    >();
-    const listings: MarketListingDto[] = listResult.rows
-      .map((row) =>
-        toListingDto(row as Record<string, unknown>, affixPoolCache),
-      )
-      .filter((entry): entry is MarketListingDto => entry !== null);
-    return { success: true, message: "ok", data: { listings, total } };
+    const normalizedQuery = normalizeMarketListingsQuery(params);
+    const versionedKey = await marketListingsCacheVersion.buildVersionedKey(
+      JSON.stringify(normalizedQuery),
+    );
+    const data = (await marketListingsCache.get(versionedKey)) ?? {
+      listings: [],
+      total: 0,
+    };
+    return { success: true, message: "ok", data };
   }
 
   // 纯读方法，不加 @Transactional
@@ -664,6 +730,7 @@ class MarketService {
         listingFeeSilver.toString(),
       ],
     );
+    await invalidateMarketListingsCache();
     return {
       success: true,
       message: `上架成功，已收取${listingFeeSilver.toString()}银两手续费（未卖出下架将退还）`,
@@ -776,6 +843,7 @@ class MarketService {
       );
     }
 
+    await invalidateMarketListingsCache();
     return {
       success: true,
       message: `下架成功，已退还${refundFeeSilver.toString()}银两手续费`,
@@ -1038,6 +1106,7 @@ class MarketService {
       throw new Error(`坊市购买邮件发送失败: ${mailResult.message}`);
     }
 
+    await invalidateMarketListingsCache();
     return { success: true, message: "购买成功，物品已通过邮件发放" };
   }
 

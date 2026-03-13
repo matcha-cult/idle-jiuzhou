@@ -1,25 +1,9 @@
 import { query } from '../../config/database.js';
 import { Transactional } from '../../decorators/transactional.js';
 import { assertMember, compareRealmRank, getCharacterRealm, getCharacterSectId, hasPermission, toNumber } from './db.js';
-import type { Result, SectApplicationRow } from './types.js';
+import { getCachedMySectApplications, getCachedSectApplications, invalidateMySectApplicationsCache, invalidateSectApplicationCaches, invalidateSectInfoCache } from './cache.js';
+import type { MySectApplicationListItem, Result, SectApplicationListItem, SectApplicationRow } from './types.js';
 import { updateAchievementProgress } from '../achievementService.js';
-
-interface SectApplicationWithCharacterRow extends SectApplicationRow {
-  nickname: string;
-  realm: string;
-}
-
-interface MySectApplicationRow {
-  id: number;
-  sect_id: string;
-  message: string | null;
-  created_at: string;
-  sect_name: string;
-  sect_level: number | string;
-  member_count: number | string;
-  max_members: number | string;
-  join_type: 'open' | 'apply' | 'invite';
-}
 
 /**
  * 宗门申请服务
@@ -94,6 +78,8 @@ class SectApplicationService {
       );
       await query('UPDATE sect_def SET member_count = member_count + 1, updated_at = NOW() WHERE id = $1', [sectId]);
       await this.addLog(sectId, 'join', characterId, null, '加入宗门（开放加入）');
+      await invalidateSectInfoCache(sectId);
+      await invalidateMySectApplicationsCache(characterId);
       await updateAchievementProgress(characterId, 'sect:join', 1);
       return { success: true, message: '加入成功' };
     }
@@ -114,82 +100,27 @@ class SectApplicationService {
       [sectId, characterId, message || null]
     );
     await this.addLog(sectId, 'apply', characterId, null, '提交入门申请');
+    await invalidateSectApplicationCaches(sectId, characterId);
     return { success: true, message: '申请已提交' };
   }
 
   async listApplications(
     operatorId: number
-  ): Promise<{ success: boolean; message: string; data?: Array<SectApplicationRow & { nickname: string; realm: string }> }> {
+  ): Promise<{ success: boolean; message: string; data?: SectApplicationListItem[] }> {
     const member = await assertMember(operatorId);
     if (!(member.position === 'leader' || member.position === 'vice_leader' || member.position === 'elder')) {
       return { success: false, message: '无权限查看申请' };
     }
 
-    const res = await query<SectApplicationWithCharacterRow>(
-      `
-      SELECT a.*, c.nickname, c.realm
-      FROM sect_application a
-      JOIN characters c ON c.id = a.character_id
-      WHERE a.sect_id = $1 AND a.status = 'pending'
-      ORDER BY a.created_at ASC
-    `,
-      [member.sectId]
-    );
-    return { success: true, message: 'ok', data: res.rows };
+    const data = await getCachedSectApplications(member.sectId);
+    return { success: true, message: 'ok', data };
   }
 
   async listMyApplications(
     characterId: number
-  ): Promise<{
-    success: boolean;
-    message: string;
-    data?: Array<{
-      id: number;
-      sectId: string;
-      sectName: string;
-      sectLevel: number;
-      memberCount: number;
-      maxMembers: number;
-      joinType: 'open' | 'apply' | 'invite';
-      createdAt: string;
-      message: string | null;
-    }>;
-  }> {
-    const res = await query<MySectApplicationRow>(
-      `
-      SELECT
-        a.id,
-        a.sect_id,
-        a.message,
-        a.created_at,
-        sd.name AS sect_name,
-        sd.level AS sect_level,
-        sd.member_count,
-        sd.max_members,
-        sd.join_type
-      FROM sect_application a
-      JOIN sect_def sd ON sd.id = a.sect_id
-      WHERE a.character_id = $1 AND a.status = 'pending'
-      ORDER BY a.created_at DESC
-    `,
-      [characterId]
-    );
-
-    return {
-      success: true,
-      message: 'ok',
-      data: res.rows.map((row) => ({
-        id: Number(row.id),
-        sectId: row.sect_id,
-        sectName: row.sect_name,
-        sectLevel: toNumber(row.sect_level),
-        memberCount: toNumber(row.member_count),
-        maxMembers: toNumber(row.max_members),
-        joinType: row.join_type,
-        createdAt: row.created_at,
-        message: row.message,
-      })),
-    };
+  ): Promise<{ success: boolean; message: string; data?: MySectApplicationListItem[] }> {
+    const data = await getCachedMySectApplications(characterId);
+    return { success: true, message: 'ok', data };
   }
 
   @Transactional
@@ -225,6 +156,7 @@ class SectApplicationService {
         [applicationId, operatorId]
       );
       await this.addLog(me.sectId, 'reject', operatorId, app.character_id, '拒绝入门申请');
+      await invalidateSectApplicationCaches(me.sectId, app.character_id);
       return { success: true, message: '已拒绝' };
     }
 
@@ -246,6 +178,7 @@ class SectApplicationService {
         `UPDATE sect_application SET status = 'cancelled', handled_at = NOW(), handled_by = $2 WHERE id = $1`,
         [applicationId, operatorId]
       );
+      await invalidateSectApplicationCaches(me.sectId, app.character_id);
       return { success: false, message: '对方已加入其他宗门' };
     }
 
@@ -260,6 +193,10 @@ class SectApplicationService {
       [applicationId, operatorId]
     );
     await this.addLog(me.sectId, 'approve', operatorId, app.character_id, '通过入门申请');
+    await Promise.all([
+      invalidateSectInfoCache(me.sectId),
+      invalidateSectApplicationCaches(me.sectId, app.character_id),
+    ]);
     await updateAchievementProgress(app.character_id, 'sect:join', 1);
     return { success: true, message: '已通过' };
   }
@@ -284,6 +221,7 @@ class SectApplicationService {
       applicationId,
     ]);
     await this.addLog(app.sect_id, 'cancel_apply', characterId, null, '取消入门申请');
+    await invalidateSectApplicationCaches(app.sect_id, characterId);
     return { success: true, message: '已取消' };
   }
 }
