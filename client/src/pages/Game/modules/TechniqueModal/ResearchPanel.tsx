@@ -2,7 +2,7 @@
  * 洞府研修面板
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：承载洞府研修统计、生成中提示、放弃入口、草稿详情、失败结果与抄写入口。
+ * 1. 做什么：承载洞府研修统计、生成中提示、草稿详情、失败结果与抄写入口。
  * 2. 做什么：复用 `researchShared` 的单一状态映射与冷却格式化，避免组件内散落 `pending/generated_draft/failed/cooldown` 判断。
  * 3. 不做什么：不直接发请求、不持有 socket 订阅，也不管理主界面红点状态。
  *
@@ -17,7 +17,7 @@
  * 1. `pending` 时不能再允许重复点击“开始领悟”，否则会误导玩家可以并发生成。
  * 2. 冷却展示必须仅消费共享纯函数，避免这里和按钮禁用条件各算一套剩余时间。
  */
-import { Button, Tag, Tooltip } from 'antd';
+import { Button, Tag } from 'antd';
 import { getItemQualityLabel, getItemQualityTagClassName } from '../../shared/itemQuality';
 import type { TechniqueResearchStatusData } from './researchShared';
 import {
@@ -29,7 +29,6 @@ import {
 import {
   mapResearchPreviewSkillToDetail,
   renderSkillCardDetails,
-  renderSkillTooltip,
 } from './skillDetailShared';
 
 type ResearchPanelProps = {
@@ -37,10 +36,8 @@ type ResearchPanelProps = {
   loading: boolean;
   refreshing: boolean;
   generateSubmitting: boolean;
-  abandonSubmitting: boolean;
   publishSubmitting: boolean;
   onGenerateDraft: () => void;
-  onAbandonPendingJob: (generationId: string) => void;
   onRefresh: () => void;
   onCopyResearchBook: (generationId: string, suggestedName: string) => void;
 };
@@ -50,10 +47,8 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
   loading,
   refreshing,
   generateSubmitting,
-  abandonSubmitting,
   publishSubmitting,
   onGenerateDraft,
-  onAbandonPendingJob,
   onRefresh,
   onCopyResearchBook,
 }) => {
@@ -100,7 +95,8 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
           <div>1. 洞府研修需境界达到 {status?.unlockRealm ?? '--'} 后开启，未达门槛时无法开始领悟。</div>
           <div>2. 每次开始领悟固定消耗 {status?.fragmentCost ?? '--'} 页功法残页，残页会从背包与仓库中统一扣除。</div>
           <div>3. {cooldownRuleText}</div>
-          <div>4. 结果进入研修页后即视为已查看，抄写前仍可在此处查看草稿详情。</div>
+          <div>4. 草稿过期未抄写时，只返还本次消耗的一半功法残页。</div>
+          <div>5. 结果进入研修页后即视为已查看，抄写前仍可在此处查看草稿详情。</div>
         </div>
 
         <div className="tech-subtitle">当前研修结果</div>
@@ -110,20 +106,9 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
         ) : null}
         {!loading && panelView.kind === 'pending' ? (
           <div className="tech-research-status-card is-pending">
-            <div className="tech-research-status-header">
-              <div className="tech-research-status-title">正在推演功法</div>
-              <div className="tech-research-status-actions">
-                <Button
-                  danger
-                  loading={abandonSubmitting}
-                  onClick={() => onAbandonPendingJob(panelView.job.generationId)}
-                >
-                  放弃本次推演
-                </Button>
-              </div>
-            </div>
+            <div className="tech-research-status-title">正在推演功法</div>
             <div className="tech-research-status-desc">
-              推演可能需要较长时间，请耐心等待结果。放弃后本次推演将立即结束，已消耗的功法残页会自动退还。
+              推演可能需要较长时间，请耐心等待结果。当前推演完成前无法开启新的洞府研修。
             </div>
             <div className="tech-research-status-meta">
               <Tag color="processing">推演中</Tag>
@@ -135,7 +120,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
           <div className="tech-research-status-card is-failed">
             <div className="tech-research-status-title">本次洞府研修未能成法</div>
             <div className="tech-research-status-desc">{panelView.errorMessage}</div>
-            <div className="tech-research-status-foot">若本次已消耗功法残页，系统已自动退还，可在条件满足时重新开始领悟。</div>
+            <div className="tech-research-status-foot">本次结果已结束，可在条件满足时重新开始领悟。</div>
           </div>
         ) : null}
         {!loading && panelView.kind === 'draft' ? (
@@ -163,11 +148,9 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
               {panelView.preview.skills.map((skill) => {
                 const previewSkill = mapResearchPreviewSkillToDetail(skill);
                 return (
-                  <Tooltip key={skill.id} title={renderSkillTooltip(previewSkill)} placement="top">
-                    <div className="tech-research-skill-card">
-                      {renderSkillCardDetails(previewSkill)}
-                    </div>
-                  </Tooltip>
+                  <div key={skill.id} className="tech-research-skill-card">
+                    {renderSkillCardDetails(previewSkill)}
+                  </div>
                 );
               })}
             </div>

@@ -22,6 +22,7 @@ import {
   TECHNIQUE_RESEARCH_COOLDOWN_HOURS,
   buildTechniqueResearchCooldownState,
   formatTechniqueResearchCooldownRemaining,
+  shouldTechniqueResearchApplyCooldown,
 } from '../shared/techniqueResearchCooldown.js';
 
 const NOW_ISO = '2026-03-08T12:00:00.000Z';
@@ -76,6 +77,15 @@ test('buildTechniqueResearchCooldownState: 显式跳过冷却时应直接返回�
   assert.equal(state.cooldownUntil, null);
   assert.equal(state.cooldownRemainingSeconds, 0);
   assert.equal(state.isCoolingDown, false);
+});
+
+test('shouldTechniqueResearchApplyCooldown: 失败结果不应继续占用研修冷却', () => {
+  assert.equal(shouldTechniqueResearchApplyCooldown('pending'), true);
+  assert.equal(shouldTechniqueResearchApplyCooldown('generated_draft'), true);
+  assert.equal(shouldTechniqueResearchApplyCooldown('published'), true);
+  assert.equal(shouldTechniqueResearchApplyCooldown('refunded'), true);
+  assert.equal(shouldTechniqueResearchApplyCooldown('failed'), false);
+  assert.equal(shouldTechniqueResearchApplyCooldown(null), false);
 });
 
 test('formatTechniqueResearchCooldownRemaining: 应输出紧凑的中文剩余时间', () => {

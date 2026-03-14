@@ -65,6 +65,6 @@ export const resolveTechniqueResearchPublishErrorMessage = (
   if (code === 'NAME_SENSITIVE') return '名称包含敏感内容，请重填';
   if (code === 'NAME_INVALID') return '名称不符合格式规则';
   if (code === 'GENERATION_NOT_READY') return '草稿尚未就绪，请先领悟';
-  if (code === 'GENERATION_EXPIRED') return '草稿已过期，请重新领悟';
+  if (code === 'GENERATION_EXPIRED') return '草稿已过期，系统仅返还一半功法残页，请重新领悟';
   return fallbackMessage || '抄写失败';
 };

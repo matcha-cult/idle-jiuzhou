@@ -31,7 +31,7 @@ const buildStatus = (
 });
 
 describe('researchShared', () => {
-  it('resolveTechniqueResearchActionState: pending 任务应暴露放弃入口并禁用开始领悟', () => {
+  it('resolveTechniqueResearchActionState: pending 任务应禁用开始领悟', () => {
     const actionState = resolveTechniqueResearchActionState(buildStatus({
       currentJob: {
         generationId: 'gen-1',
@@ -49,7 +49,6 @@ describe('researchShared', () => {
     }));
 
     expect(actionState.canGenerate).toBe(false);
-    expect(actionState.pendingGenerationId).toBe('gen-1');
   });
 
   it('resolveTechniqueResearchActionState: 冷却中时应禁用开始领悟', () => {
@@ -59,7 +58,6 @@ describe('researchShared', () => {
     }));
 
     expect(actionState.canGenerate).toBe(false);
-    expect(actionState.pendingGenerationId).toBeNull();
   });
 
   it('resolveTechniqueResearchActionState: 未解锁时应禁用开始领悟', () => {
@@ -68,14 +66,12 @@ describe('researchShared', () => {
     }));
 
     expect(actionState.canGenerate).toBe(false);
-    expect(actionState.pendingGenerationId).toBeNull();
   });
 
   it('resolveTechniqueResearchActionState: 无 pending 且资源充足且冷却结束时应允许开始领悟', () => {
     const actionState = resolveTechniqueResearchActionState(buildStatus());
 
     expect(actionState.canGenerate).toBe(true);
-    expect(actionState.pendingGenerationId).toBeNull();
   });
 
   it('resolveTechniqueResearchActionState: 功法残页不足时应禁用开始领悟', () => {
@@ -84,7 +80,6 @@ describe('researchShared', () => {
     }));
 
     expect(actionState.canGenerate).toBe(false);
-    expect(actionState.pendingGenerationId).toBeNull();
   });
 
   it('formatTechniqueResearchCooldownRemaining: 应输出紧凑冷却文案', () => {

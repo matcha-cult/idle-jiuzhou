@@ -2,7 +2,7 @@
  * AI 生成功法服务
  *
  * 作用（做什么 / 不做什么）：
- * 1) 做什么：提供 AI 生成功法草稿、放弃当前推演、自定义命名发布、状态查询。
+ * 1) 做什么：提供 AI 生成功法草稿、自定义命名发布、状态查询。
  * 2) 不做什么：不负责 HTTP 参数解析与鉴权（由路由层处理），不负责前端交互流程。
  *
  * 输入/输出：
@@ -45,12 +45,18 @@ import {
 import {
   buildTechniqueResearchCooldownState,
   formatTechniqueResearchCooldownRemaining,
+  shouldTechniqueResearchApplyCooldown,
 } from './shared/techniqueResearchCooldown.js';
 import { getActiveMonthCardCooldownReductionRate } from './shared/monthCardBenefits.js';
 import {
   buildTechniqueResearchUnlockState,
   type TechniqueResearchUnlockState,
 } from './shared/techniqueResearchUnlock.js';
+import {
+  resolveTechniqueResearchRefundFragments,
+  TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE,
+  TECHNIQUE_RESEARCH_FULL_REFUND_RATE,
+} from './shared/techniqueResearchRefund.js';
 import { persistGeneratedTechniqueCandidateTx } from './shared/generatedTechniquePersistence.js';
 import { getGeneratedTechniqueDefinitionById } from './generatedTechniqueConfigStore.js';
 
@@ -205,6 +211,7 @@ const GENERATED_TECHNIQUE_BOOK_ITEM_DEF_ID = 'book-generated-technique';
 const DEFAULT_GENERATED_SKILL_ICON = '/assets/skills/icon_skill_44.png';
 const TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID = 'mat-gongfa-canye';
 const TECHNIQUE_RESEARCH_FRAGMENT_COST = 5_000;
+const TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE = '草稿已过期，系统已自动返还一半功法残页';
 
 const QUALITY_MAX_LAYER: Record<TechniqueQuality, number> = {
   黄: 3,
@@ -514,7 +521,10 @@ class TechniqueGenerationService {
       characterId,
       (expiredRes.rows as Array<Record<string, unknown>>).map((row) => ({
         generationId: asString(row.id),
-        refundFragments: Math.max(0, Math.floor(asNumber(row.cost_points, 0))),
+        refundFragments: resolveTechniqueResearchRefundFragments(
+          asNumber(row.cost_points, 0),
+          TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE,
+        ),
       })),
     );
 
@@ -523,7 +533,7 @@ class TechniqueGenerationService {
         UPDATE technique_generation_job
         SET status = 'refunded',
             error_code = 'GENERATION_EXPIRED',
-            error_message = '草稿已过期，系统已自动退还功法残页',
+            error_message = $2,
             finished_at = COALESCE(finished_at, NOW()),
             failed_viewed_at = NULL,
             updated_at = NOW()
@@ -532,7 +542,7 @@ class TechniqueGenerationService {
           AND draft_expire_at IS NOT NULL
           AND draft_expire_at <= NOW()
       `,
-      [characterId],
+      [characterId, TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE],
     );
   }
 
@@ -662,9 +672,15 @@ class TechniqueGenerationService {
         : null,
     );
     const cooldownReductionRate = await getActiveMonthCardCooldownReductionRate(characterId);
-    const cooldownState = buildTechniqueResearchCooldownState(currentJobState.currentJob?.startedAt ?? null, new Date(), {
-      cooldownReductionRate,
-    });
+    const cooldownState = buildTechniqueResearchCooldownState(
+      shouldTechniqueResearchApplyCooldown(currentJobState.currentJob?.status)
+        ? currentJobState.currentJob?.startedAt ?? null
+        : null,
+      new Date(),
+      {
+        cooldownReductionRate,
+      },
+    );
 
     return {
       success: true,
@@ -714,7 +730,7 @@ class TechniqueGenerationService {
 
     const latestJobRes = await query(
       `
-        SELECT created_at
+        SELECT created_at, status
         FROM technique_generation_job
         WHERE character_id = $1
         ORDER BY created_at DESC
@@ -722,7 +738,11 @@ class TechniqueGenerationService {
       `,
       [characterId],
     );
-    const latestStartedAt = toIsoString((latestJobRes.rows[0] as Record<string, unknown> | undefined)?.created_at);
+    const latestJobRow = latestJobRes.rows[0] as Record<string, unknown> | undefined;
+    const latestJobStatus = asString(latestJobRow?.status) || null;
+    const latestStartedAt = shouldTechniqueResearchApplyCooldown(latestJobStatus)
+      ? toIsoString(latestJobRow?.created_at)
+      : null;
     const cooldownReductionRate = await getActiveMonthCardCooldownReductionRate(characterId);
     const cooldownState = buildTechniqueResearchCooldownState(latestStartedAt, new Date(), {
       cooldownReductionRate,
@@ -915,6 +935,7 @@ class TechniqueGenerationService {
     reason: string,
     nextStatus: 'failed' | 'refunded' = 'refunded',
     errorCode: string = nextStatus === 'failed' ? 'GENERATION_FAILED' : 'GENERATION_REFUNDED',
+    refundRate: number = TECHNIQUE_RESEARCH_FULL_REFUND_RATE,
   ): Promise<void> {
     const jobRes = await query(
       `
@@ -935,7 +956,7 @@ class TechniqueGenerationService {
     await this.applyGenerationFragmentRefundTx(characterId, [
       {
         generationId,
-        refundFragments: costPoints,
+        refundFragments: resolveTechniqueResearchRefundFragments(costPoints, refundRate),
       },
     ]);
 
@@ -1072,41 +1093,6 @@ class TechniqueGenerationService {
   }
 
   @Transactional
-  async abandonPendingGenerationJob(characterId: number, generationId: string): Promise<ServiceResult<{
-    generationId: string;
-    status: 'failed';
-  }>> {
-    const jobRes = await query(
-      `
-        SELECT status
-        FROM technique_generation_job
-        WHERE id = $1 AND character_id = $2
-        FOR UPDATE
-      `,
-      [generationId, characterId],
-    );
-    if (jobRes.rows.length === 0) {
-      return { success: false, message: '当前推演任务不存在', code: 'GENERATION_NOT_FOUND' };
-    }
-
-    const status = asString((jobRes.rows[0] as Record<string, unknown>).status);
-    if (status !== 'pending') {
-      return { success: false, message: '当前推演已结束，无需放弃', code: 'GENERATION_NOT_PENDING' };
-    }
-
-    const reason = '你已主动放弃当前洞府推演，可重新开始领悟。';
-    await this.refundGenerationJobTx(characterId, generationId, reason, 'failed', 'GENERATION_ABORTED');
-    return {
-      success: true,
-      message: '已放弃当前洞府推演',
-      data: {
-        generationId,
-        status: 'failed',
-      },
-    };
-  }
-
-  @Transactional
   async markLatestResultViewed(characterId: number): Promise<ServiceResult<{ marked: boolean }>> {
     const jobRes = await query(
       `
@@ -1203,7 +1189,14 @@ class TechniqueGenerationService {
       return { success: false, message: '草稿尚未就绪', code: 'GENERATION_NOT_READY' };
     }
     if (!draftExpireAt || draftExpireAt.getTime() <= Date.now()) {
-      await this.refundGenerationJobTx(characterId, generationId, '草稿已过期，已自动退款');
+      await this.refundGenerationJobTx(
+        characterId,
+        generationId,
+        TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE,
+        'refunded',
+        'GENERATION_EXPIRED',
+        TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE,
+      );
       return { success: false, message: '草稿已过期，请重新领悟', code: 'GENERATION_EXPIRED' };
     }
 

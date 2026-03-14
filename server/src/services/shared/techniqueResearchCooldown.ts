@@ -15,8 +15,9 @@
  *
  * 关键边界条件与坑点：
  * 1. 仅当最近一次研修时间可解析时才计算冷却，避免脏数据把玩家永久锁死。
- * 2. 开发环境跳过冷却时必须仍走同一返回结构，保证前端展示和服务端拦截同时生效。
- * 3. 剩余秒数必须向上取整，保证服务端拦截与前端倒计时在临界秒上口径一致。
+ * 2. 研修失败不应进入冷却，因此状态接口与创建任务校验必须共享同一个“哪些状态计入冷却”的判断。
+ * 3. 开发环境跳过冷却时必须仍走同一返回结构，保证前端展示和服务端拦截同时生效。
+ * 4. 剩余秒数必须向上取整，保证服务端拦截与前端倒计时在临界秒上口径一致。
  */
 
 import {
@@ -36,6 +37,15 @@ export type TechniqueResearchCooldownState = {
   cooldownUntil: string | null;
   cooldownRemainingSeconds: number;
   isCoolingDown: boolean;
+};
+
+export const shouldTechniqueResearchApplyCooldown = (
+  latestJobStatus: string | null | undefined,
+): boolean => {
+  return latestJobStatus === 'pending'
+    || latestJobStatus === 'generated_draft'
+    || latestJobStatus === 'published'
+    || latestJobStatus === 'refunded';
 };
 
 type TechniqueResearchCooldownOptions = {

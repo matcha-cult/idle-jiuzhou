@@ -40,7 +40,6 @@ export type TechniqueResearchPanelView =
 
 export type TechniqueResearchActionState = {
   canGenerate: boolean;
-  pendingGenerationId: string | null;
 };
 
 export const buildTechniqueResearchIndicator = (
@@ -83,7 +82,7 @@ export const resolveTechniqueResearchPanelView = (
     return {
       kind: 'failed',
       job,
-      errorMessage: job.errorMessage || '洞府推演未能成法，本次消耗的功法残页已自动退还。',
+      errorMessage: job.errorMessage || '洞府推演未能成法，本次结果已按规则结算。',
     };
   }
   return { kind: 'empty' };
@@ -112,6 +111,5 @@ export const resolveTechniqueResearchActionState = (
 
   return {
     canGenerate,
-    pendingGenerationId: panelView.kind === 'pending' ? panelView.job.generationId : null,
   };
 };
