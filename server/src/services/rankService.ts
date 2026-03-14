@@ -198,7 +198,7 @@ const loadArenaRanks = async (limit: number): Promise<ArenaRankRow[]> => {
   const res = await query(
     `
       SELECT
-        ROW_NUMBER() OVER (ORDER BY score DESC, win_count DESC, lose_count ASC, id ASC)::int AS rank,
+        ROW_NUMBER() OVER (ORDER BY score DESC, win_count DESC, lose_count ASC, character_id ASC)::int AS rank,
         character_id,
         name,
         realm,
