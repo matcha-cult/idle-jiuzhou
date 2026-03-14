@@ -26,6 +26,7 @@ import {
 import { resolveTechniqueGenerationRequestFailure } from './techniqueGenerationRequestFailure.js';
 import {
   buildTechniqueGeneratorPromptInput,
+  buildTechniqueGenerationResponseFormat,
   TECHNIQUE_EFFECT_TYPE_LIST,
   TECHNIQUE_EFFECT_UNSUPPORTED_FIELDS,
   TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
@@ -454,6 +455,11 @@ const tryCallExternalGenerator = async (params: {
     ? { ...promptInput, extraContext: promptContext }
     : promptInput;
   const external = await callConfiguredTextModel({
+    responseFormat: buildTechniqueGenerationResponseFormat({
+      techniqueType,
+      quality,
+      maxLayer,
+    }),
     systemMessage: TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
     userMessage: JSON.stringify(userMessagePayload),
     timeoutMs: modelCallTimeoutMs,

@@ -71,7 +71,7 @@ export type TechniqueTextModelJsonSchemaProperties = Record<string, TechniqueTex
 
 export type TechniqueTextModelJsonSchemaObject = TechniqueTextModelJsonSchemaBase & {
   type: 'object';
-  additionalProperties: false;
+  additionalProperties: boolean;
   properties: TechniqueTextModelJsonSchemaProperties;
   required: string[];
 };

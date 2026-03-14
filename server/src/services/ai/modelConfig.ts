@@ -19,8 +19,10 @@
  */
 
 export type ImageProvider = 'openai' | 'dashscope';
+export type TextModelProvider = 'openai' | 'anthropic';
 
 export type TextModelConfig = {
+  provider: TextModelProvider;
   apiKey: string;
   baseURL: string;
   modelName: string;
@@ -126,14 +128,30 @@ export const resolveImageProvider = (
   return 'openai';
 };
 
+const resolveTextModelProvider = (raw: string): TextModelProvider => {
+  const normalized = raw.toLowerCase();
+  if (normalized === 'anthropic') return 'anthropic';
+  return 'openai';
+};
+
 export const readTextModelConfig = (): TextModelConfig | null => {
-  const endpointRaw = asString(process.env.AI_TECHNIQUE_MODEL_URL);
   const apiKey = asString(process.env.AI_TECHNIQUE_MODEL_KEY);
-  if (!endpointRaw || !apiKey) return null;
+  if (!apiKey) return null;
+
+  const provider = resolveTextModelProvider(
+    asString(process.env.AI_TECHNIQUE_MODEL_PROVIDER),
+  );
+  const endpointRaw = asString(process.env.AI_TECHNIQUE_MODEL_URL);
+
+  // Anthropic provider 不强制要求 URL（SDK 有默认值 https://api.anthropic.com）；OpenAI 必须配置
+  if (provider === 'openai' && !endpointRaw) return null;
 
   return {
+    provider,
     apiKey,
-    baseURL: normalizeOpenAIBaseUrl(endpointRaw),
+    baseURL: provider === 'anthropic'
+      ? (endpointRaw ? trimTrailingSlash(endpointRaw) : '')
+      : normalizeOpenAIBaseUrl(endpointRaw),
     modelName: asString(process.env.AI_TECHNIQUE_MODEL_NAME) || DEFAULT_TEXT_MODEL,
   };
 };

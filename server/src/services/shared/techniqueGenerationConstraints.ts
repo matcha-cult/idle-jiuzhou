@@ -17,6 +17,10 @@
  * 2) 共享被动池中的 key 必须来自支持词典，否则会导致 AI 生成约束与运行时校验漂移。
  * 3) 结构化 Buff 的允许列表来自静态预定义数据，若直接手写会与运行时支持集合漂移。
  */
+import {
+  buildTechniqueTextModelJsonSchemaResponseFormat,
+  type TechniqueTextModelResponseFormat,
+} from './techniqueTextModelShared.js';
 import { REALM_ORDER } from './realmRules.js';
 import { MARK_TRAIT_GUIDE_BY_ID } from '../../battle/modules/mark.js';
 import {
@@ -937,4 +941,162 @@ export const isSupportedTechniquePassiveKey = (raw: unknown): boolean => {
   const key = raw.trim();
   if (!key) return false;
   return SUPPORTED_TECHNIQUE_PASSIVE_KEY_SET.has(key);
+};
+
+/**
+ * 构建功法生成的结构化输出 JSON Schema（responseFormat）
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1) 做什么：为 Anthropic / OpenAI 的结构化输出提供顶层 technique/skills/layers 的 JSON Schema 约束，保证模型输出是可解析的 JSON 对象。
+ * 2) 不做什么：不约束 effects/upgrades 内部结构（太灵活，由 prompt 约束 + 后端 sanitize/validate 保证）。
+ *
+ * 输入/输出：
+ * - 输入：功法品质（决定 skillCountRange）、功法类型、最大层数。
+ * - 输出：`TechniqueTextModelResponseFormat`，可直接传入 `callConfiguredTextModel`。
+ *
+ * 关键边界条件与坑点：
+ * 1) effects 和 upgrades 用 `type: 'object'` 不加 `additionalProperties: false`，因为 effect 有 9+ 种 type 各自字段不同，严格 schema 会导致合法输出被拒。
+ * 2) damageType 允许 null（无伤害技能），schema 中用 nullable 表达。
+ */
+export const buildTechniqueGenerationResponseFormat = (params: {
+  techniqueType: GeneratedTechniqueType;
+  quality: GeneratedTechniqueQuality;
+  maxLayer: number;
+}): TechniqueTextModelResponseFormat => {
+  const { techniqueType, quality, maxLayer } = params;
+  const skillCountRange = TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY[quality];
+  return buildTechniqueTextModelJsonSchemaResponseFormat({
+    name: `technique_generation_${quality}_${techniqueType}`,
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['technique', 'skills', 'layers'],
+      properties: {
+        technique: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'name', 'type', 'quality', 'maxLayer', 'requiredRealm',
+            'attributeType', 'attributeElement', 'tags', 'description', 'longDesc',
+          ],
+          properties: {
+            name: { type: 'string', minLength: 1 },
+            type: { type: 'string', enum: [techniqueType] },
+            quality: { type: 'string', enum: [quality] },
+            maxLayer: { type: 'integer', minimum: maxLayer, maximum: maxLayer },
+            requiredRealm: { type: 'string', minLength: 1 },
+            attributeType: { type: 'string', enum: ['physical', 'magic'] },
+            attributeElement: { type: 'string', minLength: 1 },
+            tags: { type: 'array', items: { type: 'string' } },
+            description: { type: 'string', minLength: 1 },
+            longDesc: { type: 'string', minLength: 1 },
+          },
+        },
+        skills: {
+          type: 'array',
+          minItems: skillCountRange.min,
+          maxItems: skillCountRange.max,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: [
+              'id', 'name', 'description', 'sourceType', 'costLingqi',
+              'costLingqiRate', 'costQixue', 'costQixueRate', 'cooldown',
+              'targetType', 'targetCount', 'element', 'effects', 'triggerType', 'aiPriority',
+            ],
+            properties: {
+              id: { type: 'string', minLength: 1 },
+              name: { type: 'string', minLength: 1 },
+              description: { type: 'string', minLength: 1 },
+              icon: { type: 'string' },
+              sourceType: { type: 'string', enum: ['technique'] },
+              costLingqi: { type: 'integer', minimum: 0, maximum: 80 },
+              costLingqiRate: { type: 'number', minimum: 0, maximum: 1 },
+              costQixue: { type: 'integer', minimum: 0, maximum: 120 },
+              costQixueRate: { type: 'number', minimum: 0, exclusiveMaximum: 1 },
+              cooldown: { type: 'integer', minimum: 0, maximum: 6 },
+              targetType: {
+                type: 'string',
+                enum: ['self', 'single_enemy', 'single_ally', 'all_enemy', 'all_ally', 'random_enemy', 'random_ally'],
+              },
+              targetCount: { type: 'integer', minimum: 1, maximum: 6 },
+              damageType: { type: 'string', enum: ['physical', 'magic', 'true'] },
+              element: { type: 'string', minLength: 1 },
+              // effects 内部结构由 prompt 约束 + 后端 sanitize/validate 保证；只要求每个 effect 有 type 字段，其余字段自由输出
+              effects: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: true,
+                  required: ['type'],
+                  properties: {
+                    type: { type: 'string', minLength: 1 },
+                  },
+                },
+                minItems: 1,
+              },
+              triggerType: { type: 'string', enum: ['active'] },
+              aiPriority: { type: 'integer', minimum: 0, maximum: 100 },
+              // upgrades 内部结构由 prompt 约束 + 后端 validate 保证；只要求每个 upgrade 有 layer 字段，其余字段自由输出
+              upgrades: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: true,
+                  required: ['layer'],
+                  properties: {
+                    layer: { type: 'integer', minimum: 1 },
+                  },
+                },
+              },
+            },
+          },
+        },
+        layers: {
+          type: 'array',
+          minItems: maxLayer,
+          maxItems: maxLayer,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['layer', 'costSpiritStones', 'costExp', 'costMaterials', 'passives', 'unlockSkillIds', 'upgradeSkillIds', 'layerDesc'],
+            properties: {
+              layer: { type: 'integer', minimum: 1, maximum: maxLayer },
+              costSpiritStones: { type: 'integer', minimum: 0 },
+              costExp: { type: 'integer', minimum: 0 },
+              costMaterials: {
+                type: 'array',
+                maxItems: 0,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['itemId', 'qty'],
+                  properties: {
+                    itemId: { type: 'string' },
+                    qty: { type: 'integer' },
+                  },
+                },
+              },
+              passives: {
+                type: 'array',
+                minItems: 1,
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['key', 'value'],
+                  properties: {
+                    key: { type: 'string', minLength: 1 },
+                    value: { type: 'number', exclusiveMinimum: 0 },
+                  },
+                },
+              },
+              unlockSkillIds: { type: 'array', items: { type: 'string' } },
+              upgradeSkillIds: { type: 'array', items: { type: 'string' } },
+              layerDesc: { type: 'string', minLength: 1 },
+            },
+          },
+        },
+      },
+    },
+  });
 };

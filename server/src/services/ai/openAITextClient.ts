@@ -1,9 +1,9 @@
 /**
- * OpenAI 文本模型 client
+ * AI 文本模型统一入口
  *
  * 作用（做什么 / 不做什么）：
- * 1) 做什么：使用标准 OpenAI SDK 发起文本模型请求，并统一返回模型内容、模型名与 prompt 快照。
- * 2) 做什么：让功法生成、伙伴招募、本地联调脚本复用同一套 SDK 调用逻辑，避免再手写 `fetch + headers + response.json`。
+ * 1) 做什么：根据 TextModelConfig.provider 分流到 OpenAI SDK 或 Anthropic SDK，对外暴露统一的 `callConfiguredTextModel`。
+ * 2) 做什么：让功法生成、伙伴招募等业务层只调用这一个入口，不感知底层 provider 差异。
  * 3) 不做什么：不拼业务 prompt、不做业务 JSON 校验，也不吞掉请求异常。
  *
  * 输入/输出：
@@ -11,14 +11,15 @@
  * - 输出：`{ modelName, promptSnapshot, content }`。
  *
  * 数据流/状态流：
- * 业务 prompt/schema -> buildTechniqueTextModelPayload -> OpenAI SDK -> 统一提取 content -> 调用方做 JSON 解析/业务校验。
+ * 业务 prompt -> callConfiguredTextModel -> (OpenAI SDK | Anthropic SDK) -> 统一提取 content -> 调用方做 JSON 解析/业务校验。
  *
  * 关键边界条件与坑点：
- * 1) SDK 返回的 message content 可能是字符串，也可能是分段数组；这里必须统一提取，否则业务层又会回到重复解析。
- * 2) 业务侧仍然依赖 promptSnapshot 落库与问题排查，因此请求前构造出来的 payload 需要原样快照返回。
+ * 1) OpenAI SDK 返回的 message content 可能是字符串，也可能是分段数组；这里必须统一提取，否则业务层又会回到重复解析。
+ * 2) Anthropic 的 seed 参数不支持，切换 provider 后 seed 会被忽略；responseFormat 会自动转换为 Anthropic 的 output_config.format。
  */
 import OpenAI from 'openai';
 import { readTextModelConfig } from './modelConfig.js';
+import { callAnthropicTextModel } from './anthropicTextClient.js';
 import {
   buildTechniqueTextModelPayload,
   extractTechniqueTextModelContent,
@@ -56,6 +57,16 @@ export const callConfiguredTextModel = async (params: {
 }): Promise<OpenAITextModelCallResult | null> => {
   const config = readTextModelConfig();
   if (!config) return null;
+
+  // Anthropic provider：seed 不支持；responseFormat 会在 Anthropic 客户端内转换为 output_config
+  if (config.provider === 'anthropic') {
+    return callAnthropicTextModel(config, {
+      responseFormat: params.responseFormat,
+      systemMessage: params.systemMessage,
+      userMessage: params.userMessage,
+      timeoutMs: params.timeoutMs,
+    });
+  }
 
   const payload = buildTechniqueTextModelPayload({
     modelName: config.modelName,
