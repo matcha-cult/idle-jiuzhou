@@ -35,7 +35,23 @@ export interface DoSignInResult {
   };
 }
 
+type SignDateValue = Date | string | null;
+type SignInHistoryRow = {
+  sign_date: SignDateValue;
+};
+type SignInMonthRecordRow = {
+  sign_date: SignDateValue;
+  reward: number | string | null;
+  is_holiday: boolean | null;
+  holiday_name: string | null;
+  created_at: Date | string | null;
+};
+
 const pad2 = (n: number) => String(n).padStart(2, '0');
+const SIGN_IN_HISTORY_LOOKBACK_DAYS = 366;
+const SIGN_IN_REWARD_BASE = 1500;
+const SIGN_IN_REWARD_STREAK_CAP = 30;
+const SIGN_IN_REWARD_STEP = 100;
 
 const buildDateKey = (d: Date) => {
   const year = d.getFullYear();
@@ -63,6 +79,53 @@ const addDays = (date: Date, days: number) => {
   const d = new Date(date.getTime());
   d.setDate(d.getDate() + days);
   return d;
+};
+
+const buildSignedDateSet = (rows: SignInHistoryRow[]): Set<string> => {
+  const signedSet = new Set<string>();
+  for (const row of rows) {
+    const key = normalizeDateKey(row.sign_date);
+    if (key) signedSet.add(key);
+  }
+  return signedSet;
+};
+
+const countConsecutiveSignedDays = (signedSet: ReadonlySet<string>, startDate: Date, maxDays: number): number => {
+  let streakDays = 0;
+  let cursor = new Date(startDate.getTime());
+
+  while (streakDays < maxDays) {
+    const key = buildDateKey(cursor);
+    if (!signedSet.has(key)) break;
+    streakDays += 1;
+    cursor = addDays(cursor, -1);
+  }
+
+  return streakDays;
+};
+
+/**
+ * 连续签到奖励计算
+ *
+ * 作用：集中维护签到基础奖励、连签增量与 30 天封顶规则，避免数值逻辑在事务流程和展示层重复实现。
+ * 不做：不读取数据库、不判断今日是否已签到，只根据“今天签到后的连续天数”产出奖励。
+ *
+ * 输入/输出：
+ * - 输入：今天签到后的连续天数，最小业务值为 1。
+ * - 输出：最终签到奖励数值。
+ *
+ * 数据流：
+ * - 先把连续天数收敛到 `1..30`；
+ * - 再用“基础 1500 + (连续天数 - 1) * 100”统一计算奖励；
+ * - 最终结果由 `doSignIn` 写入签到记录并同步增加角色灵石。
+ *
+ * 关键边界条件与坑点：
+ * 1) 首次签到仍应保持基础奖励 1500，因此增量从第 2 天开始生效，不能把第 1 天直接算成 1600。
+ * 2) 连续天数超过 30 天后必须封顶，避免奖励无限增长导致经济系统失衡。
+ */
+const calculateSignInReward = (streakDaysAfterSignIn: number): number => {
+  const effectiveStreakDays = Math.min(Math.max(streakDaysAfterSignIn, 1), SIGN_IN_REWARD_STREAK_CAP);
+  return SIGN_IN_REWARD_BASE + (effectiveStreakDays - 1) * SIGN_IN_REWARD_STEP;
 };
 
 const getHolidayInfo = (date: Date) => {
@@ -110,7 +173,7 @@ class SignInService {
     );
 
     const records: Record<string, SignInRecordDto> = {};
-    for (const row of monthRows.rows as Array<Record<string, unknown>>) {
+    for (const row of monthRows.rows as SignInMonthRecordRow[]) {
       const dateKey = normalizeDateKey(row.sign_date);
       if (!dateKey) continue;
       const signedAt =
@@ -141,20 +204,8 @@ class SignInService {
       [userId, todayKey]
     );
 
-    const signedSet = new Set<string>();
-    for (const row of historyRows.rows as Array<Record<string, unknown>>) {
-      const key = normalizeDateKey(row.sign_date);
-      if (key) signedSet.add(key);
-    }
-
-    let streakDays = 0;
-    let cursor = new Date();
-    while (streakDays < 366) {
-      const key = buildDateKey(cursor);
-      if (!signedSet.has(key)) break;
-      streakDays += 1;
-      cursor = addDays(cursor, -1);
-    }
+    const signedSet = buildSignedDateSet(historyRows.rows as SignInHistoryRow[]);
+    const streakDays = countConsecutiveSignedDays(signedSet, new Date(), SIGN_IN_HISTORY_LOOKBACK_DAYS);
 
     return {
       success: true,
@@ -173,9 +224,9 @@ class SignInService {
   // 签到操作，需要事务保证原子性
   @Transactional
   async doSignIn(userId: number): Promise<DoSignInResult> {
-    const todayKey = buildDateKey(new Date());
-    const holidayInfo = getHolidayInfo(new Date());
-    const reward = 1500;
+    const today = new Date();
+    const todayKey = buildDateKey(today);
+    const holidayInfo = getHolidayInfo(today);
 
     const characterCheck = await query('SELECT id FROM characters WHERE user_id = $1 FOR UPDATE', [userId]);
     if (characterCheck.rows.length === 0) {
@@ -189,6 +240,24 @@ class SignInService {
     if (exist.rows.length > 0) {
       return { success: false, message: '今日已签到' };
     }
+
+    const historyRows = await query(
+      `
+        SELECT sign_date
+        FROM sign_in_records
+        WHERE user_id = $1 AND sign_date >= ($2::date - INTERVAL '366 days') AND sign_date < $2::date
+        ORDER BY sign_date DESC
+        LIMIT 366
+      `,
+      [userId, todayKey]
+    );
+    const signedSet = buildSignedDateSet(historyRows.rows as SignInHistoryRow[]);
+    const previousStreakDays = countConsecutiveSignedDays(
+      signedSet,
+      addDays(today, -1),
+      SIGN_IN_HISTORY_LOOKBACK_DAYS,
+    );
+    const reward = calculateSignInReward(previousStreakDays + 1);
 
     await query(
       `
