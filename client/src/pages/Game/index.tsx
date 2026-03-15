@@ -1596,7 +1596,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     () => ({
       partner: {
         locked: !partnerUnlocked,
-        tooltip: partnerUnlocked ? '查看伙伴总览、升级与功法' : PARTNER_FEATURE_UNLOCK_HINT,
+        tooltip: partnerUnlocked ? undefined : PARTNER_FEATURE_UNLOCK_HINT,
       },
     }),
     [partnerUnlocked],

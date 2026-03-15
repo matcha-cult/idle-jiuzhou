@@ -33,6 +33,7 @@ type MapEntry = {
   realm: string;
   image: string;
   desc: string;
+  staminaCost?: number;
   npcs: string[];
   monsters: string[];
   drops: MapDrop[];
@@ -171,6 +172,7 @@ const MapModal: React.FC<MapModalProps> = ({
             realm: normalizeRealmText(d.recommended_realm || d.min_realm),
             image,
             desc: d.description ?? '',
+            staminaCost: d.stamina_cost,
             npcs: [],
             monsters: [],
             drops: [],
@@ -489,6 +491,11 @@ const MapModal: React.FC<MapModalProps> = ({
     const weekly = entry.weekly_limit > 0 ? `${entry.weekly_remaining}/${entry.weekly_limit}` : '不限';
     return `剩余次数 今日:${daily} 本周:${weekly}`;
   }, [mergedActiveMap]);
+  const dungeonStaminaCostText = useMemo(() => {
+    if (!mergedActiveMap || mergedActiveMap.category !== 'dungeon') return '';
+    const staminaCost = Math.max(0, Math.floor(Number(mergedActiveMap.staminaCost) || 0));
+    return `体力消耗 ${staminaCost}`;
+  }, [mergedActiveMap]);
   const dungeonNoStaminaCostTip = useMemo(() => {
     if (!mergedActiveMap || mergedActiveMap.category !== 'dungeon') return '';
     if (!dungeonNoStaminaCostEnabled) return '';
@@ -639,6 +646,7 @@ const MapModal: React.FC<MapModalProps> = ({
                       <Tag color="gold">{activeDungeonDifficultyText}</Tag>
                     ) : null}
                     {mergedActiveMap.category === 'dungeon' && dungeonEntryText ? <Tag color="orange">{dungeonEntryText}</Tag> : null}
+                    {mergedActiveMap.category === 'dungeon' && dungeonStaminaCostText ? <Tag color="cyan">{dungeonStaminaCostText}</Tag> : null}
                   </div>
                   {dungeonNoStaminaCostTip ? <div className="map-modal-hero-tip">{dungeonNoStaminaCostTip}</div> : null}
                 </div>
