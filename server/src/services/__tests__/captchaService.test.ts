@@ -22,6 +22,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import sharp from 'sharp';
 import { BusinessError } from '../../middleware/BusinessError.js';
 import { redis } from '../../config/redis.js';
 import { createCaptcha, verifyCaptcha } from '../captchaService.js';
@@ -29,6 +30,12 @@ import { createCaptcha, verifyCaptcha } from '../captchaService.js';
 type StoredCaptchaRecord = {
   answer: string;
   expiresAt: number;
+};
+
+const decodeCaptchaPng = (imageData: string): Buffer => {
+  const prefix = 'data:image/png;base64,';
+  assert.match(imageData, /^data:image\/png;base64,/);
+  return Buffer.from(imageData.slice(prefix.length), 'base64');
 };
 
 const parseStoredCaptchaRecord = (raw: string | undefined): StoredCaptchaRecord => {
@@ -57,13 +64,26 @@ test('createCaptcha: 应生成验证码图片并写入 Redis', async (t) => {
   const result = await createCaptcha();
 
   assert.match(result.captchaId, /^[0-9a-f-]{36}$/i);
-  assert.match(result.imageData, /^data:image\/svg\+xml;base64,/);
+  assert.match(result.imageData, /^data:image\/png;base64,/);
   assert.ok(result.expiresAt > now);
 
   const redisKey = `auth:captcha:${result.captchaId}`;
   const record = parseStoredCaptchaRecord(storage.get(redisKey));
   assert.equal(record.answer.length, 4);
   assert.ok(record.expiresAt >= result.expiresAt);
+});
+
+test('createCaptcha: 应生成 PNG 图片数据并保持验证码尺寸', async (t) => {
+  t.mock.method(redis, 'set', async () => 'OK');
+
+  const result = await createCaptcha();
+  const png = decodeCaptchaPng(result.imageData);
+  const metadata = await sharp(png).metadata();
+
+  assert.equal(png.readUInt32BE(0), 0x89504e47);
+  assert.equal(metadata.format, 'png');
+  assert.equal(metadata.width, 132);
+  assert.equal(metadata.height, 56);
 });
 
 test('verifyCaptcha: 正确验证码应通过并消费 Redis 记录', async (t) => {
