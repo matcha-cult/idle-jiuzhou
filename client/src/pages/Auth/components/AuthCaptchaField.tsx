@@ -18,16 +18,15 @@
  * 1. 验证码在服务端是一次性消费，因此每次刷新都必须同步更新隐藏的 `captchaId`，不能只替换图片而沿用旧 ID。
  * 2. 组件会被登录和注册两处复用，错误提示与加载态必须集中在这里，避免表单页再复制同样的刷新失败处理。
  */
-import { useEffect, useRef, useState } from 'react';
 import { App, Form, Input } from 'antd';
 import { SafetyCertificateOutlined } from '@ant-design/icons';
+import clsx from 'clsx';
 
-import { getUnifiedApiErrorMessage } from '../../../services/api/error';
 import {
   getCaptcha,
-  type CaptchaChallenge,
   type CaptchaVerifyPayload,
 } from '../../../services/api/auth-character';
+import { useCaptchaChallenge } from '../../shared/useCaptchaChallenge';
 
 interface AuthCaptchaFieldProps {
   onChange: (values: CaptchaVerifyPayload) => void;
@@ -39,48 +38,29 @@ export default function AuthCaptchaField({
   refreshNonce,
 }: AuthCaptchaFieldProps) {
   const { message } = App.useApp();
-  const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null);
-  const [loading, setLoading] = useState(false);
-  const requestIdRef = useRef(0);
-
-  const refreshCaptcha = async (): Promise<void> => {
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
-    setLoading(true);
-
-    try {
-      const result = await getCaptcha();
-      if (requestIdRef.current !== requestId) {
-        return;
-      }
-
-      setCaptcha(result.data);
+  const form = Form.useFormInstance();
+  const captchaCode = Form.useWatch('captchaCode', form);
+  const { captcha, loading, refreshCaptcha } = useCaptchaChallenge({
+    enabled: true,
+    refreshNonce,
+    loadCaptcha: getCaptcha,
+    fallbackMessage: '图片验证码加载失败',
+    onLoaded: (nextCaptcha) => {
       onChange({
-        captchaId: result.data.captchaId,
+        captchaId: nextCaptcha.captchaId,
         captchaCode: '',
       });
-    } catch (error) {
-      if (requestIdRef.current !== requestId) {
-        return;
-      }
-
-      const errorMessage = getUnifiedApiErrorMessage(error, '图片验证码加载失败');
-      setCaptcha(null);
+    },
+    onCleared: () => {
       onChange({
         captchaId: '',
         captchaCode: '',
       });
+    },
+    onLoadError: (errorMessage) => {
       message.error(errorMessage);
-    } finally {
-      if (requestIdRef.current === requestId) {
-        setLoading(false);
-      }
-    }
-  };
-
-  useEffect(() => {
-    void refreshCaptcha();
-  }, [refreshNonce]);
+    },
+  });
 
   return (
     <div className="auth-captcha">
@@ -90,7 +70,10 @@ export default function AuthCaptchaField({
 
       <div className="auth-captcha__row">
         <Form.Item
-          className="auth-captcha__input"
+          className={clsx('auth-captcha__input', {
+            'auth-captcha__input--hide-error-copy':
+              captchaCode && captchaCode.length > 0 && captchaCode.length !== 4,
+          })}
           name="captchaCode"
           rules={[
             { required: true, message: '请输入图片验证码' },

@@ -23,9 +23,12 @@ import { randomUUID } from 'node:crypto';
 import { redis } from '../config/redis.js';
 import { BusinessError } from '../middleware/BusinessError.js';
 
+export type CaptchaScene = 'auth' | 'market-risk';
+
 type StoredCaptchaRecord = {
   answer: string;
   expiresAt: number;
+  scene: CaptchaScene;
 };
 
 export type CaptchaChallenge = {
@@ -34,14 +37,18 @@ export type CaptchaChallenge = {
   expiresAt: number;
 };
 
-const CAPTCHA_REDIS_KEY_PREFIX = 'auth:captcha:';
+const CAPTCHA_REDIS_KEY_PREFIX_MAP: Record<CaptchaScene, string> = {
+  auth: 'auth:captcha:',
+  'market-risk': 'market:risk:captcha:',
+};
 const CAPTCHA_TTL_SECONDS = 300;
 const CAPTCHA_LENGTH = 4;
 const CAPTCHA_WIDTH = 132;
 const CAPTCHA_HEIGHT = 56;
 const CAPTCHA_CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-const buildCaptchaKey = (captchaId: string): string => `${CAPTCHA_REDIS_KEY_PREFIX}${captchaId}`;
+const buildCaptchaKey = (captchaId: string, scene: CaptchaScene): string =>
+  `${CAPTCHA_REDIS_KEY_PREFIX_MAP[scene]}${captchaId}`;
 
 const normalizeCaptchaCode = (captchaCode: string): string => captchaCode.trim().toUpperCase();
 
@@ -99,17 +106,20 @@ const buildCaptchaSvg = (answer: string): string => {
   ].join('');
 };
 
-export const createCaptcha = async (): Promise<CaptchaChallenge> => {
+export const createCaptcha = async (
+  scene: CaptchaScene = 'auth',
+): Promise<CaptchaChallenge> => {
   const captchaId = randomUUID();
   const answer = generateCaptchaAnswer();
   const expiresAt = Date.now() + CAPTCHA_TTL_SECONDS * 1000;
   const payload: StoredCaptchaRecord = {
     answer,
     expiresAt,
+    scene,
   };
 
   await redis.set(
-    buildCaptchaKey(captchaId),
+    buildCaptchaKey(captchaId, scene),
     JSON.stringify(payload),
     'EX',
     CAPTCHA_TTL_SECONDS,
@@ -122,8 +132,12 @@ export const createCaptcha = async (): Promise<CaptchaChallenge> => {
   };
 };
 
-export const verifyCaptcha = async (captchaId: string, captchaCode: string): Promise<void> => {
-  const key = buildCaptchaKey(captchaId);
+export const verifyCaptcha = async (
+  captchaId: string,
+  captchaCode: string,
+  scene: CaptchaScene = 'auth',
+): Promise<void> => {
+  const key = buildCaptchaKey(captchaId, scene);
   const raw = await redis.get(key);
 
   if (!raw) {

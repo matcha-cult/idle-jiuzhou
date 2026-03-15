@@ -27,6 +27,7 @@ import type {
   PartnerDetailDto,
   PartnerDisplayDto,
 } from '../../../../services/api';
+import { toUnifiedApiError } from '../../../../services/api/error';
 import { gameSocket, type CharacterData } from '../../../../services/gameSocket';
 import { useIsMobile } from '../../shared/responsive';
 import { getElementToneClassName } from '../../shared/elementTheme';
@@ -49,6 +50,7 @@ import MarketItemTooltipContent, {
   ITEM_TOOLTIP_CLASS_NAMES,
 } from '../../shared/MarketItemTooltipContent';
 import MarketBuyDialog from './MarketBuyDialog';
+import MarketCaptchaDialog from './MarketCaptchaDialog';
 import MarketPartnerPreviewSheet from './MarketPartnerPreviewSheet';
 import MarketPartnerBuyModal from './MarketPartnerBuyModal';
 import MarketEquipmentSummary from './MarketEquipmentSummary';
@@ -60,6 +62,10 @@ import {
   buildMarketBuySummary,
   shouldPromptMarketBuyQuantity,
 } from './marketBuyShared';
+import {
+  isMarketCaptchaRequiredCode,
+  type MarketCaptchaPurchaseIntent,
+} from './marketCaptchaPurchase';
 import {
   buildBagItem,
   buildEquipmentDetailLines,
@@ -87,6 +93,11 @@ type MarketTooltipPlacement = 'rightTop' | 'right' | 'rightBottom';
 type MobileListingPreviewSource = 'market' | 'my';
 
 const MARKET_SEARCH_DEBOUNCE_MS = 450;
+const MARKET_PURCHASE_REQUEST_CONFIG = {
+  meta: {
+    autoErrorToast: false,
+  },
+} as const;
 
 type MobileListingPreview = {
   source: MobileListingPreviewSource;
@@ -661,6 +672,9 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   const [marketTooltipPlacement, setMarketTooltipPlacement] = useState<MarketTooltipPlacement>('right');
   const [mobileListingPreview, setMobileListingPreview] = useState<MobileListingPreview | null>(null);
   const [buyDialogListing, setBuyDialogListing] = useState<ListingItem | null>(null);
+  const [marketCaptchaDialogOpen, setMarketCaptchaDialogOpen] = useState(false);
+  const [marketCaptchaPurchaseIntent, setMarketCaptchaPurchaseIntent] =
+    useState<MarketCaptchaPurchaseIntent | null>(null);
   const [partnerOverviewLoading, setPartnerOverviewLoading] = useState(false);
   const [partnerOverview, setPartnerOverview] = useState<PartnerDetailDto[]>([]);
   const [selectedPartnerId, setSelectedPartnerId] = useState<number | null>(null);
@@ -1002,6 +1016,8 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     setMobileFilterOpen(false);
     setMobileListingPreview(null);
     setBuyDialogListing(null);
+    setMarketCaptchaDialogOpen(false);
+    setMarketCaptchaPurchaseIntent(null);
   };
 
   const menuItems = useMemo(
@@ -1128,6 +1144,12 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
   }, [mobileListingPreview, mobilePreviewListing]);
 
   useEffect(() => {
+    if (marketModalOpen) return;
+    setMarketCaptchaDialogOpen(false);
+    setMarketCaptchaPurchaseIntent(null);
+  }, [marketModalOpen]);
+
+  useEffect(() => {
     if (!marketModalOpen) return undefined;
     const handler = () => {
       if (assetType !== 'partner') return;
@@ -1195,6 +1217,64 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     [refreshMarket, refreshPartnerMarket],
   );
 
+  const executeItemPurchase = useCallback(
+    async (listingId: number, buyQty: number) => {
+      const res = await buyMarketListing(
+        listingId,
+        buyQty,
+        MARKET_PURCHASE_REQUEST_CONFIG,
+      );
+      if (!res.success) throw new Error(res.message || '购买失败');
+      messageRef.current.success('购买成功');
+      setBuyDialogListing(null);
+      setMobileListingPreview(null);
+      await Promise.all([
+        refreshMarket(marketPage),
+        refreshBag(),
+        refreshMy(myPage),
+        refreshRecords(recordPage),
+      ]);
+    },
+    [
+      marketPage,
+      myPage,
+      recordPage,
+      refreshBag,
+      refreshMarket,
+      refreshMy,
+      refreshRecords,
+    ],
+  );
+
+  const executePartnerPurchase = useCallback(
+    async (listingId: number) => {
+      const res = await buyPartnerMarketListing(
+        listingId,
+        MARKET_PURCHASE_REQUEST_CONFIG,
+      );
+      if (!res.success) throw new Error(res.message || '购买失败');
+      messageRef.current.success(res.message || '购买成功');
+      setPreviewPartnerListing(null);
+      dispatchPartnerChangedEvent();
+      gameSocket.refreshCharacter();
+      await Promise.all([
+        refreshPartnerMarket(marketPage),
+        refreshMyPartnerListings(myPage),
+        refreshPartnerRecords(recordPage),
+        refreshPartnerOverview(),
+      ]);
+    },
+    [
+      marketPage,
+      myPage,
+      recordPage,
+      refreshMyPartnerListings,
+      refreshPartnerMarket,
+      refreshPartnerOverview,
+      refreshPartnerRecords,
+    ],
+  );
+
   const buyListing = useCallback(
     async (row: ListingItem, requestedQty: number = 1) => {
       if (characterId !== null && row.sellerCharacterId === characterId) return;
@@ -1204,17 +1284,22 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
         unitPrice: row.unitPrice,
       });
       try {
-        const res = await buyMarketListing(row.id, summary.buyQty);
-        if (!res.success) throw new Error(res.message || '购买失败');
-        messageRef.current.success('购买成功');
-        setBuyDialogListing(null);
-        setMobileListingPreview(null);
-        await Promise.all([refreshMarket(marketPage), refreshBag(), refreshMy(myPage), refreshRecords(recordPage)]);
-      } catch (error: unknown) {
-        void 0;
+        await executeItemPurchase(row.id, summary.buyQty);
+      } catch (error) {
+        const normalizedError = toUnifiedApiError(error, '购买失败');
+        if (isMarketCaptchaRequiredCode(normalizedError.code)) {
+          setMarketCaptchaPurchaseIntent({
+            kind: 'item',
+            listingId: row.id,
+            qty: summary.buyQty,
+          });
+          setMarketCaptchaDialogOpen(true);
+          return;
+        }
+        messageRef.current.error(normalizedError.message);
       }
     },
-    [characterId, marketPage, myPage, recordPage, refreshBag, refreshMarket, refreshMy, refreshRecords],
+    [characterId, executeItemPurchase],
   );
 
   const startBuyListing = useCallback(
@@ -1271,23 +1356,47 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     async (row: PartnerListingItem) => {
       if (characterId !== null && row.sellerCharacterId === characterId) return;
       try {
-        const res = await buyPartnerMarketListing(row.id);
-        if (!res.success) throw new Error(res.message || '购买失败');
-        messageRef.current.success(res.message || '购买成功');
-        dispatchPartnerChangedEvent();
-        gameSocket.refreshCharacter();
-        await Promise.all([
-          refreshPartnerMarket(marketPage),
-          refreshMyPartnerListings(myPage),
-          refreshPartnerRecords(recordPage),
-          refreshPartnerOverview(),
-        ]);
-      } catch (error: unknown) {
-        void 0;
+        await executePartnerPurchase(row.id);
+      } catch (error) {
+        const normalizedError = toUnifiedApiError(error, '购买失败');
+        if (isMarketCaptchaRequiredCode(normalizedError.code)) {
+          setMarketCaptchaPurchaseIntent({
+            kind: 'partner',
+            listingId: row.id,
+          });
+          setMarketCaptchaDialogOpen(true);
+          return;
+        }
+        messageRef.current.error(normalizedError.message);
       }
     },
-    [characterId, marketPage, myPage, recordPage, refreshMyPartnerListings, refreshPartnerMarket, refreshPartnerOverview, refreshPartnerRecords],
+    [characterId, executePartnerPurchase],
   );
+
+  const retryMarketCaptchaPurchase = useCallback(async () => {
+    const pendingPurchase = marketCaptchaPurchaseIntent;
+    if (!pendingPurchase) {
+      setMarketCaptchaDialogOpen(false);
+      return;
+    }
+
+    try {
+      if (pendingPurchase.kind === 'item') {
+        await executeItemPurchase(pendingPurchase.listingId, pendingPurchase.qty);
+      } else {
+        await executePartnerPurchase(pendingPurchase.listingId);
+      }
+      setMarketCaptchaDialogOpen(false);
+      setMarketCaptchaPurchaseIntent(null);
+    } catch (error) {
+      const normalizedError = toUnifiedApiError(error, '购买失败');
+      messageRef.current.error(normalizedError.message);
+    }
+  }, [
+    executeItemPurchase,
+    executePartnerPurchase,
+    marketCaptchaPurchaseIntent,
+  ]);
 
   const unlistPartner = useCallback(
     async (row: PartnerListingItem) => {
@@ -2654,11 +2763,10 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
               sellerCharacterId={previewPartnerListing.sellerCharacterId}
               myCharacterId={characterId}
               onClose={() => setPreviewPartnerListing(null)}
-              onBuy={() => {
-                void buyPartnerListing(previewPartnerListing);
-                setPreviewPartnerListing(null);
-              }}
-            />
+                onBuy={() => {
+                  void buyPartnerListing(previewPartnerListing);
+                }}
+              />
           ) : (
             <MarketPartnerBuyModal
               partner={previewPartnerListing.partner}
@@ -2666,13 +2774,20 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
               sellerCharacterId={previewPartnerListing.sellerCharacterId}
               myCharacterId={characterId}
               onClose={() => setPreviewPartnerListing(null)}
-              onBuy={() => {
-                void buyPartnerListing(previewPartnerListing);
-                setPreviewPartnerListing(null);
-              }}
-            />
+                onBuy={() => {
+                  void buyPartnerListing(previewPartnerListing);
+                }}
+              />
           )
         )}
+        <MarketCaptchaDialog
+          open={marketCaptchaDialogOpen}
+          onCancel={() => {
+            setMarketCaptchaDialogOpen(false);
+            setMarketCaptchaPurchaseIntent(null);
+          }}
+          onVerified={retryMarketCaptchaPurchase}
+        />
       </Modal>
 
       <PhoneBindingDialog

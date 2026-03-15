@@ -1,4 +1,9 @@
+import type { AxiosRequestConfig } from 'axios';
 import api from './core';
+import type {
+  CaptchaResponse,
+  CaptchaVerifyPayload,
+} from './auth-character';
 import type { PartnerDisplayDto } from './partner';
 
 export type MarketSort = 'timeDesc' | 'priceAsc' | 'priceDesc' | 'qtyDesc';
@@ -129,8 +134,12 @@ export const cancelMarketListing = (listingId: number): Promise<{ success: boole
   return api.post('/market/cancel', { listingId });
 };
 
-export const buyMarketListing = (listingId: number, qty: number = 1): Promise<{ success: boolean; message: string }> => {
-  return api.post('/market/buy', { listingId, qty });
+export const buyMarketListing = (
+  listingId: number,
+  qty: number = 1,
+  requestConfig?: AxiosRequestConfig,
+): Promise<{ success: boolean; message: string }> => {
+  return api.post('/market/buy', { listingId, qty }, requestConfig);
 };
 
 export const getMarketTradeRecords = (params?: {
@@ -174,8 +183,9 @@ export const cancelPartnerMarketListing = (
 
 export const buyPartnerMarketListing = (
   listingId: number,
+  requestConfig?: AxiosRequestConfig,
 ): Promise<{ success: boolean; message: string }> => {
-  return api.post('/market/partner/buy', { listingId });
+  return api.post('/market/partner/buy', { listingId }, requestConfig);
 };
 
 export const getPartnerMarketTradeRecords = (params?: {
@@ -184,6 +194,27 @@ export const getPartnerMarketTradeRecords = (params?: {
 }): Promise<MarketPartnerTradeRecordsResponse> => {
   return api.get('/market/partner-records', { params });
 };
+
+const SILENT_REQUEST_CONFIG = { meta: { autoErrorToast: false } } as const;
+
+export interface MarketPurchaseCaptchaVerifyResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    passExpiresAt: number;
+  };
+}
+
+export const getMarketPurchaseCaptcha = (): Promise<CaptchaResponse> => {
+  return api.get('/market/captcha', SILENT_REQUEST_CONFIG);
+};
+
+export const verifyMarketPurchaseCaptcha = (
+  payload: CaptchaVerifyPayload,
+): Promise<MarketPurchaseCaptchaVerifyResponse> => {
+  return api.post('/market/captcha/verify', payload, SILENT_REQUEST_CONFIG);
+};
+
 
 // ============================================
 // 邮件相关接口

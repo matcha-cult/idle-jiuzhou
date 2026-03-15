@@ -150,6 +150,12 @@
   margin-bottom: 0;
 }
 
+.auth-captcha__input--hide-error-copy {
+  .ant-form-item-explain-error {
+    display: none;
+  }
+}
+
 .auth-captcha__visual {
   width: 100%;
   min-width: 0;
