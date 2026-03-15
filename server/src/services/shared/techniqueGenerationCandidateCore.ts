@@ -21,6 +21,8 @@ import { randomUUID } from 'crypto';
 import type { SkillEffect } from '../../battle/types.js';
 import { callConfiguredTextModel } from '../ai/openAITextClient.js';
 import {
+  buildTextModelPromptNoiseHash,
+  generateTechniqueTextModelSeed,
   parseTechniqueTextModelJsonObject,
 } from './techniqueTextModelShared.js';
 import { resolveTechniqueGenerationRequestFailure } from './techniqueGenerationRequestFailure.js';
@@ -446,27 +448,9 @@ const tryCallExternalGenerator = async (params: {
   maxLayer: number;
   promptContext?: Record<string, unknown>;
 }): Promise<TechniqueGenerationAttemptResult> => {
-  const { techniqueType, quality, maxLayer, promptContext } = params;
-  const modelCallTimeoutMs = 300_000;
-  const promptInput = buildTechniqueGeneratorPromptInput({
-    techniqueType,
-    quality,
-    maxLayer,
-    effectTypeEnum: Array.from(DAMAGE_EFFECT_TYPE_SET),
-  });
-  const userMessagePayload = promptContext
-    ? { ...promptInput, extraContext: promptContext }
-    : promptInput;
-  const external = await callConfiguredTextModel({
-    responseFormat: buildTechniqueGenerationResponseFormat({
-      techniqueType,
-      quality,
-      maxLayer,
-    }),
-    systemMessage: TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
-    userMessage: JSON.stringify(userMessagePayload),
-    timeoutMs: modelCallTimeoutMs,
-  });
+  const { techniqueType, quality, maxLayer } = params;
+  const request = buildTechniqueGenerationTextModelRequest(params);
+  const external = await callConfiguredTextModel(request);
   if (!external) {
     return buildTechniqueGenerationAttemptFailure({
       stage: 'config_missing',
@@ -516,7 +500,7 @@ const tryCallExternalGenerator = async (params: {
     const failure = resolveTechniqueGenerationRequestFailure({
       error,
       didTimeout: false,
-      timeoutMs: modelCallTimeoutMs,
+      timeoutMs: request.timeoutMs,
     });
     return buildTechniqueGenerationAttemptFailure({
       stage: failure.stage,
@@ -525,6 +509,66 @@ const tryCallExternalGenerator = async (params: {
       promptSnapshot,
     });
   }
+};
+
+/**
+ * 功法生成文本模型请求构造
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1) 做什么：集中构造功法生成文本模型请求，把显式 seed 与基于 seed 派生的 prompt 扰动 hash 绑在一起，供洞府研修与伙伴天生功法共同复用。
+ * 2) 不做什么：不请求模型、不解析返回，也不在这里决定重试策略。
+ *
+ * 输入/输出：
+ * - 输入：功法类型、品质、最大层数、可选 extraContext 与可选固定 seed（测试用）。
+ * - 输出：可直接传给 `callConfiguredTextModel` 的请求参数，以及便于排查的 `promptNoiseHash`。
+ *
+ * 数据流/状态流：
+ * 技术参数/seed -> promptNoiseHash -> buildTechniqueGeneratorPromptInput -> 文本模型调用。
+ *
+ * 关键边界条件与坑点：
+ * 1) 伙伴招募与洞府研修都复用这里，因此扰动逻辑必须保持纯函数，不能依赖任务表或调用方状态。
+ * 2) 接入 HASH 扰动时不能覆盖 extraContext；否则伙伴天生功法已经传入的伙伴语境会丢失。
+ */
+export const buildTechniqueGenerationTextModelRequest = (params: {
+  techniqueType: GeneratedTechniqueType;
+  quality: TechniqueQuality;
+  maxLayer: number;
+  promptContext?: Record<string, unknown>;
+  seed?: number;
+}): {
+  responseFormat: ReturnType<typeof buildTechniqueGenerationResponseFormat>;
+  systemMessage: string;
+  userMessage: string;
+  seed: number;
+  timeoutMs: number;
+  promptNoiseHash: string;
+} => {
+  const seed = params.seed ?? generateTechniqueTextModelSeed();
+  const promptNoiseHash = buildTextModelPromptNoiseHash('technique-generation', seed);
+  const timeoutMs = 300_000;
+  const promptInput = buildTechniqueGeneratorPromptInput({
+    techniqueType: params.techniqueType,
+    quality: params.quality,
+    maxLayer: params.maxLayer,
+    effectTypeEnum: Array.from(DAMAGE_EFFECT_TYPE_SET),
+    promptNoiseHash,
+  });
+  const userMessagePayload = params.promptContext
+    ? { ...promptInput, extraContext: params.promptContext }
+    : promptInput;
+
+  return {
+    responseFormat: buildTechniqueGenerationResponseFormat({
+      techniqueType: params.techniqueType,
+      quality: params.quality,
+      maxLayer: params.maxLayer,
+    }),
+    systemMessage: TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
+    userMessage: JSON.stringify(userMessagePayload),
+    seed,
+    timeoutMs,
+    promptNoiseHash,
+  };
 };
 
 export const generateTechniqueCandidateWithRetry = async (params: {

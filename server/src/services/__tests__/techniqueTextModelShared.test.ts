@@ -19,6 +19,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildTextModelPromptNoiseHash,
   buildTechniqueTextModelPayload,
   buildTechniqueTextModelJsonSchemaResponseFormat,
   extractTechniqueTextModelContent,
@@ -84,6 +85,14 @@ test('显式传入 seed 时应保留调用方提供的值', () => {
   });
 
   assert.equal(payload.seed, 20260308);
+});
+
+test('同一 scope 与 seed 应派生稳定的 promptNoiseHash', () => {
+  const noiseHash = buildTextModelPromptNoiseHash('technique-generation', 20260315);
+
+  assert.equal(noiseHash.length, 16);
+  assert.equal(noiseHash, buildTextModelPromptNoiseHash('technique-generation', 20260315));
+  assert.notEqual(noiseHash, buildTextModelPromptNoiseHash('partner-recruit', 20260315));
 });
 
 test('显式传入 response_format 时应原样写入 payload', () => {

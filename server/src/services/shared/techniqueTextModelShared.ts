@@ -19,7 +19,7 @@
  * 4) 模型 content 既可能是字符串，也可能是分段数组；若不集中处理，脚本与服务很容易再次分叉。
  * 5) 结构化输出 schema 一旦开始使用，必须由共享层统一承接，避免每个业务 service 自己拼 `response_format` 导致字段名继续漂移。
  */
-import { randomInt } from 'crypto';
+import { createHash, randomInt } from 'crypto';
 
 
 type TechniqueModelJsonPrimitive = string | number | boolean | null;
@@ -126,6 +126,8 @@ export type TechniqueModelJsonParseResult =
 export const TECHNIQUE_TEXT_MODEL_TEMPERATURE = 1.0;
 export const TECHNIQUE_TEXT_MODEL_SEED_MIN = 1;
 export const TECHNIQUE_TEXT_MODEL_SEED_MAX = 2_147_483_647;
+export const TEXT_MODEL_PROMPT_NOISE_CONSTRAINT =
+  '如果提供了 promptNoiseHash，它仅作为本次创作扰动码：只需隐式影响命名、描述意象、措辞节奏与功法文风，禁止解释、复述、拆解、计算或显式输出该字符串，也不要生成数字、字母、符号或密码感内容';
 
 const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
 
@@ -152,6 +154,20 @@ export const resolveTechniqueTextModelEndpoint = (rawEndpoint: string): string =
 
 export const generateTechniqueTextModelSeed = (): number =>
   randomInt(TECHNIQUE_TEXT_MODEL_SEED_MIN, TECHNIQUE_TEXT_MODEL_SEED_MAX + 1);
+
+export const normalizeTextModelPromptNoiseHash = (raw: string | undefined): string | null => {
+  if (typeof raw !== 'string') return null;
+  const normalized = raw.trim().toLowerCase();
+  if (!/^[0-9a-f]{8,64}$/.test(normalized)) return null;
+  return normalized;
+};
+
+export const buildTextModelPromptNoiseHash = (scope: string, seed: number): string => {
+  return createHash('sha256')
+    .update(`${scope}:${seed}`)
+    .digest('hex')
+    .slice(0, 16);
+};
 
 export const buildTechniqueTextModelJsonSchemaResponseFormat = (_params: {
   name: string;

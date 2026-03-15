@@ -19,6 +19,8 @@
  */
 import {
   buildTechniqueTextModelJsonSchemaResponseFormat,
+  normalizeTextModelPromptNoiseHash,
+  TEXT_MODEL_PROMPT_NOISE_CONSTRAINT,
   type TechniqueTextModelResponseFormat,
 } from './techniqueTextModelShared.js';
 import { REALM_ORDER } from './realmRules.js';
@@ -880,18 +882,21 @@ export const buildTechniqueGeneratorPromptInput = (params: {
   quality: GeneratedTechniqueQuality;
   maxLayer: number;
   effectTypeEnum: readonly string[];
+  promptNoiseHash?: string;
 }) => {
   const { techniqueType, quality, maxLayer, effectTypeEnum } = params;
   const skillCountRange = TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY[quality];
   const promptBuffConfigRules = buildTechniquePromptBuffConfigRules();
   const passiveValueGuideByKey = buildTechniquePassiveValueGuideByKey(quality);
+  const promptNoiseHash = normalizeTextModelPromptNoiseHash(params.promptNoiseHash);
   return {
     task: '生成完整功法定义',
     techniqueType,
     quality,
     maxLayer,
+    promptNoiseHash,
     constraints: {
-      generalRules: [...TECHNIQUE_PROMPT_GENERAL_RULES],
+      generalRules: [...TECHNIQUE_PROMPT_GENERAL_RULES, TEXT_MODEL_PROMPT_NOISE_CONSTRAINT],
       fieldSemantics: TECHNIQUE_PROMPT_FIELD_SEMANTICS,
       typeEnum: [techniqueType],
       realmEnum: [...TECHNIQUE_PROMPT_REALM_ENUM],
