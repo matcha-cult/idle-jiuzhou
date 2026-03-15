@@ -54,7 +54,7 @@ const router = Router();
 
 function parseIncludePartnerInBattle(value: unknown): boolean {
   if (typeof value !== 'boolean') {
-    throw new BusinessError('缺少 includePartnerInBattle');
+    return false;
   }
   return value;
 }
