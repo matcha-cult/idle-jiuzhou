@@ -7,18 +7,20 @@
  *
  * 输入/输出：
  * - 输入：`MapDefLite[]`、`MapRoom[]`、`MapRoom | undefined`（来自 world API 响应）。
- * - 输出：筛选后的地图列表、房间列表、怪物 Select 选项数组。
+ * - 输出：按挂机进度排序后的地图列表、房间列表、怪物 Select 选项数组。
  *
  * 数据流/状态流：
  * world API 原始响应 -> 本工具纯函数标准化/筛选 -> IdleConfigPanel 直接消费。
  *
  * 关键边界条件与坑点：
  * 1. `map_type` 缺失或大小写不一致时，统一小写后判定，避免新配置因大小写差异被漏筛。
- * 2. 同一房间若重复配置同 `monster_def_id`，仅保留一条选项，防止 Select 出现重复项。
- * 3. 怪物名称缺失时回退为 `monster_def_id`，避免下拉项出现空白文案。
+ * 2. 服务端地图列表的 `sort_weight` 不能直接代表挂机进度；这里必须先按境界进度排序，再在同境界内按权重排，避免高境界地图插队。
+ * 3. 同一房间若重复配置同 `monster_def_id`，仅保留一条选项，防止 Select 出现重复项。
+ * 4. 怪物名称缺失时回退为 `monster_def_id`，避免下拉项出现空白文案。
  */
 
 import type { MapDefLite, MapRoom } from '../../../../../services/api/world';
+import { getRealmRankFromLiteral } from '../../../shared/realm';
 
 const IDLE_EXCLUDED_MAP_TYPES = new Set(['city']);
 
@@ -27,12 +29,21 @@ export interface IdleMonsterOption {
   label: string;
 }
 
-/** 过滤出可用于挂机的地图（当前仅排除城市类地图）。 */
+const compareIdleMapOrder = (left: MapDefLite, right: MapDefLite): number => {
+  const realmRankDiff = getRealmRankFromLiteral(left.req_realm_min) - getRealmRankFromLiteral(right.req_realm_min);
+  if (realmRankDiff !== 0) return realmRankDiff;
+
+  const sortWeightDiff = right.sort_weight - left.sort_weight;
+  if (sortWeightDiff !== 0) return sortWeightDiff;
+
+  return left.id.localeCompare(right.id);
+};
+
+/** 过滤出可用于挂机的地图，并统一按挂机进度排序。 */
 export const filterIdleMaps = (maps: MapDefLite[]): MapDefLite[] => {
-  return maps.filter((map) => {
-    const mapType = String(map.map_type || '').trim().toLowerCase();
-    return !IDLE_EXCLUDED_MAP_TYPES.has(mapType);
-  });
+  return maps
+    .filter((map) => !IDLE_EXCLUDED_MAP_TYPES.has(map.map_type.trim().toLowerCase()))
+    .sort(compareIdleMapOrder);
 };
 
 /** 过滤出至少包含 1 个怪物配置的房间。 */
@@ -61,4 +72,3 @@ export const buildMonsterOptions = (room: MapRoom | undefined): IdleMonsterOptio
 
   return options;
 };
-

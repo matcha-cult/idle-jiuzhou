@@ -46,6 +46,66 @@ describe('idleMapOptions', () => {
     expect(filterIdleMaps(maps).map((entry) => entry.id)).toStrictEqual(['map-field', 'map-dungeon']);
   });
 
+  it('filterIdleMaps: 应按境界进度升序排序，同境界内保持更高权重优先', () => {
+    const maps: MapDefLite[] = [
+      {
+        id: 'map-huixu-rift',
+        code: 'huixu',
+        name: '还虚裂界',
+        description: null,
+        background_image: null,
+        map_type: 'field',
+        region: null,
+        req_level_min: 1,
+        req_realm_min: '炼神返虚·养神期',
+        sort_weight: 580,
+      },
+      {
+        id: 'map-shenshi-wasteland',
+        code: 'shenshi',
+        name: '神识荒原',
+        description: null,
+        background_image: null,
+        map_type: 'field',
+        region: null,
+        req_level_min: 1,
+        req_realm_min: '炼炁化神·结胎期',
+        sort_weight: 560,
+      },
+      {
+        id: 'map-youming-valley',
+        code: 'youming',
+        name: '幽冥谷',
+        description: null,
+        background_image: null,
+        map_type: 'field',
+        region: null,
+        req_level_min: 1,
+        req_realm_min: '炼炁化神·炼己期',
+        sort_weight: 610,
+      },
+      {
+        id: 'map-yaowang-valley',
+        code: 'yaowang',
+        name: '药王谷',
+        description: null,
+        background_image: null,
+        map_type: 'field',
+        region: null,
+        req_level_min: 1,
+        req_realm_min: '炼炁化神·炼己期',
+        sort_weight: 620,
+      },
+    ];
+
+    expect(filterIdleMaps(maps).map((entry) => entry.id)).toStrictEqual([
+      'map-yaowang-valley',
+      'map-youming-valley',
+      'map-shenshi-wasteland',
+      'map-huixu-rift',
+    ]);
+  });
+
   it('filterRoomsWithMonsters: 仅保留有怪物配置的房间', () => {
     const rooms: MapRoom[] = [
       { id: 'room-empty', name: '空房间', monsters: [] },
@@ -77,4 +137,3 @@ describe('idleMapOptions', () => {
     expect(buildMonsterOptions(undefined)).toStrictEqual([]);
   });
 });
-
