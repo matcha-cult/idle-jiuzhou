@@ -13,7 +13,7 @@ import { maskPhoneNumber, normalizeMainlandPhoneNumber } from './shared/phoneNum
  *
  * 作用（做什么 / 不做什么）：
  * 1. 做什么：集中处理手机号绑定状态读取、验证码发送、验证码校验和最终写库逻辑。
- * 2. 做什么：把 `users.phone_number` 的账号级绑定口径与 Redis 发送冷却统一收敛，供账号接口和坊市守卫复用。
+ * 2. 做什么：把 `users.phone_number` 的账号级绑定口径与 Redis 发送冷却统一收敛，供账号接口、坊市守卫和聊天发言守卫复用。
  * 3. 不做什么：不处理 HTTP 响应，不直接挂载路由，也不负责前端倒计时展示。
  *
  * 输入/输出：
@@ -25,7 +25,7 @@ import { maskPhoneNumber, normalizeMainlandPhoneNumber } from './shared/phoneNum
  *
  * 关键边界条件与坑点：
  * 1. 只有 `users.phone_number` 是最终真值来源；验证码真值由阿里云生成并核验，服务端本地只保留发送冷却，不保留验证码明文。
- * 2. 同一规则会被账号页和坊市守卫复用，因此“是否开启”“是否已绑定”“手机号唯一性”必须集中在本服务，不能在路由层重复判断。
+ * 2. 同一规则会被账号页、坊市守卫和聊天守卫复用，因此“是否开启”“是否已绑定”“手机号唯一性”必须集中在本服务，不能在路由层重复判断。
  */
 
 type UserPhoneBindingRow = {
@@ -47,6 +47,8 @@ type BindPhoneNumberResult = {
 };
 
 const buildCooldownKey = (userId: number): string => `market:phone-binding:cooldown:${userId}`;
+const MARKET_PHONE_BINDING_REQUIRED_MESSAGE = '使用坊市功能前请先绑定手机号';
+const CHAT_PHONE_BINDING_REQUIRED_MESSAGE = '绑定手机号后才可在聊天频道发言';
 
 const assertFeatureEnabled = (): void => {
   if (!MARKET_PHONE_BINDING_CONFIG.enabled) {
@@ -166,7 +168,10 @@ export const bindPhoneNumber = async (
   };
 };
 
-export const assertMarketPhoneBindingReady = async (userId: number): Promise<void> => {
+const assertPhoneBindingReadyForScene = async (
+  userId: number,
+  requiredMessage: string,
+): Promise<void> => {
   if (!MARKET_PHONE_BINDING_CONFIG.enabled) return;
 
   const user = await assertUserExists(userId);
@@ -174,5 +179,13 @@ export const assertMarketPhoneBindingReady = async (userId: number): Promise<voi
     return;
   }
 
-  throw new BusinessError('使用坊市功能前请先绑定手机号', 403);
+  throw new BusinessError(requiredMessage, 403);
+};
+
+export const assertMarketPhoneBindingReady = async (userId: number): Promise<void> => {
+  await assertPhoneBindingReadyForScene(userId, MARKET_PHONE_BINDING_REQUIRED_MESSAGE);
+};
+
+export const assertChatPhoneBindingReady = async (userId: number): Promise<void> => {
+  await assertPhoneBindingReadyForScene(userId, CHAT_PHONE_BINDING_REQUIRED_MESSAGE);
 };

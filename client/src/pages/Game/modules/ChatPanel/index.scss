@@ -444,6 +444,19 @@
 }
 
 .chat-input {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+
+  .ant-input-affix-wrapper {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ant-btn {
+    flex-shrink: 0;
+  }
+
   .ant-input {
     background: var(--panel-bg-soft);
     border-color: var(--border-color);

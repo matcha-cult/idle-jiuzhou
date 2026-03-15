@@ -22,6 +22,7 @@ import { notifyPartnerRecruitStatus } from "../services/partnerRecruitPush.js";
 import { getSectIndicatorByCharacterId } from "../services/sect/indicator.js";
 import { notifyTechniqueResearchStatus } from "../services/techniqueResearchPush.js";
 import { getMonthCardActiveMapByCharacterIds } from "../services/shared/monthCardBenefits.js";
+import { assertChatPhoneBindingReady } from "../services/marketPhoneBindingService.js";
 import { AsyncShutdownGate } from "../utils/asyncShutdownGate.js";
 
 // 玩家会话
@@ -247,6 +248,16 @@ class GameServer {
               message: channel === "system" ? "系统频道不允许发言" : "无效频道",
             });
             return;
+          }
+
+          if (channel === "world" || channel === "team" || channel === "sect" || channel === "private") {
+            try {
+              await assertChatPhoneBindingReady(session.userId);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "绑定手机号后才可在聊天频道发言";
+              socket.emit("chat:error", { message });
+              return;
+            }
           }
 
           let chatContent = content;
