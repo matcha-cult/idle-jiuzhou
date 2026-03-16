@@ -229,7 +229,7 @@ const SettingModal: React.FC<SettingModalProps> = ({ open, onClose }) => {
 
     setCdkRedeeming(true);
     try {
-      const result = await redeemGiftCode(code);
+      const result = await redeemGiftCode(code, SILENT_REQUEST_CONFIG);
       setCdk('');
       message.success(result.message || '兑换成功');
     } catch (error) {

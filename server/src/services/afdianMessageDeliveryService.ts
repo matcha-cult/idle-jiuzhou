@@ -21,7 +21,7 @@
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import { sendAfdianPrivateMessage } from './afdianOpenApiService.js';
-import { computeAfdianMessageRetryAt } from './afdian/shared.js';
+import { buildAfdianLogContext, computeAfdianMessageRetryAt } from './afdian/shared.js';
 
 type AfdianMessageDeliveryClaimRow = {
   id: number | string;
@@ -53,7 +53,7 @@ class AfdianMessageDeliveryService {
     orderId: number;
     recipientUserId: string;
     content: string;
-  }): Promise<number> {
+  }): Promise<{ id: number; created: boolean }> {
     const existing = await query(
       `
         SELECT id
@@ -65,7 +65,10 @@ class AfdianMessageDeliveryService {
       [input.orderId],
     );
     if (existing.rows.length > 0) {
-      return Number(existing.rows[0].id);
+      return {
+        id: Number(existing.rows[0].id),
+        created: false,
+      };
     }
 
     const inserted = await query(
@@ -76,7 +79,10 @@ class AfdianMessageDeliveryService {
       `,
       [input.orderId, input.recipientUserId, input.content],
     );
-    return Number(inserted.rows[0].id);
+    return {
+      id: Number(inserted.rows[0].id),
+      created: true,
+    };
   }
 
   @Transactional
@@ -167,6 +173,13 @@ class AfdianMessageDeliveryService {
           WHERE id = $1
         `,
         [Number(row.id), nextAttemptCount],
+      );
+      console.log(
+        `[AfdianMessageDelivery] 私信发送成功 ${buildAfdianLogContext({
+          deliveryId: Number(row.id),
+          recipientUserId: row.recipient_user_id,
+          attemptCount: nextAttemptCount,
+        })}`.trim(),
       );
     } catch (error) {
       const retryAt = computeAfdianMessageRetryAt(nextAttemptCount);

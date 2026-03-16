@@ -14,7 +14,7 @@
  * webhook 路由 / OpenAPI 服务 / 私信重试服务 -> 本模块纯函数 -> 上层决定落库、发消息或调度。
  *
  * 关键边界条件与坑点：
- * 1. webhook 签名串必须严格按 `out_trade_no + user_id + plan_id + total_amount` 拼接，顺序一旦错就会导致官方签名校验失败。
+ * 1. webhook 现在以 OpenAPI 订单回查作为可信来源，回调体只负责携带 `out_trade_no` 等线索字段，避免把测试请求误当成完整订单。
  * 2. OpenAPI `params` 参与签名时必须使用最终发送的 JSON 字符串，不能先按对象签名再让运行时改写顺序。
  */
 import { createHash } from 'node:crypto';
@@ -28,16 +28,6 @@ export const AFDIAN_REDEEM_SOURCE_TYPE = 'afdian_order';
 export const AFDIAN_MONTH_CARD_ITEM_DEF_ID = 'cons-monthcard-001';
 export const AFDIAN_OPEN_API_DEFAULT_BASE_URL = 'https://ifdian.net';
 export const AFDIAN_MESSAGE_RETRY_DELAYS_SECONDS = [60, 300, 1800, 7200, 86400] as const;
-
-export const AFDIAN_WEBHOOK_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwwdaCg1Bt+UKZKs0R54y
-lYnuANma49IpgoOwNmk3a0rhg/PQuhUJ0EOZSowIC44l0K3+fqGns3Ygi4AfmEfS
-4EKbdk1ahSxu7Zkp2rHMt+R9GarQFQkwSS/5x1dYiHNVMiR8oIXDgjmvxuNes2Cr
-8fw9dEF0xNBKdkKgG2qAawcN1nZrdyaKWtPVT9m2Hl0ddOO9thZmVLFOb9NVzgYf
-jEgI+KWX6aY19Ka/ghv/L4t1IXmz9pctablN5S0CRWpJW3Cn0k6zSXgjVdKm4uN7
-jRlgSRaf/Ind46vMCm3N2sgwxu/g3bnooW+db0iLo13zzuvyn727Q3UDQ0MmZcEW
-MQIDAQAB
------END PUBLIC KEY-----`;
 
 export type { RedeemCodeRewardItem, RedeemCodeRewardPayload };
 
@@ -80,6 +70,16 @@ export type AfdianWebhookPayload = {
   };
 };
 
+export type AfdianWebhookPayloadInput = {
+  ec?: number;
+  em?: string;
+  sign?: string;
+  data?: {
+    type?: string;
+    order?: Partial<AfdianWebhookOrder>;
+  };
+};
+
 export type AfdianOpenApiEnvelope<TData extends object> = {
   ec: number;
   em: string;
@@ -87,19 +87,16 @@ export type AfdianOpenApiEnvelope<TData extends object> = {
 };
 
 export type AfdianPlanConfig = {
-  rewardPayload: RedeemCodeRewardPayload;
+  rewardItemDefId: string;
+  rewardQuantityPerMonth: number;
 };
+
+export type AfdianLogFieldValue = string | number | boolean | null | undefined;
 
 export const AFDIAN_PLAN_CONFIGS: Readonly<Record<string, AfdianPlanConfig>> = {
   [AFDIAN_MONTH_CARD_PLAN_ID]: {
-    rewardPayload: {
-      items: [
-        {
-          itemDefId: AFDIAN_MONTH_CARD_ITEM_DEF_ID,
-          quantity: 1,
-        },
-      ],
-    },
+    rewardItemDefId: AFDIAN_MONTH_CARD_ITEM_DEF_ID,
+    rewardQuantityPerMonth: 1,
   },
 };
 
@@ -116,8 +113,71 @@ export const getAfdianPlanConfig = (planId: string): AfdianPlanConfig | null => 
   return AFDIAN_PLAN_CONFIGS[normalizedPlanId] ?? null;
 };
 
-export const buildAfdianWebhookSignText = (order: AfdianWebhookOrder): string => {
-  return `${order.out_trade_no}${order.user_id}${order.plan_id}${order.total_amount}`;
+export const buildAfdianPlanRewardPayload = (
+  planConfig: AfdianPlanConfig,
+  monthCount: number,
+): RedeemCodeRewardPayload => {
+  return {
+    items: [
+      {
+        itemDefId: planConfig.rewardItemDefId,
+        quantity: planConfig.rewardQuantityPerMonth * monthCount,
+      },
+    ],
+  };
+};
+
+export const buildAfdianLogContext = (fields: Record<string, AfdianLogFieldValue>): string => {
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+    if (typeof value === 'string' && !value.trim()) {
+      continue;
+    }
+    parts.push(`${key}=${String(value)}`);
+  }
+  return parts.join(' ');
+};
+
+export const findAfdianOrderByOutTradeNo = (
+  orders: readonly AfdianWebhookOrder[],
+  outTradeNo: string,
+): AfdianWebhookOrder | null => {
+  const normalizedOutTradeNo = outTradeNo.trim();
+  if (!normalizedOutTradeNo) {
+    return null;
+  }
+  return orders.find((order) => order.out_trade_no.trim() === normalizedOutTradeNo) ?? null;
+};
+
+export const assertAfdianOrderMatchesWebhook = (
+  webhookOrder: AfdianWebhookOrder,
+  verifiedOrder: AfdianWebhookOrder,
+): void => {
+  const mismatchFields: string[] = [];
+  if (verifiedOrder.out_trade_no !== webhookOrder.out_trade_no) mismatchFields.push('out_trade_no');
+  if (verifiedOrder.user_id !== webhookOrder.user_id) mismatchFields.push('user_id');
+  if (verifiedOrder.plan_id !== webhookOrder.plan_id) mismatchFields.push('plan_id');
+  if (verifiedOrder.month !== webhookOrder.month) mismatchFields.push('month');
+  if (verifiedOrder.total_amount !== webhookOrder.total_amount) mismatchFields.push('total_amount');
+  if (verifiedOrder.status !== webhookOrder.status) mismatchFields.push('status');
+
+  if (mismatchFields.length > 0) {
+    throw new Error(`爱发电订单回查结果与 webhook 不一致：${mismatchFields.join(', ')}`);
+  }
+};
+
+export const hasAfdianWebhookOrderPayload = (
+  payload: AfdianWebhookPayloadInput,
+): payload is AfdianWebhookPayloadInput & {
+  data: {
+    type: 'order';
+    order: Partial<AfdianWebhookOrder>;
+  };
+} => {
+  return payload.data?.type === 'order' && Boolean(payload.data.order);
 };
 
 export const buildAfdianOpenApiSign = (input: {

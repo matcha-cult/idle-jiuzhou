@@ -20,13 +20,34 @@
 import { Router, type Request, type Response } from 'express';
 
 import { afdianWebhookService } from '../services/afdianWebhookService.js';
-import type { AfdianWebhookPayload } from '../services/afdian/shared.js';
+import {
+  buildAfdianLogContext,
+  hasAfdianWebhookOrderPayload,
+  type AfdianWebhookPayloadInput,
+} from '../services/afdian/shared.js';
 
 const router = Router();
 
+router.get('/webhook', (_req: Request, res: Response) => {
+  res.json({ ec: 200, em: '' });
+});
+
 router.post('/webhook', async (req: Request, res: Response) => {
   try {
-    await afdianWebhookService.handleWebhook(req.body as AfdianWebhookPayload);
+    const payload = req.body as AfdianWebhookPayloadInput;
+    if (!hasAfdianWebhookOrderPayload(payload)) {
+      console.log('[AfdianWebhook] 已忽略非订单测试请求');
+      res.json({ ec: 200, em: '' });
+      return;
+    }
+    const logContext = buildAfdianLogContext({
+      outTradeNo: payload.data.order.out_trade_no,
+      planId: payload.data.order.plan_id,
+      month: payload.data.order.month,
+      userId: payload.data.order.user_id,
+    });
+    console.log(`[AfdianWebhook] 已收到订单回调 ${logContext}`.trim());
+    await afdianWebhookService.handleWebhook(payload);
     res.json({ ec: 200, em: '' });
   } catch (error) {
     console.error('[AfdianWebhook] 处理失败:', error);

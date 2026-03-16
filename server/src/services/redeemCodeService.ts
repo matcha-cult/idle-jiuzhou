@@ -71,7 +71,7 @@ const createRedeemCodeRow = async (input: {
   sourceType: string;
   sourceRefId: string;
   rewardPayload: RedeemCodeRewardPayload;
-}): Promise<{ id: number; code: string }> => {
+}): Promise<{ id: number; code: string; created: true }> => {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const code = generateRedeemCode();
     const result = await query(
@@ -87,6 +87,7 @@ const createRedeemCodeRow = async (input: {
       return {
         id: Number(result.rows[0].id),
         code: String(result.rows[0].code),
+        created: true,
       };
     }
   }
@@ -100,7 +101,7 @@ class RedeemCodeService {
     sourceType: string;
     sourceRefId: string;
     rewardPayload: RedeemCodeRewardPayload;
-  }): Promise<{ id: number; code: string }> {
+  }): Promise<{ id: number; code: string; created: boolean }> {
     const existingResult = await query(
       `
         SELECT id, code
@@ -115,6 +116,7 @@ class RedeemCodeService {
       return {
         id: Number(existingResult.rows[0].id),
         code: String(existingResult.rows[0].code),
+        created: false,
       };
     }
 

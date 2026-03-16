@@ -17,6 +17,7 @@
  * 1. 页面不能再假设“本地记录过就算兑换成功”，必须以后端真实结果为准。
  * 2. 奖励明细用于后续复用，因此类型定义收口在 API 层而不是页面组件里。
  */
+import type { AxiosRequestConfig } from 'axios';
 import api from './core';
 import type { GrantedRewardResultDto } from '../reward';
 
@@ -31,6 +32,9 @@ export interface RedeemCodeResponse {
   };
 }
 
-export const redeemGiftCode = (code: string): Promise<RedeemCodeResponse> => {
-  return api.post('/redeem-code/redeem', { code });
+export const redeemGiftCode = (
+  code: string,
+  requestConfig?: AxiosRequestConfig,
+): Promise<RedeemCodeResponse> => {
+  return api.post('/redeem-code/redeem', { code }, requestConfig);
 };

@@ -20,6 +20,7 @@
 import {
   buildAfdianOpenApiSign,
   getAfdianOpenApiBaseUrl,
+  type AfdianWebhookOrder,
   type AfdianOpenApiEnvelope,
 } from './afdian/shared.js';
 
@@ -30,6 +31,12 @@ type AfdianOpenApiParams = Record<string, JsonValue>;
 
 type AfdianSendMessageResponseData = {
   [key: string]: JsonValue;
+};
+
+type AfdianQueryOrderResponseData = {
+  list?: AfdianWebhookOrder[];
+  total_count?: number;
+  total_page?: number;
 };
 
 const getAfdianOpenApiCredentials = (): { userId: string; token: string; baseUrl: string } => {
@@ -95,4 +102,11 @@ export const sendAfdianPrivateMessage = async (input: {
     recipient: input.recipient,
     content: input.content,
   });
+};
+
+export const queryAfdianOrdersByOutTradeNo = async (outTradeNo: string): Promise<AfdianWebhookOrder[]> => {
+  const body = await callAfdianOpenApi<AfdianQueryOrderResponseData>('/api/open/query-order', {
+    out_trade_no: outTradeNo,
+  });
+  return Array.isArray(body.data.list) ? body.data.list : [];
 };
