@@ -2,20 +2,20 @@
  * 月卡弹窗展示规则共享模块
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：集中维护月卡奖励图标、状态文案与按钮文案，避免这些高频变化点散落在弹窗组件里。
- * 2. 做什么：把“未激活 / 已到期 / 生效中”三类展示语义收敛到单一入口，减少同类判断重复书写。
+ * 1. 做什么：集中维护月卡奖励图标、特权文案、状态文案与按钮文案，避免这些高频变化点散落在弹窗组件里。
+ * 2. 做什么：把“接口返回的权益数值 -> UI 文案”收敛到单一入口，减少前端重复硬编码百分比与加成值。
  * 3. 不做什么：不请求接口、不持有 React 状态，也不负责具体 DOM 布局。
  *
  * 输入/输出：
- * - 输入：月卡每日灵石数量、是否激活、是否到期、剩余天数、到期时间。
- * - 输出：奖励展示数组，以及右侧状态面板要渲染的标题/文案/按钮文案。
+ * - 输入：月卡每日灵石数量、权益数值、是否激活、是否到期、剩余天数、到期时间。
+ * - 输出：奖励展示数组、特权展示数组，以及右侧状态面板要渲染的标题/文案/按钮文案。
  *
  * 数据流/状态流：
  * 月卡接口状态 -> 本模块纯函数 -> MonthCardModal 组件渲染。
  *
  * 关键边界条件与坑点：
  * 1. 灵石奖励图标必须始终走共享资源 `IMG_LINGSHI`，不能在业务组件里再次回退成金币图。
- * 2. 到期时间字符串可能为空或非法，此时只能回退到通用提示文案，不能渲染无意义的 `Invalid Date`。
+ * 2. 月卡权益数值以后仍可能调整，因此百分比与福源加成必须来自接口数据，不能在组件里写死。
  */
 
 import { IMG_LINGSHI } from '../../shared/imageAssets';
@@ -34,6 +34,15 @@ const formatExpireAt = (expireAt: string | null): string => {
   return `${year}-${month}-${day} ${hour}:${minute}`;
 };
 
+const formatPercent = (ratio: number): string => {
+  const percent = Math.max(0, Math.round(ratio * 100));
+  return `${percent}%`;
+};
+
+const formatFlatNumber = (value: number): string => {
+  return `${Math.max(0, Math.floor(value))}`;
+};
+
 export type MonthCardDailyReward = {
   id: string;
   name: string;
@@ -42,11 +51,24 @@ export type MonthCardDailyReward = {
   type: 'spiritStone';
 };
 
+export type MonthCardBenefitDisplayInput = {
+  cooldownReductionRate: number;
+  staminaRecoveryRate: number;
+  fuyuanBonus: number;
+};
+
+export type MonthCardPrivilegeIconName =
+  | 'GiftOutlined'
+  | 'UsergroupAddOutlined'
+  | 'ClockCircleOutlined'
+  | 'ThunderboltOutlined'
+  | 'StarOutlined';
+
 export type MonthCardPrivilege = {
   id: string;
   name: string;
   description: string;
-  iconName: string;
+  iconName: MonthCardPrivilegeIconName;
 };
 
 export type MonthCardPanelStateInput = {
@@ -63,26 +85,56 @@ export type MonthCardPanelState = {
   actionLabel: '使用' | '使用续期';
 };
 
-export const getMonthCardPrivileges = (): MonthCardPrivilege[] => [
-  {
-    id: 'daily-reward',
-    name: '每日灵石',
-    description: '激活期间每日可领取灵石奖励',
-    iconName: 'GiftOutlined',
-  },
-  {
-    id: 'partner-cooldown',
-    name: '招募加速',
-    description: '伙伴招募冷却时间缩短 10%',
-    iconName: 'UsergroupAddOutlined',
-  },
-  {
-    id: 'practice-cooldown',
-    name: '研修加速',
-    description: '洞府研修冷却时间缩短 10%',
-    iconName: 'ClockCircleOutlined',
-  },
-];
+export const getMonthCardPrivileges = (
+  benefits: MonthCardBenefitDisplayInput,
+): MonthCardPrivilege[] => {
+  const privileges: MonthCardPrivilege[] = [
+    {
+      id: 'daily-reward',
+      name: '每日灵石',
+      description: '激活期间每日灵石奖励',
+      iconName: 'GiftOutlined',
+    },
+  ];
+
+  if (benefits.cooldownReductionRate > 0) {
+    const percentText = formatPercent(benefits.cooldownReductionRate);
+    privileges.push(
+      {
+        id: 'partner-cooldown',
+        name: '招募加速',
+        description: `伙伴招募冷却缩短 ${percentText}`,
+        iconName: 'UsergroupAddOutlined',
+      },
+      {
+        id: 'practice-cooldown',
+        name: '研修加速',
+        description: `洞府研修冷却缩短 ${percentText}`,
+        iconName: 'ClockCircleOutlined',
+      },
+    );
+  }
+
+  if (benefits.staminaRecoveryRate > 0) {
+    privileges.push({
+      id: 'stamina-recovery',
+      name: '体力恢复',
+      description: `体力恢复速度提升 ${formatPercent(benefits.staminaRecoveryRate)}`,
+      iconName: 'ThunderboltOutlined',
+    });
+  }
+
+  if (benefits.fuyuanBonus > 0) {
+    privileges.push({
+      id: 'fuyuan-bonus',
+      name: '福源加持',
+      description: `福源提升 ${formatFlatNumber(benefits.fuyuanBonus)}`,
+      iconName: 'StarOutlined',
+    });
+  }
+
+  return privileges;
+};
 
 export const buildMonthCardDailyRewards = (dailySpiritStones: number): MonthCardDailyReward[] => [
   {

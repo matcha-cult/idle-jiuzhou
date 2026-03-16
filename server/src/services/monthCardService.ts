@@ -2,9 +2,12 @@ import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
 import { getGameServer } from '../game/gameServer.js';
 import { updateAchievementProgress } from './achievementService.js';
+import { invalidateStaminaCache } from './staminaCacheService.js';
 import {
   DEFAULT_MONTH_CARD_ITEM_DEF_ID,
+  getMonthCardBenefitValues,
   getMonthCardDefinitionById,
+  type MonthCardBenefitValues,
 } from './shared/monthCardBenefits.js';
 
 export type MonthCardStatusResult = {
@@ -17,6 +20,7 @@ export type MonthCardStatusResult = {
     durationDays: number;
     dailySpiritStones: number;
     priceSpiritStones: number;
+    benefits: MonthCardBenefitValues;
     active: boolean;
     expireAt: string | null;
     daysLeft: number;
@@ -85,6 +89,7 @@ class MonthCardService {
 
     const def = getMonthCardDefinitionById(monthCardId);
     if (!def) return { success: false, message: '月卡不存在' };
+    const benefits = getMonthCardBenefitValues(monthCardId);
 
     const ownRes = await query(
       `
@@ -116,6 +121,7 @@ class MonthCardService {
         durationDays: asNumber(def.duration_days, 30),
         dailySpiritStones: asNumber(def.daily_spirit_stones, defaultDailySpiritStones),
         priceSpiritStones: asNumber(def.price_spirit_stones, 0),
+        benefits,
         active,
         expireAt: expireAt ? expireAt.toISOString() : null,
         daysLeft,
@@ -237,6 +243,7 @@ class MonthCardService {
       );
     }
     await updateAchievementProgress(characterId, 'monthcard:activate', 1);
+    await invalidateStaminaCache(characterId);
     void getGameServer().pushCharacterUpdate(userId);
 
     const daysLeft = Math.max(0, Math.ceil((nextExpireAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
@@ -310,6 +317,7 @@ class MonthCardService {
       );
     }
     await updateAchievementProgress(characterId, 'monthcard:activate', 1);
+    await invalidateStaminaCache(characterId);
     void getGameServer().pushCharacterUpdate(userId);
 
     const daysLeft = Math.max(0, Math.ceil((expireAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));

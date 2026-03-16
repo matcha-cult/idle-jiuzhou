@@ -1,27 +1,43 @@
 .monthcard-modal {
+  .ant-modal {
+    width: min(760px, calc(100vw - 24px)) !important;
+    max-width: calc(100vw - 24px);
+    margin: 12px auto;
+    padding-bottom: 0;
+  }
+
   .ant-modal-content {
     padding: 0;
-    border-radius: 14px;
+    border-radius: 18px;
     overflow: hidden;
+    border: 1px solid var(--border-color-soft);
+    background:
+      radial-gradient(circle at top left, rgba(74, 122, 255, 0.12), transparent 32%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+      var(--panel-bg);
+    box-shadow: 0 22px 64px rgba(0, 0, 0, 0.38);
+  }
+
+  .ant-modal-close {
+    top: 18px;
+    right: 18px;
   }
 }
 
 .monthcard-shell {
-  max-height: min(80vh, 760px);
   display: flex;
   flex-direction: column;
-  background: var(--panel-bg);
+  background: transparent;
 }
 
 .monthcard-header {
   flex: 0 0 auto;
-  padding: 14px 16px 12px;
-  border-bottom: 1px solid var(--border-color-soft);
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: var(--panel-bg);
 }
 
 .monthcard-title {
@@ -31,39 +47,38 @@
 }
 
 .monthcard-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 14px 16px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: var(--page-bg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0)),
+    var(--page-bg);
+  overflow: visible;
 }
 
-/* 顶部特权卡片 */
 .monthcard-vip-card {
-  flex-shrink: 0;
   position: relative;
-  border-radius: 14px;
+  border-radius: 16px;
   overflow: hidden;
-  min-height: 120px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  padding: 14px 16px;
+  min-height: 0;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border-color-soft);
-  
-  /* 渐变背景与纹理 */
+  border: 1px solid rgba(116, 142, 255, 0.16);
+  background:
+    linear-gradient(135deg, rgba(61, 79, 166, 0.28) 0%, rgba(24, 31, 46, 0.94) 58%, rgba(17, 32, 42, 0.94) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+
   &::before {
     content: '';
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: linear-gradient(135deg, rgba(82, 113, 255, 0.15) 0%, rgba(58, 222, 255, 0.05) 100%);
-    z-index: 0;
+    inset: 0;
+    background:
+      linear-gradient(120deg, rgba(255, 255, 255, 0.04), transparent 34%),
+      radial-gradient(circle at top right, rgba(88, 204, 255, 0.08), transparent 28%);
+    pointer-events: none;
   }
-  
-  background-color: var(--panel-bg-soft);
 }
 
 .monthcard-vip-content-wrapper {
@@ -71,14 +86,14 @@
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .monthcard-vip-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding-bottom: 10px;
 }
 
@@ -90,53 +105,57 @@
 }
 
 .monthcard-vip-main {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: end;
 }
 
 .monthcard-vip-status {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .monthcard-vip-status-value {
-  font-size: 22px;
+  font-size: clamp(20px, 3vw, 32px);
   font-weight: 900;
   color: var(--text-color);
-  line-height: 1.2;
+  line-height: 1.1;
 }
 
 .monthcard-vip-status-hint {
   font-size: 13px;
   color: var(--text-tertiary);
+  line-height: 1.35;
 }
 
 .monthcard-vip-action {
+  min-width: 132px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
 }
 
 .monthcard-vip-btn {
-  width: 120px;
-  height: 36px;
-  border-radius: 18px;
-  font-weight: bold;
+  width: 132px;
+  height: 40px;
+  border-radius: 999px;
+  font-weight: 800;
 }
 
 .monthcard-vip-action-meta {
   font-size: 12px;
   color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
-/* 中间特权介绍部分 */
-.monthcard-privileges {
-  flex-shrink: 0;
-  background: var(--panel-bg);
-  border-radius: 14px;
+.monthcard-privileges,
+.monthcard-claim-panel {
+  background: rgba(255, 255, 255, 0.015);
+  border-radius: 16px;
   border: 1px solid var(--border-color-soft);
   padding: 14px 16px;
   display: flex;
@@ -148,211 +167,454 @@
   font-size: 14px;
   font-weight: 900;
   color: var(--text-color);
-  padding-left: 6px;
-  border-left: 3px solid var(--primary-color);
+  padding-left: 8px;
+  border-left: 4px solid var(--primary-color);
 }
 
 .monthcard-privilege-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .monthcard-privilege-item {
+  min-height: 126px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   text-align: center;
   gap: 10px;
-  padding: 16px 12px;
-  background: var(--panel-bg-soft);
-  border-radius: 8px;
+  padding: 14px 10px 12px;
+  background: rgba(9, 11, 16, 0.58);
+  border-radius: 12px;
   border: 1px solid rgba(128, 128, 128, 0.08);
 }
 
 .monthcard-privilege-icon {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  background: linear-gradient(135deg, rgba(82, 113, 255, 0.1), rgba(58, 222, 255, 0.1));
+  font-size: 21px;
+  background: linear-gradient(135deg, rgba(82, 113, 255, 0.12), rgba(58, 222, 255, 0.08));
   color: var(--primary-color);
-  border-radius: 12px;
+  border-radius: 13px;
+  flex: 0 0 auto;
 }
 
 .monthcard-privilege-info {
-  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .monthcard-privilege-name {
-  font-size: 14px;
-  font-weight: bold;
+  font-size: 13px;
+  font-weight: 800;
   color: var(--text-color);
+  line-height: 1.2;
 }
 
 .monthcard-privilege-desc {
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 11px;
+  line-height: 1.32;
   color: var(--text-tertiary);
-}
-
-/* 底部领取奖励 */
-.monthcard-claim-panel {
-  flex-shrink: 0;
-  background: var(--panel-bg);
-  border-radius: 14px;
-  border: 1px solid var(--border-color-soft);
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .monthcard-claim-content {
-  display: flex;
-  align-items: stretch;
-  justify-content: space-between;
-  gap: 16px;
-  background: var(--panel-bg-soft);
-  padding: 12px;
-  border-radius: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  background: rgba(9, 11, 16, 0.62);
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(128, 128, 128, 0.06);
 }
 
 .monthcard-reward-grid {
+  min-width: 0;
   display: flex;
-  gap: 12px;
+  align-items: center;
 }
 
 .monthcard-reward {
-  text-align: center;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+
+.monthcard-reward-icon {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color-soft);
+  border-radius: 12px;
+  padding: 7px;
+}
+
+.monthcard-reward-meta {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.monthcard-reward-icon {
-  width: 48px;
-  height: 48px;
-  object-fit: contain;
-  background: var(--panel-bg);
-  border: 1px solid var(--border-color-soft);
-  border-radius: 8px;
-  padding: 6px;
-}
-
 .monthcard-reward-name {
-  font-size: 12px;
+  font-size: 15px;
+  font-weight: 700;
   color: var(--text-color);
+  line-height: 1.1;
 }
 
 .monthcard-reward-amount {
-  font-size: 12px;
-  font-weight: bold;
+  font-size: 16px;
+  font-weight: 900;
   color: var(--text-tertiary);
+  line-height: 1;
 }
 
 .monthcard-claim-action {
+  flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
-  min-width: 100px;
-  
+  align-items: stretch;
+
   .ant-btn {
-    flex: 1;
-    height: auto;
-    border-radius: 8px; /* keeping a nice border radius for the stretched button */
+    min-width: 136px;
+    height: 72px;
+    border-radius: 16px;
+    font-size: 15px;
+    font-weight: 900;
+    padding-inline: 18px;
+  }
+}
+
+@media screen and (max-height: 920px) {
+  .monthcard-header {
+    padding: 14px 18px 10px;
+  }
+
+  .monthcard-body {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .monthcard-vip-card {
+    padding: 14px 16px;
+  }
+
+  .monthcard-vip-content-wrapper {
+    gap: 12px;
+  }
+
+  .monthcard-privileges,
+  .monthcard-claim-panel {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .monthcard-privilege-item {
+    min-height: 112px;
+    padding: 12px 8px 10px;
+    gap: 8px;
+  }
+
+  .monthcard-privilege-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 18px;
+  }
+
+  .monthcard-reward-icon {
+    width: 50px;
+    height: 50px;
+  }
+
+  .monthcard-claim-action {
+    .ant-btn {
+      min-width: 126px;
+      height: 64px;
+    }
+  }
+}
+
+@media screen and (max-width: 900px) {
+  .monthcard-modal {
+    .ant-modal {
+      width: min(720px, calc(100vw - 20px)) !important;
+      max-width: calc(100vw - 20px);
+      margin: 10px auto;
+    }
+  }
+
+  .monthcard-privilege-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .monthcard-privilege-item {
+    min-height: 110px;
+  }
+
+  .monthcard-privilege-desc {
+    display: none;
   }
 }
 
 @media screen and (max-width: 768px) {
-  .monthcard-shell {
-    max-height: calc(100vh - 32px);
+  .monthcard-modal {
+    .ant-modal {
+      width: calc(100vw - 12px) !important;
+      max-width: calc(100vw - 12px);
+      margin: 6px auto;
+    }
+
+    .ant-modal-content {
+      border-radius: 16px;
+    }
+
+    .ant-modal-close {
+      top: 14px;
+      right: 14px;
+    }
   }
-  
+
+  .monthcard-header {
+    padding: 14px 14px 10px;
+  }
+
+  .monthcard-title {
+    font-size: 15px;
+  }
+
   .monthcard-body {
-    padding: 12px;
-    gap: 12px;
+    padding: 10px;
+    gap: 8px;
   }
 
   .monthcard-vip-card {
-    min-height: auto;
     padding: 12px;
   }
 
-  /* 保持在一行，不折行以节省高度 */
+  .monthcard-vip-content-wrapper {
+    gap: 10px;
+  }
+
+  .monthcard-vip-header {
+    padding-bottom: 8px;
+  }
+
+  .monthcard-vip-name {
+    font-size: 16px;
+    letter-spacing: 0.5px;
+  }
+
   .monthcard-vip-main {
-    flex-direction: row;
-    align-items: flex-end;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px;
-    justify-content: space-between;
+    align-items: end;
   }
-  
-  .monthcard-vip-action {
-    width: auto;
-    align-items: flex-end;
-  }
-  
-  .monthcard-vip-btn {
-    width: 90px;
-    height: 32px;
-    font-size: 13px;
-  }
-  
-  /* 特权区改为紧凑的 3 列网络 */
-  .monthcard-privilege-list {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
-  
-  .monthcard-privilege-item {
-    flex-direction: column;
-    text-align: center;
-    padding: 10px 4px;
-    gap: 6px;
-  }
-  
-  .monthcard-privilege-icon {
-    width: 36px;
-    height: 36px;
+
+  .monthcard-vip-status-value {
     font-size: 18px;
   }
 
-  .monthcard-privilege-info {
-    align-items: center;
-  }
-  
-  .monthcard-privilege-name {
+  .monthcard-vip-status-hint {
     font-size: 12px;
   }
-  
-  /* 隐藏描述，极大节省高度 */
+
+  .monthcard-vip-action {
+    min-width: 92px;
+    gap: 6px;
+  }
+
+  .monthcard-vip-btn {
+    width: 92px;
+    height: 34px;
+    font-size: 13px;
+  }
+
+  .monthcard-vip-action-meta {
+    font-size: 11px;
+  }
+
+  .monthcard-privileges,
+  .monthcard-claim-panel {
+    padding: 10px 12px;
+    gap: 10px;
+    border-radius: 14px;
+  }
+
+  .monthcard-section-title {
+    font-size: 13px;
+    padding-left: 7px;
+  }
+
+  .monthcard-privilege-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .monthcard-privilege-item {
+    min-height: 82px;
+    padding: 8px 4px;
+    gap: 6px;
+    border-radius: 10px;
+  }
+
+  .monthcard-privilege-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+    border-radius: 10px;
+  }
+
+  .monthcard-privilege-info {
+    gap: 0;
+  }
+
+  .monthcard-privilege-name {
+    font-size: 11px;
+    line-height: 1.15;
+  }
+
   .monthcard-privilege-desc {
     display: none;
   }
 
-  /* 领奖区紧凑处理，保持单行 */
+  .monthcard-claim-content {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 12px;
+  }
+
+  .monthcard-reward {
+    gap: 10px;
+  }
+
+  .monthcard-reward-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    padding: 5px;
+  }
+
+  .monthcard-reward-meta {
+    gap: 4px;
+  }
+
+  .monthcard-reward-name {
+    font-size: 13px;
+  }
+
+  .monthcard-reward-amount {
+    font-size: 14px;
+  }
+
+  .monthcard-claim-action {
+    .ant-btn {
+      min-width: 98px;
+      height: 60px;
+      border-radius: 14px;
+      font-size: 13px;
+      padding-inline: 12px;
+    }
+  }
+}
+
+@media screen and (max-width: 768px) and (max-height: 780px) {
+  .monthcard-header {
+    padding: 12px 14px 8px;
+  }
+
+  .monthcard-body {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .monthcard-vip-card {
+    padding: 10px 11px;
+  }
+
+  .monthcard-vip-content-wrapper {
+    gap: 8px;
+  }
+
+  .monthcard-vip-status-value {
+    font-size: 17px;
+  }
+
+  .monthcard-vip-status-hint {
+    font-size: 11px;
+  }
+
+  .monthcard-vip-btn {
+    width: 88px;
+    height: 32px;
+    font-size: 12px;
+  }
+
+  .monthcard-vip-action-meta {
+    font-size: 10px;
+  }
+
+  .monthcard-privileges,
   .monthcard-claim-panel {
-    padding: 12px;
+    padding: 9px 10px;
+    gap: 8px;
+  }
+
+  .monthcard-privilege-item {
+    min-height: 76px;
+    padding: 7px 4px;
+    gap: 5px;
+  }
+
+  .monthcard-privilege-icon {
+    width: 30px;
+    height: 30px;
+    font-size: 15px;
+  }
+
+  .monthcard-privilege-name {
+    font-size: 10px;
   }
 
   .monthcard-claim-content {
-    flex-direction: row;
-    align-items: stretch;
-    padding: 10px;
+    gap: 8px;
+    padding: 8px 9px;
   }
-  
+
+  .monthcard-reward-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .monthcard-reward-name {
+    font-size: 12px;
+  }
+
+  .monthcard-reward-amount {
+    font-size: 13px;
+  }
+
   .monthcard-claim-action {
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: center;
-    margin-top: 0;
-    padding-top: 0;
-    border-top: none;
-    gap: 6px;
+    .ant-btn {
+      min-width: 92px;
+      height: 56px;
+      font-size: 12px;
+    }
   }
 }

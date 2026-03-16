@@ -23,11 +23,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as database from '../../config/database.js';
-import { getMonthCardActiveMapByCharacterIds } from '../shared/monthCardBenefits.js';
+import {
+  applyMonthCardFuyuanBonus,
+  getMonthCardActiveMapByCharacterIds,
+  getMonthCardBenefitValues,
+} from '../shared/monthCardBenefits.js';
 
 test('批量月卡激活态映射应返回完整布尔结果', async (t) => {
   const queryMock = t.mock.method(
-    database,
+    database.pool,
     'query',
     async (_sql: string, params?: readonly unknown[]) => {
       assert.deepEqual(params?.[0], [101, 102, 103]);
@@ -46,10 +50,24 @@ test('批量月卡激活态映射应返回完整布尔结果', async (t) => {
 });
 
 test('空角色列表不应访问数据库', async (t) => {
-  const queryMock = t.mock.method(database, 'query', async () => ({ rows: [] }));
+  const queryMock = t.mock.method(database.pool, 'query', async () => ({ rows: [] }));
 
   const result = await getMonthCardActiveMapByCharacterIds([]);
 
   assert.equal(result.size, 0);
   assert.equal(queryMock.mock.callCount(), 0);
+});
+
+test('月卡权益配置应统一提供冷却缩减、体力恢复速度与福源加成', () => {
+  const benefits = getMonthCardBenefitValues();
+
+  assert.deepEqual(benefits, {
+    cooldownReductionRate: 0.1,
+    staminaRecoveryRate: 0.1,
+    fuyuanBonus: 20,
+  });
+});
+
+test('激活月卡时应对福源应用共享加成', () => {
+  assert.equal(applyMonthCardFuyuanBonus(88, 20), 108);
 });

@@ -21,7 +21,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { IMG_LINGSHI } from '../../../shared/imageAssets';
-import { buildMonthCardDailyRewards, buildMonthCardPanelState } from '../monthCardDisplay';
+import {
+  buildMonthCardDailyRewards,
+  buildMonthCardPanelState,
+  getMonthCardPrivileges,
+} from '../monthCardDisplay';
 
 describe('monthCardDisplay', () => {
   it('每日灵石奖励应使用统一的灵石图标', () => {
@@ -76,5 +80,21 @@ describe('monthCardDisplay', () => {
     expect(state.statusValue).toBe('已到期');
     expect(state.statusHint).toBe('背包有月卡道具时可点击“使用续期”叠加天数。');
     expect(state.actionLabel).toBe('使用续期');
+  });
+
+  it('月卡特权列表应展示体力恢复与福源加成', () => {
+    const privileges = getMonthCardPrivileges({
+      cooldownReductionRate: 0.1,
+      staminaRecoveryRate: 0.1,
+      fuyuanBonus: 20,
+    });
+
+    expect(privileges.map((item) => item.description)).toEqual([
+      '激活期间每日可领取灵石奖励',
+      '伙伴招募冷却时间缩短 10%',
+      '洞府研修冷却时间缩短 10%',
+      '体力恢复速度提升 10%',
+      '福源提升 20',
+    ]);
   });
 });

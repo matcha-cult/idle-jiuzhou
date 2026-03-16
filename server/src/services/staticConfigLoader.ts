@@ -104,6 +104,8 @@ export type MonthCardDef = {
   daily_spirit_stones?: number;
   price_spirit_stones?: number | string;
   cooldown_reduction_rate?: number | string;
+  stamina_recovery_rate?: number | string;
+  fuyuan_bonus?: number | string;
   enabled?: boolean;
   sort_weight?: number;
 };

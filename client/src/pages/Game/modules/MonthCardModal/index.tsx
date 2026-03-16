@@ -1,9 +1,21 @@
-import { ClockCircleOutlined, GiftOutlined, UsergroupAddOutlined } from '@ant-design/icons';
+import {
+  ClockCircleOutlined,
+  GiftOutlined,
+  StarOutlined,
+  ThunderboltOutlined,
+  UsergroupAddOutlined,
+} from '@ant-design/icons';
 import { App, Button, Modal } from 'antd';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ComponentType } from 'react';
 import { activateMonthCardItem, claimMonthCardReward, getInventoryItems, getMonthCardStatus } from '../../../../services/api';
 import { gameSocket } from '../../../../services/gameSocket';
-import { buildMonthCardDailyRewards, buildMonthCardPanelState, getMonthCardPrivileges, type MonthCardDailyReward } from './monthCardDisplay';
+import {
+  buildMonthCardDailyRewards,
+  buildMonthCardPanelState,
+  getMonthCardPrivileges,
+  type MonthCardDailyReward,
+  type MonthCardPrivilegeIconName,
+} from './monthCardDisplay';
 import './index.scss';
 
 interface MonthCardModalProps {
@@ -14,6 +26,13 @@ interface MonthCardModalProps {
 const monthCardId = 'monthcard-001';
 const monthCardItemDefId = 'cons-monthcard-001';
 const defaultDailySpiritStones = 10000;
+const privilegeIconMap: Record<MonthCardPrivilegeIconName, ComponentType> = {
+  GiftOutlined,
+  UsergroupAddOutlined,
+  ClockCircleOutlined,
+  ThunderboltOutlined,
+  StarOutlined,
+};
 
 const MonthCardModal: React.FC<MonthCardModalProps> = ({ open, onClose }) => {
   const { message } = App.useApp();
@@ -65,6 +84,10 @@ const MonthCardModal: React.FC<MonthCardModalProps> = ({ open, onClose }) => {
     const amount = status?.dailySpiritStones ?? defaultDailySpiritStones;
     return buildMonthCardDailyRewards(amount);
   }, [status?.dailySpiritStones]);
+  const privileges = useMemo(() => {
+    if (!status?.benefits) return [];
+    return getMonthCardPrivileges(status.benefits);
+  }, [status?.benefits]);
 
   const active = Boolean(status?.active);
   const daysLeft = status?.daysLeft ?? 0;
@@ -137,7 +160,7 @@ const MonthCardModal: React.FC<MonthCardModalProps> = ({ open, onClose }) => {
       footer={null}
       title={null}
       centered
-      width={720}
+      width={760}
       className="monthcard-modal"
       destroyOnHidden
       maskClosable
@@ -188,16 +211,13 @@ const MonthCardModal: React.FC<MonthCardModalProps> = ({ open, onClose }) => {
           <div className="monthcard-privileges">
             <div className="monthcard-section-title">月卡专属特权</div>
             <div className="monthcard-privilege-list">
-              {getMonthCardPrivileges().map(privilege => {
-                let IconComp: React.FC<any> | null = null;
-                if (privilege.iconName === 'GiftOutlined') IconComp = GiftOutlined;
-                if (privilege.iconName === 'UsergroupAddOutlined') IconComp = UsergroupAddOutlined;
-                if (privilege.iconName === 'ClockCircleOutlined') IconComp = ClockCircleOutlined;
-                
+              {privileges.map((privilege) => {
+                const IconComp = privilegeIconMap[privilege.iconName];
+
                 return (
                   <div key={privilege.id} className="monthcard-privilege-item">
                     <div className="monthcard-privilege-icon">
-                      {IconComp && <IconComp />}
+                      <IconComp />
                     </div>
                     <div className="monthcard-privilege-info">
                       <div className="monthcard-privilege-name">{privilege.name}</div>
@@ -216,8 +236,10 @@ const MonthCardModal: React.FC<MonthCardModalProps> = ({ open, onClose }) => {
                 {dailyRewards.map((r) => (
                   <div key={r.id} className="monthcard-reward">
                     <img className="monthcard-reward-icon" src={r.icon} alt={r.name} />
-                    <div className="monthcard-reward-name">{r.name}</div>
-                    <div className="monthcard-reward-amount">x{r.amount}</div>
+                    <div className="monthcard-reward-meta">
+                      <div className="monthcard-reward-name">{r.name}</div>
+                      <div className="monthcard-reward-amount">x{r.amount}</div>
+                    </div>
                   </div>
                 ))}
               </div>

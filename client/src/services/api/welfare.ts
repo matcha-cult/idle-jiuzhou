@@ -51,6 +51,11 @@ export interface MonthCardStatusResponse {
     durationDays: number;
     dailySpiritStones: number;
     priceSpiritStones: number;
+    benefits: {
+      cooldownReductionRate: number;
+      staminaRecoveryRate: number;
+      fuyuanBonus: number;
+    };
     active: boolean;
     expireAt: string | null;
     daysLeft: number;

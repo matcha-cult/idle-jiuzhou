@@ -20,7 +20,17 @@
 
 import { query } from '../config/database.js';
 import { getCachedStamina, setCachedStamina, toRecoveryState } from './staminaCacheService.js';
-import { calcCharacterStaminaMaxByInsightLevel, STAMINA_BASE_MAX } from './shared/staminaRules.js';
+import {
+  DEFAULT_MONTH_CARD_ID,
+  getMonthCardStaminaRecoveryRate,
+  normalizeMonthCardBenefitWindow,
+} from './shared/monthCardBenefits.js';
+import {
+  calcCharacterStaminaMaxByInsightLevel,
+  resolveStaminaRecoveryState,
+  STAMINA_BASE_MAX,
+  type StaminaRecoverySpeedWindow,
+} from './shared/staminaRules.js';
 
 const toPositiveInt = (value: string | undefined, fallback: number): number => {
   const n = Number(value);
@@ -57,6 +67,7 @@ export type StaminaRecoveryState = {
   recovered: number;
   changed: boolean;
   staminaRecoverAt: Date;
+  recoverySpeedWindow: StaminaRecoverySpeedWindow;
 };
 
 type QueryRunner = (text: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
@@ -77,21 +88,23 @@ const applyRecoveryFromRow = async (
   const staminaMax = calcCharacterStaminaMaxByInsightLevel(insightLevel);
   const currentStamina = Math.min(staminaMax, rawStamina);
   const parsedRecoverAt = parseTime(row.stamina_recover_at, nowMs);
-
-  let nextStamina = currentStamina;
-  let nextRecoverAtMs = parsedRecoverAt.ms;
-  let recovered = 0;
-
-  if (currentStamina < staminaMax && STAMINA_RECOVER_INTERVAL_MS > 0 && STAMINA_RECOVER_PER_TICK > 0) {
-    const elapsedMs = Math.max(0, nowMs - parsedRecoverAt.ms);
-    const ticks = Math.floor(elapsedMs / STAMINA_RECOVER_INTERVAL_MS);
-    if (ticks > 0) {
-      const recoveredTotal = ticks * STAMINA_RECOVER_PER_TICK;
-      nextStamina = Math.min(staminaMax, currentStamina + recoveredTotal);
-      nextRecoverAtMs = nextStamina >= staminaMax ? nowMs : parsedRecoverAt.ms + ticks * STAMINA_RECOVER_INTERVAL_MS;
-      recovered = Math.max(0, nextStamina - currentStamina);
-    }
-  }
+  const recoverySpeedWindow = normalizeMonthCardBenefitWindow(
+    row.month_card_start_at as Date | string | number | null | undefined,
+    row.month_card_expire_at as Date | string | number | null | undefined,
+  );
+  const recoveryResult = resolveStaminaRecoveryState({
+    stamina: currentStamina,
+    maxStamina: staminaMax,
+    recoverAtMs: parsedRecoverAt.ms,
+    nowMs,
+    recoverPerTick: STAMINA_RECOVER_PER_TICK,
+    recoverIntervalMs: STAMINA_RECOVER_INTERVAL_MS,
+    recoverySpeedRate: getMonthCardStaminaRecoveryRate(),
+    recoverySpeedWindow,
+  });
+  const nextStamina = recoveryResult.stamina;
+  const nextRecoverAtMs = recoveryResult.nextRecoverAtMs;
+  const recovered = recoveryResult.recovered;
 
   const staminaChanged = rawStamina !== nextStamina;
   const recoverAtChanged = parsedRecoverAt.fallbackUsed || nextRecoverAtMs !== parsedRecoverAt.ms;
@@ -115,10 +128,11 @@ const applyRecoveryFromRow = async (
     recovered,
     changed,
     staminaRecoverAt: new Date(nextRecoverAtMs),
+    recoverySpeedWindow,
   };
 
   // 回填缓存（DB 写入后同步）
-  await setCachedStamina(characterId, nextStamina, new Date(nextRecoverAtMs), staminaMax);
+  await setCachedStamina(characterId, nextStamina, new Date(nextRecoverAtMs), staminaMax, recoverySpeedWindow);
 
   return state;
 };
@@ -134,21 +148,39 @@ const applyRecoveryByCharacterIdFromDB = async (
   if (!Number.isFinite(characterId) || characterId <= 0) return null;
   const selectSql = lockRow
     ? `
-      SELECT c.id, c.stamina, c.stamina_recover_at, COALESCE(cip.level, 0) AS insight_level
+      SELECT
+        c.id,
+        c.stamina,
+        c.stamina_recover_at,
+        COALESCE(cip.level, 0) AS insight_level,
+        mco.start_at AS month_card_start_at,
+        mco.expire_at AS month_card_expire_at
       FROM characters c
       LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
+      LEFT JOIN month_card_ownership mco
+        ON mco.character_id = c.id
+       AND mco.month_card_id = $2
       WHERE c.id = $1
       LIMIT 1
       FOR UPDATE OF c
     `
     : `
-      SELECT c.id, c.stamina, c.stamina_recover_at, COALESCE(cip.level, 0) AS insight_level
+      SELECT
+        c.id,
+        c.stamina,
+        c.stamina_recover_at,
+        COALESCE(cip.level, 0) AS insight_level,
+        mco.start_at AS month_card_start_at,
+        mco.expire_at AS month_card_expire_at
       FROM characters c
       LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
+      LEFT JOIN month_card_ownership mco
+        ON mco.character_id = c.id
+       AND mco.month_card_id = $2
       WHERE c.id = $1
       LIMIT 1
     `;
-  const rowRes = await runQuery(selectSql, [characterId]);
+  const rowRes = await runQuery(selectSql, [characterId, DEFAULT_MONTH_CARD_ID]);
   const row = rowRes.rows[0];
   if (!row) return null;
   return applyRecoveryFromRow(runQuery, row);
@@ -179,13 +211,22 @@ export const applyStaminaRecoveryByUserId = async (userId: number): Promise<Stam
   if (!Number.isFinite(userId) || userId <= 0) return null;
   const rowRes = await query(
     `
-      SELECT c.id, c.stamina, c.stamina_recover_at, COALESCE(cip.level, 0) AS insight_level
+      SELECT
+        c.id,
+        c.stamina,
+        c.stamina_recover_at,
+        COALESCE(cip.level, 0) AS insight_level,
+        mco.start_at AS month_card_start_at,
+        mco.expire_at AS month_card_expire_at
       FROM characters c
       LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
+      LEFT JOIN month_card_ownership mco
+        ON mco.character_id = c.id
+       AND mco.month_card_id = $2
       WHERE c.user_id = $1
       LIMIT 1
     `,
-    [userId],
+    [userId, DEFAULT_MONTH_CARD_ID],
   );
   const row = rowRes.rows[0];
   if (!row) return null;
@@ -242,7 +283,13 @@ export const recoverStaminaByCharacterId = async (
     'UPDATE characters SET stamina = $2, stamina_recover_at = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
     [characterId, nextStamina, nextRecoverAt],
   );
-  await setCachedStamina(characterId, nextStamina, nextRecoverAt, current.maxStamina);
+  await setCachedStamina(
+    characterId,
+    nextStamina,
+    nextRecoverAt,
+    current.maxStamina,
+    current.recoverySpeedWindow,
+  );
 
   return {
     ...current,
@@ -250,5 +297,6 @@ export const recoverStaminaByCharacterId = async (
     recovered: current.recovered + Math.max(0, nextStamina - current.stamina),
     changed: true,
     staminaRecoverAt: nextRecoverAt,
+    recoverySpeedWindow: current.recoverySpeedWindow,
   };
 };

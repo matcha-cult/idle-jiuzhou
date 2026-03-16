@@ -37,6 +37,11 @@ import {
 import { convertRatingToPercent, getEffectiveLevelByRealm, resolveRatingBaseAttrKey } from './shared/affixRating.js';
 import { buildInsightPctBonusByLevel } from './shared/insightRules.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
+import {
+  applyMonthCardFuyuanBonus,
+  getMonthCardActiveMapByCharacterIds,
+  getMonthCardFuyuanBonus,
+} from './shared/monthCardBenefits.js';
 import { calcCharacterStaminaMaxByInsightLevel } from './shared/staminaRules.js';
 import {
   TECHNIQUE_PASSIVE_PERCENT_MULTIPLY_KEYS,
@@ -372,7 +377,7 @@ const loadRealmBreakthroughConfig = async (): Promise<RealmBreakthroughConfigFil
   return parsed;
 };
 
-const buildSignature = (base: CharacterBaseRow): string => {
+const buildSignature = (base: CharacterBaseRow, monthCardFuyuanBonus: number): string => {
   return [
     base.jing,
     base.qi,
@@ -382,6 +387,7 @@ const buildSignature = (base: CharacterBaseRow): string => {
     base.insight_level,
     base.attribute_type,
     base.attribute_element,
+    monthCardFuyuanBonus,
   ].join('|');
 };
 
@@ -791,7 +797,10 @@ interface ResolvedStaticAttrs {
   primaryAttrs: CharacterPrimaryAttrs;
 }
 
-const computeStaticAttrs = async (base: CharacterBaseRow): Promise<ResolvedStaticAttrs> => {
+const computeStaticAttrs = async (
+  base: CharacterBaseRow,
+  monthCardFuyuanBonus: number,
+): Promise<ResolvedStaticAttrs> => {
   const stats = emptyStats();
   const pctModifiers: Record<string, number> = {};
   const effectiveLevel = getEffectiveLevelByRealm(base.realm, base.sub_realm);
@@ -833,6 +842,9 @@ const computeStaticAttrs = async (base: CharacterBaseRow): Promise<ResolvedStati
     if (statKey in stats) {
       stats[statKey] = Math.max(0, Math.floor(stats[statKey] * (1 + pct)));
     }
+  }
+  if (monthCardFuyuanBonus > 0) {
+    stats.fuyuan = applyMonthCardFuyuanBonus(stats.fuyuan, monthCardFuyuanBonus);
   }
 
   return {
@@ -989,8 +1001,9 @@ const ensureResourceState = async (
 const resolveStaticAttrs = async (
   base: CharacterBaseRow,
   bypassStaticCache: boolean,
+  monthCardFuyuanBonus: number,
 ): Promise<ResolvedStaticAttrs> => {
-  const signature = buildSignature(base);
+  const signature = buildSignature(base, monthCardFuyuanBonus);
   if (!bypassStaticCache) {
     const cached = await readStaticAttrsFromCache(base.id);
     if (cached && cached.signature === signature) {
@@ -1000,7 +1013,7 @@ const resolveStaticAttrs = async (
       };
     }
   }
-  const resolved = await computeStaticAttrs(base);
+  const resolved = await computeStaticAttrs(base, monthCardFuyuanBonus);
   await writeStaticAttrsCache(base.id, {
     signature,
     attrs: resolved.attrs,
@@ -1011,10 +1024,10 @@ const resolveStaticAttrs = async (
 
 const buildComputedRow = async (
   base: CharacterBaseRow,
-  options?: { bypassStaticCache?: boolean },
+  options?: { bypassStaticCache?: boolean; monthCardFuyuanBonus?: number },
 ): Promise<CharacterComputedRow> => {
   const bypassStaticCache = options?.bypassStaticCache === true;
-  const staticSnapshot = await resolveStaticAttrs(base, bypassStaticCache);
+  const staticSnapshot = await resolveStaticAttrs(base, bypassStaticCache, options?.monthCardFuyuanBonus ?? 0);
   const resources = await ensureResourceState(
     base.id,
     staticSnapshot.attrs.max_qixue,
@@ -1035,6 +1048,18 @@ const buildComputedRow = async (
   };
 };
 
+const loadMonthCardFuyuanBonusMap = async (characterIds: number[]): Promise<Map<number, number>> => {
+  const activeMap = await getMonthCardActiveMapByCharacterIds(characterIds);
+  const monthCardFuyuanBonus = getMonthCardFuyuanBonus();
+  const result = new Map<number, number>();
+
+  for (const characterId of characterIds) {
+    result.set(characterId, activeMap.get(characterId) === true ? monthCardFuyuanBonus : 0);
+  }
+
+  return result;
+};
+
 export const getCharacterComputedByUserId = async (
   userId: number,
   options?: { bypassStaticCache?: boolean },
@@ -1043,7 +1068,11 @@ export const getCharacterComputedByUserId = async (
   if (!Number.isFinite(uid) || uid <= 0) return null;
   const base = await selectBaseCharacterByUserId(uid);
   if (!base) return null;
-  return buildComputedRow(base, options);
+  const monthCardFuyuanBonusMap = await loadMonthCardFuyuanBonusMap([base.id]);
+  return buildComputedRow(base, {
+    ...options,
+    monthCardFuyuanBonus: monthCardFuyuanBonusMap.get(base.id) ?? 0,
+  });
 };
 
 export const getCharacterComputedByCharacterId = async (
@@ -1054,7 +1083,11 @@ export const getCharacterComputedByCharacterId = async (
   if (!Number.isFinite(cid) || cid <= 0) return null;
   const base = await selectBaseCharacterByCharacterId(cid);
   if (!base) return null;
-  return buildComputedRow(base, options);
+  const monthCardFuyuanBonusMap = await loadMonthCardFuyuanBonusMap([base.id]);
+  return buildComputedRow(base, {
+    ...options,
+    monthCardFuyuanBonus: monthCardFuyuanBonusMap.get(base.id) ?? 0,
+  });
 };
 
 export const getCharacterComputedBatchByCharacterIds = async (
@@ -1078,9 +1111,13 @@ export const getCharacterComputedBatchByCharacterIds = async (
   );
 
   const rows = result.rows as CharacterBaseRow[];
+  const monthCardFuyuanBonusMap = await loadMonthCardFuyuanBonusMap(rows.map((row) => row.id));
   await Promise.all(
     rows.map(async (row) => {
-      const computed = await buildComputedRow(row, options);
+      const computed = await buildComputedRow(row, {
+        ...options,
+        monthCardFuyuanBonus: monthCardFuyuanBonusMap.get(row.id) ?? 0,
+      });
       out.set(computed.id, computed);
     }),
   );
