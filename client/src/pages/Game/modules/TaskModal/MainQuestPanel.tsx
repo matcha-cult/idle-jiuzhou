@@ -1,8 +1,7 @@
 import { App, Button, Tag, Progress, Spin, Switch } from 'antd';
 import { BookOutlined, CheckCircleOutlined, RightOutlined, TrophyOutlined, AimOutlined, EnvironmentOutlined } from '@ant-design/icons';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
-  getMainQuestProgress,
   getChapterList,
   getSectionList,
   completeSection,
@@ -17,7 +16,37 @@ import { IMG_LINGSHI as lingshiIcon, IMG_TONGQIAN as tongqianIcon } from '../../
 import { formatMainQuestRewardTexts } from '../../shared/mainQuestRewardText';
 import './MainQuestPanel.scss';
 
+/**
+ * MainQuestPanel — 主线任务面板
+ *
+ * 作用：展示主线进度、章节列表、任务节列表，支持追踪/完成操作。
+ *       不负责初始数据加载——由父组件 TaskModal 在 refresh() 中与其他两个接口并行拉取，
+ *       通过 props.progress 传入，消除重复请求。
+ *
+ * Props：
+ *   progress         — 父组件传入的主线进度（null 表示尚未加载）
+ *   onProgressChange — 完成任务节后通知父组件更新进度 state（数据源唯一）
+ *   onClose          — 关闭弹窗（可选）
+ *   onTrackChange    — 追踪状态变更后通知父组件刷新地图标记（可选）
+ *
+ * 数据流：
+ *   TaskModal.refresh() 并行拉取 → props.progress 传入 → 本组件只读展示
+ *   completeSection() → onProgressChange(newProgress) → TaskModal 更新 state → 重新传入
+ *   章节/任务节列表由用户主动点击触发，仍在本组件内部管理（不影响父组件）
+ *
+ * 边界条件：
+ *   1. progress 为 null 时展示"暂无主线进度"，不发任何请求
+ *   2. handleCompleteSection 完成后不再自己调 getMainQuestProgress，
+ *      而是通过 onProgressChange 通知父组件，保证数据源唯一、不重复请求
+ */
+
 interface MainQuestPanelProps {
+  /** 由父组件 TaskModal 统一拉取后传入，null 表示尚未加载 */
+  progress: MainQuestProgressDto | null;
+  /** 追踪状态乐观更新：直接修改父组件 state，无需重新请求 */
+  onProgressChange: (progress: MainQuestProgressDto) => void;
+  /** 完成任务节后触发父组件完整 refresh（三接口并行），保证数据源唯一 */
+  onRefresh: () => Promise<void>;
   onClose?: () => void;
   onTrackChange?: () => void;
 }
@@ -26,11 +55,10 @@ type ViewMode = 'progress' | 'chapters' | 'sections';
 
 const resolveRewardIcon = resolveIconUrl;
 
-const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
+const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ progress, onProgressChange, onRefresh, onTrackChange }) => {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('progress');
-  const [progress, setProgress] = useState<MainQuestProgressDto | null>(null);
   const [chapters, setChapters] = useState<ChapterDto[]>([]);
   const [sections, setSections] = useState<SectionDto[]>([]);
   const [selectedChapterId, setSelectedChapterId] = useState<string>('');
@@ -52,22 +80,6 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
     );
   }, []);
 
-  // 加载主线进度
-  const loadProgress = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await getMainQuestProgress();
-      if (res?.success && res.data) {
-        setProgress(res.data);
-      }
-    } catch {
-      void 0;
-    } finally {
-      setLoading(false);
-    }
-  }, [message]);
-
-  // 加载章节列表
   const loadChapters = useCallback(async () => {
     setLoading(true);
     try {
@@ -80,9 +92,8 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
     } finally {
       setLoading(false);
     }
-  }, [message]);
+  }, []);
 
-  // 加载任务节列表
   const loadSections = useCallback(async (chapterId: string) => {
     setLoading(true);
     try {
@@ -95,29 +106,27 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
     } finally {
       setLoading(false);
     }
-  }, [message]);
+  }, []);
 
-  // 切换追踪状态
   const handleToggleTrack = useCallback(async (tracked: boolean) => {
     setTrackLoading(true);
     try {
       const res = await setMainQuestTracked(tracked);
-      if (res?.success) {
-        setProgress((prev) => prev ? { ...prev, tracked } : null);
+      if (res?.success && progress) {
+        // 乐观更新：直接修改父组件持有的 progress，无需重新请求
+        onProgressChange({ ...progress, tracked });
         message.success(tracked ? '已追踪主线任务' : '已取消追踪');
         onTrackChange?.();
         window.dispatchEvent(new Event('room:objects:changed'));
-      } else {
-        void 0;
       }
     } catch {
       void 0;
     } finally {
       setTrackLoading(false);
     }
-  }, [message, onTrackChange]);
+  }, [message, onProgressChange, onTrackChange, progress]);
 
-  // 完成任务节
+  // 完成任务节：副作用处理完后调用 onRefresh，由父组件统一并行拉取三个接口刷新数据
   const handleCompleteSection = useCallback(async () => {
     setLoading(true);
     try {
@@ -133,46 +142,30 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
         }
         gameSocket.refreshCharacter();
         window.dispatchEvent(new Event('inventory:changed'));
-        await loadProgress();
-      } else {
-        void 0;
+        // 触发父组件完整 refresh，保证主线/普通任务/悬赏三个数据源同步更新
+        await onRefresh();
       }
     } catch {
       void 0;
     } finally {
       setLoading(false);
     }
-  }, [appendSystemChat, loadProgress, message]);
+  }, [appendSystemChat, message, onRefresh]);
 
-  useEffect(() => {
-    loadProgress();
-  }, [loadProgress]);
-
-  // 生成任务指引文本
   const getTaskGuidance = (section: SectionDto): string => {
     if (section.status === 'not_started' || section.status === 'dialogue') {
-      if (section.npcId) {
-        return `前往与NPC对话开始任务`;
-      }
-      return '与相关NPC对话开始任务';
+      return section.npcId ? '前往与NPC对话开始任务' : '与相关NPC对话开始任务';
     }
     if (section.status === 'objectives') {
       const incomplete = section.objectives.filter((o) => o.done < o.target);
-      if (incomplete.length > 0) {
-        return incomplete.map((o) => o.text).join('；');
-      }
-      return '完成任务目标';
+      return incomplete.length > 0 ? incomplete.map((o) => o.text).join('；') : '完成任务目标';
     }
     if (section.status === 'turnin') {
-      if (section.npcId) {
-        return `返回与NPC对话交付任务`;
-      }
-      return '返回交付任务';
+      return section.npcId ? '返回与NPC对话交付任务' : '返回交付任务';
     }
     return '';
   };
 
-  // 渲染当前进度视图
   const renderProgressView = () => {
     if (!progress) {
       return <div className="mq-empty">暂无主线进度</div>;
@@ -204,19 +197,18 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
               </div>
               <Tag color={
                 currentSection.status === 'completed' ? 'green' :
-                currentSection.status === 'turnin' ? 'gold' :
-                currentSection.status === 'objectives' ? 'blue' :
-                currentSection.status === 'dialogue' ? 'purple' : 'default'
+                  currentSection.status === 'turnin' ? 'gold' :
+                    currentSection.status === 'objectives' ? 'blue' :
+                      currentSection.status === 'dialogue' ? 'purple' : 'default'
               }>
                 {currentSection.status === 'completed' ? '已完成' :
-                 currentSection.status === 'turnin' ? '可交付' :
-                 currentSection.status === 'objectives' ? '进行中' :
-                 currentSection.status === 'dialogue' ? '对话中' : '未开始'}
+                  currentSection.status === 'turnin' ? '可交付' :
+                    currentSection.status === 'objectives' ? '进行中' :
+                      currentSection.status === 'dialogue' ? '对话中' : '未开始'}
               </Tag>
             </div>
             <div className="mq-section-desc">{currentSection.description}</div>
 
-            {/* 任务指引 */}
             {currentSection.status !== 'completed' && (
               <div className="mq-guidance">
                 <EnvironmentOutlined className="mq-guidance-icon" />
@@ -284,7 +276,6 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
             )}
 
             <div className="mq-section-actions">
-              {/* 追踪按钮 */}
               {currentSection.status !== 'completed' && (
                 <div className="mq-track-row">
                   <AimOutlined className={`mq-track-icon ${tracked ? 'active' : ''}`} />
@@ -297,7 +288,6 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
                   />
                 </div>
               )}
-
               {currentSection.status === 'turnin' && (
                 <Button
                   type="primary"
@@ -313,7 +303,7 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
         )}
 
         <div className="mq-nav-actions">
-          <Button onClick={() => { loadChapters(); setViewMode('chapters'); }}>
+          <Button onClick={() => { void loadChapters(); setViewMode('chapters'); }}>
             查看全部章节
           </Button>
         </div>
@@ -321,7 +311,6 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
     );
   };
 
-  // 渲染章节列表
   const renderChaptersView = () => (
     <div className="mq-chapters-view">
       <div className="mq-view-header">
@@ -335,7 +324,7 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
             className={`mq-chapter-item ${chapter.isCompleted ? 'completed' : ''}`}
             onClick={() => {
               setSelectedChapterId(chapter.id);
-              loadSections(chapter.id);
+              void loadSections(chapter.id);
               setViewMode('sections');
             }}
           >
@@ -357,7 +346,6 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
     </div>
   );
 
-  // 渲染任务节列表
   const renderSectionsView = () => {
     const chapter = chapters.find((c) => c.id === selectedChapterId);
     return (
@@ -374,12 +362,12 @@ const MainQuestPanel: React.FC<MainQuestPanelProps> = ({ onTrackChange }) => {
                 <div className="mq-section-item-name">{section.name}</div>
                 <Tag color={
                   section.status === 'completed' ? 'green' :
-                  section.status === 'turnin' ? 'gold' :
-                  section.status === 'objectives' ? 'blue' : 'default'
+                    section.status === 'turnin' ? 'gold' :
+                      section.status === 'objectives' ? 'blue' : 'default'
                 }>
                   {section.status === 'completed' ? '已完成' :
-                   section.status === 'turnin' ? '可交付' :
-                   section.status === 'objectives' ? '进行中' : '未开始'}
+                    section.status === 'turnin' ? '可交付' :
+                      section.status === 'objectives' ? '进行中' : '未开始'}
                 </Tag>
               </div>
               <div className="mq-section-item-brief">{section.brief}</div>

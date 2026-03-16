@@ -11,6 +11,7 @@ import {
   submitTaskToNpc,
   submitBountyMaterials,
 } from '../../../../services/api';
+import { getMainQuestProgress, type MainQuestProgressDto } from '../../../../services/mainQuestApi';
 import { useIsMobile } from '../../shared/responsive';
 import { getRealmRankFromLiteral as getRealmRank } from '../../shared/realm';
 import { formatTaskRewardsToText } from '../../shared/taskRewardText';
@@ -103,6 +104,7 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
   const [loading, setLoading] = useState(false);
   const [submittingTaskId, setSubmittingTaskId] = useState<string>('');
   const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [mainQuestProgress, setMainQuestProgress] = useState<MainQuestProgressDto | null>(null);
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const lastExpireRefreshAtRef = useRef<number>(0);
 
@@ -146,8 +148,17 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [res, bountyRes] = await Promise.all([getTaskOverview(), getBountyTaskOverview()]);
+      const [res, bountyRes, mainQuestRes] = await Promise.all([
+        getTaskOverview(),
+        getBountyTaskOverview(),
+        getMainQuestProgress(),
+      ]);
       if (!res.data) throw new Error('加载任务失败');
+
+      // 更新主线进度
+      if (mainQuestRes?.success && mainQuestRes.data) {
+        setMainQuestProgress(mainQuestRes.data);
+      }
 
       const mapped: TaskItem[] = (res.data.tasks || [])
         .map((t) => {
@@ -457,173 +468,179 @@ const TaskModal: React.FC<TaskModalProps> = ({ open, onClose, onTrackedChange })
         <div className="task-modal-right">
           {category === 'main' ? (
             <div className="task-main-wrap">
-              <MainQuestPanel onClose={onClose} />
+              <MainQuestPanel
+                onClose={onClose}
+                progress={mainQuestProgress}
+                onProgressChange={setMainQuestProgress}
+                onRefresh={refresh}
+                onTrackChange={onTrackedChange}
+              />
             </div>
           ) : (
-          <div className="task-pane">
-            <div className="task-pane-top">
-              <div className="task-search">
-                <Input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  allowClear
-                  placeholder="搜索任务"
-                  prefix={<SearchOutlined />}
-                />
-              </div>
-              {isMobileTaskPane ? (
-                <div className="task-mobile-pane-switch">
-                  <Segmented
-                    className="task-mobile-pane-segmented"
-                    value={mobilePane}
-                    options={[
-                      { label: '任务列表', value: 'list' },
-                      { label: '任务详情', value: 'detail', disabled: !activeTask },
-                    ]}
-                    onChange={(value) => {
-                      if (value === 'list' || value === 'detail') {
-                        setMobilePane(value);
-                      }
-                    }}
+            <div className="task-pane">
+              <div className="task-pane-top">
+                <div className="task-search">
+                  <Input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    allowClear
+                    placeholder="搜索任务"
+                    prefix={<SearchOutlined />}
                   />
                 </div>
-              ) : null}
-            </div>
-
-            <div className={`task-pane-body ${isMobileTaskPane ? `is-mobile-${mobilePane}` : ''}`}>
-              <div className="task-list">
-                {filtered.map((t) => (
-                  <div
-                    key={t.id}
-                    className={`task-item ${t.id === safeActiveId ? 'is-active' : ''}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => {
-                      setActiveId(t.id);
-                      if (isMobileTaskPane) setMobilePane('detail');
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        setActiveId(t.id);
-                        if (isMobileTaskPane) setMobilePane('detail');
-                      }
-                    }}
-                  >
-                    <div className="task-item-top">
-                      <div className="task-item-title">{t.title}</div>
-                      <Tag color={statusColor[t.status]}>{statusText[t.status]}</Tag>
-                    </div>
-                    <div className="task-item-meta">
-                      <span>推荐境界 {t.realm}</span>
-                      <span>目标 {t.objectives.length} 项</span>
-                      {t.category === 'bounty' && t.sourceType === 'daily' ? (
-                        <span>剩余 {formatCountdown(getRemainingSeconds(t.expiresAt ?? null) ?? 0)}</span>
-                      ) : null}
-                    </div>
+                {isMobileTaskPane ? (
+                  <div className="task-mobile-pane-switch">
+                    <Segmented
+                      className="task-mobile-pane-segmented"
+                      value={mobilePane}
+                      options={[
+                        { label: '任务列表', value: 'list' },
+                        { label: '任务详情', value: 'detail', disabled: !activeTask },
+                      ]}
+                      onChange={(value) => {
+                        if (value === 'list' || value === 'detail') {
+                          setMobilePane(value);
+                        }
+                      }}
+                    />
                   </div>
-                ))}
-                {loading ? <div className="task-empty">加载中...</div> : null}
-                {!loading && filtered.length === 0 ? <div className="task-empty">暂无任务</div> : null}
+                ) : null}
               </div>
 
-              <div className="task-detail">
-                {activeTask ? (
-                  <>
-                    {isMobileTaskPane ? (
-                      <Button className="task-mobile-back-btn" onClick={() => setMobilePane('list')}>
-                        返回任务列表
-                      </Button>
-                    ) : null}
-                    <div className="task-detail-header">
-                      <div className="task-detail-title">{activeTask.title}</div>
-                      <div className="task-detail-tags">
-                        <Tag color={statusColor[activeTask.status]}>{statusText[activeTask.status]}</Tag>
-                        <Tag color="default">推荐境界 {activeTask.realm}</Tag>
-                        {activeTask.category === 'bounty' && activeTask.sourceType === 'daily' && activeTask.expiresAt ? (
-                          <Tag color="volcano">剩余 {formatCountdown(getRemainingSeconds(activeTask.expiresAt) ?? 0)}</Tag>
+              <div className={`task-pane-body ${isMobileTaskPane ? `is-mobile-${mobilePane}` : ''}`}>
+                <div className="task-list">
+                  {filtered.map((t) => (
+                    <div
+                      key={t.id}
+                      className={`task-item ${t.id === safeActiveId ? 'is-active' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        setActiveId(t.id);
+                        if (isMobileTaskPane) setMobilePane('detail');
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          setActiveId(t.id);
+                          if (isMobileTaskPane) setMobilePane('detail');
+                        }
+                      }}
+                    >
+                      <div className="task-item-top">
+                        <div className="task-item-title">{t.title}</div>
+                        <Tag color={statusColor[t.status]}>{statusText[t.status]}</Tag>
+                      </div>
+                      <div className="task-item-meta">
+                        <span>推荐境界 {t.realm}</span>
+                        <span>目标 {t.objectives.length} 项</span>
+                        {t.category === 'bounty' && t.sourceType === 'daily' ? (
+                          <span>剩余 {formatCountdown(getRemainingSeconds(t.expiresAt ?? null) ?? 0)}</span>
                         ) : null}
                       </div>
                     </div>
-                    <div className="task-detail-desc">{activeTask.desc}</div>
-                    <div className="task-section-title">目标</div>
-                    <div className="task-objectives">
-                      {activeTask.objectives.map((o) => (
-                        <div key={o.text} className="task-objective">
-                          <div className="task-objective-body">
-                            <div className="task-objective-text">{o.text}</div>
-                            {o.mapName ? (
-                              <Tag className="task-objective-map-tag" color={o.mapNameType === 'dungeon' ? 'purple' : 'cyan'}>{o.mapName}</Tag>
-                            ) : null}
-                          </div>
-                          <div className="task-objective-progress">
-                            {o.done}/{o.total}
-                          </div>
+                  ))}
+                  {loading ? <div className="task-empty">加载中...</div> : null}
+                  {!loading && filtered.length === 0 ? <div className="task-empty">暂无任务</div> : null}
+                </div>
+
+                <div className="task-detail">
+                  {activeTask ? (
+                    <>
+                      {isMobileTaskPane ? (
+                        <Button className="task-mobile-back-btn" onClick={() => setMobilePane('list')}>
+                          返回任务列表
+                        </Button>
+                      ) : null}
+                      <div className="task-detail-header">
+                        <div className="task-detail-title">{activeTask.title}</div>
+                        <div className="task-detail-tags">
+                          <Tag color={statusColor[activeTask.status]}>{statusText[activeTask.status]}</Tag>
+                          <Tag color="default">推荐境界 {activeTask.realm}</Tag>
+                          {activeTask.category === 'bounty' && activeTask.sourceType === 'daily' && activeTask.expiresAt ? (
+                            <Tag color="volcano">剩余 {formatCountdown(getRemainingSeconds(activeTask.expiresAt) ?? 0)}</Tag>
+                          ) : null}
                         </div>
-                      ))}
-                    </div>
-                    <div className="task-section-title">奖励</div>
-                    <div className="task-rewards">
-                      {activeTask.rewards.map((r) => (
-                        <div key={r.id} className="task-reward">
-                          <div className="task-reward-icon-wrap">
-                            <img className="task-reward-icon" src={r.icon} alt={r.name} />
-                            <div className="task-reward-amount">{formatRewardAmount(r.amount, r.amountMax)}</div>
+                      </div>
+                      <div className="task-detail-desc">{activeTask.desc}</div>
+                      <div className="task-section-title">目标</div>
+                      <div className="task-objectives">
+                        {activeTask.objectives.map((o) => (
+                          <div key={o.text} className="task-objective">
+                            <div className="task-objective-body">
+                              <div className="task-objective-text">{o.text}</div>
+                              {o.mapName ? (
+                                <Tag className="task-objective-map-tag" color={o.mapNameType === 'dungeon' ? 'purple' : 'cyan'}>{o.mapName}</Tag>
+                              ) : null}
+                            </div>
+                            <div className="task-objective-progress">
+                              {o.done}/{o.total}
+                            </div>
                           </div>
-                          <div className="task-reward-name">{r.name}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="task-detail-actions">
-                      <Button className="task-action" type={activeTask.tracked ? 'primary' : 'default'} onClick={toggleTrack} disabled={loading}>
-                        {activeTask.tracked ? '取消追踪' : '追踪'}
-                      </Button>
-                      {activeTask.status === 'turnin' && activeTask.objectives.some((o) => o.text.includes('提交材料')) ? (
+                        ))}
+                      </div>
+                      <div className="task-section-title">奖励</div>
+                      <div className="task-rewards">
+                        {activeTask.rewards.map((r) => (
+                          <div key={r.id} className="task-reward">
+                            <div className="task-reward-icon-wrap">
+                              <img className="task-reward-icon" src={r.icon} alt={r.name} />
+                              <div className="task-reward-amount">{formatRewardAmount(r.amount, r.amountMax)}</div>
+                            </div>
+                            <div className="task-reward-name">{r.name}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="task-detail-actions">
+                        <Button className="task-action" type={activeTask.tracked ? 'primary' : 'default'} onClick={toggleTrack} disabled={loading}>
+                          {activeTask.tracked ? '取消追踪' : '追踪'}
+                        </Button>
+                        {activeTask.status === 'turnin' && activeTask.objectives.some((o) => o.text.includes('提交材料')) ? (
+                          <Button
+                            className="task-action"
+                            type="primary"
+                            disabled={loading || submittingTaskId === activeTask.id}
+                            loading={submittingTaskId === activeTask.id}
+                            onClick={() => submitMaterials(activeTask)}
+                          >
+                            提交材料
+                          </Button>
+                        ) : null}
                         <Button
                           className="task-action"
                           type="primary"
-                          disabled={loading || submittingTaskId === activeTask.id}
-                          loading={submittingTaskId === activeTask.id}
-                          onClick={() => submitMaterials(activeTask)}
+                          disabled={
+                            loading
+                            || (
+                              activeTask.status !== 'claimable'
+                              && !((activeTask.category === 'daily' || activeTask.category === 'event') && activeTask.status === 'turnin')
+                            )
+                          }
+                          onClick={() => {
+                            if (activeTask.category === 'daily' && (activeTask.status === 'turnin' || activeTask.status === 'claimable')) {
+                              void completeTask(activeTask);
+                              return;
+                            }
+                            if (activeTask.status === 'claimable') {
+                              void claimReward(activeTask);
+                              return;
+                            }
+                            if ((activeTask.category === 'daily' || activeTask.category === 'event') && activeTask.status === 'turnin') {
+                              void completeTask(activeTask);
+                            }
+                          }}
                         >
-                          提交材料
+                          {activeTask.category === 'daily' && (activeTask.status === 'turnin' || activeTask.status === 'claimable')
+                            ? '完成'
+                            : (activeTask.category === 'event' && activeTask.status !== 'claimable' ? '完成' : '领取')}
                         </Button>
-                      ) : null}
-                      <Button
-                        className="task-action"
-                        type="primary"
-                        disabled={
-                          loading
-                          || (
-                            activeTask.status !== 'claimable'
-                            && !((activeTask.category === 'daily' || activeTask.category === 'event') && activeTask.status === 'turnin')
-                          )
-                        }
-                        onClick={() => {
-                          if (activeTask.category === 'daily' && (activeTask.status === 'turnin' || activeTask.status === 'claimable')) {
-                            void completeTask(activeTask);
-                            return;
-                          }
-                          if (activeTask.status === 'claimable') {
-                            void claimReward(activeTask);
-                            return;
-                          }
-                          if ((activeTask.category === 'daily' || activeTask.category === 'event') && activeTask.status === 'turnin') {
-                            void completeTask(activeTask);
-                          }
-                        }}
-                      >
-                        {activeTask.category === 'daily' && (activeTask.status === 'turnin' || activeTask.status === 'claimable')
-                          ? '完成'
-                          : (activeTask.category === 'event' && activeTask.status !== 'claimable' ? '完成' : '领取')}
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="task-empty">请选择任务</div>
-                )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="task-empty">请选择任务</div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
           )}
         </div>
       </div>
