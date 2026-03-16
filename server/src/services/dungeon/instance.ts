@@ -29,6 +29,67 @@ import type {
   DungeonInstanceRow,
 } from './types.js';
 
+type DungeonInstanceSnapshot = {
+  id: string;
+  dungeonId: string;
+  difficultyId: string;
+  status: DungeonInstanceStatus;
+  currentStage: number;
+  currentWave: number;
+  participants: DungeonInstanceParticipant[];
+  currentBattleId: string | null;
+  startTime: string | null;
+  endTime: string | null;
+};
+
+type DungeonInstanceQuerySuccess = {
+  success: true;
+  data: {
+    instance: DungeonInstanceSnapshot;
+  };
+};
+
+type DungeonInstanceQueryFailure = { success: false; message: string };
+
+const buildDungeonInstanceSnapshot = (
+  inst: DungeonInstanceRow,
+  participants: DungeonInstanceParticipant[],
+): DungeonInstanceSnapshot => {
+  const dataObj = asObject(inst.instance_data) ?? {};
+  const currentBattleId = typeof dataObj.currentBattleId === 'string' ? dataObj.currentBattleId : null;
+
+  return {
+    id: inst.id,
+    dungeonId: inst.dungeon_id,
+    difficultyId: inst.difficulty_id,
+    status: inst.status,
+    currentStage: asNumber(inst.current_stage, 1),
+    currentWave: asNumber(inst.current_wave, 1),
+    participants,
+    currentBattleId,
+    startTime: inst.start_time ?? null,
+    endTime: inst.end_time ?? null,
+  };
+};
+
+const ensureDungeonParticipantAccess = (
+  userId: number,
+  participants: DungeonInstanceParticipant[],
+): DungeonInstanceQueryFailure | null => {
+  if (participants.some((participant) => participant.userId === userId)) return null;
+  return { success: false, message: '无权访问该秘境' };
+};
+
+const buildDungeonInstanceQuerySuccess = (
+  inst: DungeonInstanceRow,
+  participants: DungeonInstanceParticipant[],
+): DungeonInstanceQuerySuccess => ({
+  success: true,
+  data: {
+    instance: buildDungeonInstanceSnapshot(inst, participants),
+  },
+});
+
 /** 创建秘境实例 */
 export const createDungeonInstance = async (
   userId: number,
@@ -127,54 +188,50 @@ export const getDungeonInstance = async (
   userId: number,
   instanceId: string
 ): Promise<
-  | {
-    success: true;
-    data: {
-      instance: {
-        id: string;
-        dungeonId: string;
-        difficultyId: string;
-        status: DungeonInstanceStatus;
-        currentStage: number;
-        currentWave: number;
-        participants: DungeonInstanceParticipant[];
-        currentBattleId: string | null;
-        startTime: string | null;
-        endTime: string | null;
-      };
-    };
-  }
-  | { success: false; message: string }
+  DungeonInstanceQuerySuccess | DungeonInstanceQueryFailure
 > => {
   try {
     const instRes = await query(`SELECT * FROM dungeon_instance WHERE id = $1 LIMIT 1`, [instanceId]);
     if (instRes.rows.length === 0) return { success: false, message: '秘境实例不存在' };
     const inst = instRes.rows[0] as DungeonInstanceRow;
     const participants = parseParticipants(inst.participants);
-    if (!participants.some((p) => p.userId === userId)) return { success: false, message: '无权访问该秘境' };
+    const accessError = ensureDungeonParticipantAccess(userId, participants);
+    if (accessError) return accessError;
 
-    const dataObj = asObject(inst.instance_data) ?? {};
-    const currentBattleId = typeof dataObj.currentBattleId === 'string' ? dataObj.currentBattleId : null;
-
-    return {
-      success: true,
-      data: {
-        instance: {
-          id: inst.id,
-          dungeonId: inst.dungeon_id,
-          difficultyId: inst.difficulty_id,
-          status: inst.status,
-          currentStage: asNumber(inst.current_stage, 1),
-          currentWave: asNumber(inst.current_wave, 1),
-          participants,
-          currentBattleId,
-          startTime: inst.start_time ?? null,
-          endTime: inst.end_time ?? null,
-        },
-      },
-    };
+    return buildDungeonInstanceQuerySuccess(inst, participants);
   } catch (error) {
     console.error('获取秘境实例失败:', error);
     return { success: false, message: '获取秘境实例失败' };
+  }
+};
+
+/** 按 battleId 获取当前运行中的秘境实例状态 */
+export const getDungeonInstanceByBattleId = async (
+  userId: number,
+  battleId: string,
+): Promise<DungeonInstanceQuerySuccess | DungeonInstanceQueryFailure> => {
+  try {
+    const instRes = await query(
+      `
+        SELECT *
+        FROM dungeon_instance
+        WHERE status = 'running'
+          AND instance_data ->> 'currentBattleId' = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [battleId],
+    );
+    if (instRes.rows.length === 0) return { success: false, message: '运行中的秘境实例不存在' };
+
+    const inst = instRes.rows[0] as DungeonInstanceRow;
+    const participants = parseParticipants(inst.participants);
+    const accessError = ensureDungeonParticipantAccess(userId, participants);
+    if (accessError) return accessError;
+
+    return buildDungeonInstanceQuerySuccess(inst, participants);
+  } catch (error) {
+    console.error('按 battleId 获取秘境实例失败:', error);
+    return { success: false, message: '按 battleId 获取秘境实例失败' };
   }
 };

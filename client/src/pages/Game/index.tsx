@@ -47,6 +47,7 @@ import {
   claimTaskReward,
   createDungeonInstance,
   gatherRoomResource,
+  getDungeonInstanceByBattleId,
   pickupRoomItem,
   getInventoryItems,
   getTaskOverview,
@@ -90,6 +91,10 @@ import {
 import { PARTNER_FEATURE_UNLOCK_HINT, hasCharacterFeature } from './shared/featureUnlocks';
 import { formatMainQuestRewardTexts } from './shared/mainQuestRewardText';
 import { formatTaskRewardsToText } from './shared/taskRewardText';
+import {
+  matchesDungeonReconnectInstance,
+  shouldRestoreDungeonBattleContext,
+} from './shared/dungeonBattleReconnect';
 import { useRealtimeMemberPresence } from './shared/useRealtimeMemberPresence';
 
 interface GameProps {
@@ -725,6 +730,9 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const latestPositionRef = useRef<{ mapId: string; roomId: string } | null>(null);
   const lastKeepalivePositionKeyRef = useRef<string>('');
   const teamBattleAutoCloseTimerRef = useRef<number | null>(null);
+  const dungeonBattleIdRef = useRef<string | null>(null);
+  const dungeonInstanceIdRef = useRef<string | null>(null);
+  const pendingDungeonReconnectBattleIdRef = useRef<string | null>(null);
   const inTeam = Boolean(teamInfo?.id);
   const externalBattleId = arenaBattleId || dungeonBattleId || (inTeam && !isTeamLeader ? teamBattleId : null) || reconnectBattleId;
   const teamPresenceMembers = useMemo(
@@ -741,6 +749,24 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     teamBattleAutoCloseTimerRef.current = null;
   }, []);
 
+  useEffect(() => {
+    dungeonBattleIdRef.current = dungeonBattleId;
+  }, [dungeonBattleId]);
+
+  useEffect(() => {
+    dungeonInstanceIdRef.current = dungeonInstanceId;
+  }, [dungeonInstanceId]);
+
+  const activateDungeonBattleContext = useCallback((instanceId: string, battleId: string) => {
+    clearBattleAutoCloseTimer();
+    setDungeonInstanceId(instanceId);
+    setDungeonBattleId(battleId);
+    setReconnectBattleId(null);
+    setViewMode('battle');
+    setTopTab('map');
+    setInfoTarget(null);
+  }, [clearBattleAutoCloseTimer]);
+
   const syncRealtimeBattleView = useCallback((battleId: string) => {
     if (inTeam && !isTeamLeader) {
       setTeamBattleId(battleId);
@@ -752,6 +778,37 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     setTopTab('map');
     setInfoTarget(null);
   }, [inTeam, isTeamLeader]);
+
+  const restoreDungeonBattleContext = useCallback(async (battleId: string): Promise<boolean> => {
+    if (!shouldRestoreDungeonBattleContext({
+      battleId,
+      currentDungeonBattleId: dungeonBattleIdRef.current,
+      currentDungeonInstanceId: dungeonInstanceIdRef.current,
+    })) {
+      return false;
+    }
+    if (pendingDungeonReconnectBattleIdRef.current === battleId) {
+      return true;
+    }
+
+    pendingDungeonReconnectBattleIdRef.current = battleId;
+    try {
+      const res = await getDungeonInstanceByBattleId(battleId);
+      const instance = res?.data?.instance;
+      if (!res?.success || !instance || !matchesDungeonReconnectInstance(battleId, instance)) {
+        return false;
+      }
+      activateDungeonBattleContext(instance.id, battleId);
+      return true;
+    } catch (error) {
+      console.error('恢复秘境战斗上下文失败:', error);
+      return false;
+    } finally {
+      if (pendingDungeonReconnectBattleIdRef.current === battleId) {
+        pendingDungeonReconnectBattleIdRef.current = null;
+      }
+    }
+  }, [activateDungeonBattleContext]);
 
   const handleRoomObjectSelect = useCallback((target: InfoTarget) => {
     if (target.type === 'item' && target.id === 'obj-warehouse') {
@@ -969,16 +1026,11 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         messageRef.current.error('推进秘境失败：未返回战斗ID');
         return;
       }
-      clearBattleAutoCloseTimer();
-      setDungeonBattleId(nextBattleId);
-      setReconnectBattleId(null);
-      setViewMode('battle');
-      setTopTab('map');
-      setInfoTarget(null);
+      activateDungeonBattleContext(dungeonInstanceId, nextBattleId);
     } catch (e) {
       void 0;
     }
-  }, [clearBattleAutoCloseTimer, dungeonInstanceId]);
+  }, [activateDungeonBattleContext, dungeonInstanceId]);
 
   const handleArenaNext = useCallback(async () => {
     setArenaBattleId(null);
@@ -1354,12 +1406,28 @@ const Game: FC<GameProps> = ({ onLogout }) => {
 
       if (kind === 'battle_started' || kind === 'battle_state') {
         clearBattleAutoCloseTimer();
+        if (shouldRestoreDungeonBattleContext({
+          battleId,
+          currentDungeonBattleId: dungeonBattleIdRef.current,
+          currentDungeonInstanceId: dungeonInstanceIdRef.current,
+        })) {
+          void restoreDungeonBattleContext(battleId);
+          return;
+        }
+        if (battleId === dungeonBattleIdRef.current && dungeonInstanceIdRef.current) {
+          activateDungeonBattleContext(dungeonInstanceIdRef.current, battleId);
+          return;
+        }
         syncRealtimeBattleView(battleId);
         return;
       }
 
       if (kind === 'battle_abandoned') {
         clearBattleAutoCloseTimer();
+        if (battleId === dungeonBattleIdRef.current) {
+          setDungeonBattleId(null);
+          setDungeonInstanceId(null);
+        }
         setTeamBattleId(null);
         setReconnectBattleId(null);
         setViewMode('map');
@@ -1370,8 +1438,20 @@ const Game: FC<GameProps> = ({ onLogout }) => {
 
       if (kind === 'battle_finished') {
         clearBattleAutoCloseTimer();
+        if (shouldRestoreDungeonBattleContext({
+          battleId,
+          currentDungeonBattleId: dungeonBattleIdRef.current,
+          currentDungeonInstanceId: dungeonInstanceIdRef.current,
+        })) {
+          void restoreDungeonBattleContext(battleId);
+          return;
+        }
+        if (battleId === dungeonBattleIdRef.current && dungeonInstanceIdRef.current) {
+          activateDungeonBattleContext(dungeonInstanceIdRef.current, battleId);
+          return;
+        }
         syncRealtimeBattleView(battleId);
-        if (battleId === dungeonBattleId) {
+        if (battleId === dungeonBattleIdRef.current) {
           return;
         }
         teamBattleAutoCloseTimerRef.current = window.setTimeout(() => {
@@ -1385,7 +1465,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       clearBattleAutoCloseTimer();
       unsub();
     };
-  }, [clearBattleAutoCloseTimer, dungeonBattleId, syncRealtimeBattleView]);
+  }, [activateDungeonBattleContext, clearBattleAutoCloseTimer, restoreDungeonBattleContext, syncRealtimeBattleView]);
 
   const onLeaveTeam = useCallback(async () => {
     if (!characterId) return;
@@ -2346,10 +2426,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
 
             setBattleEnemies([]);
             setBattleAllies(buildAllyGroup(character));
-            setDungeonInstanceId(instanceId);
-            setDungeonBattleId(String(startRes.data.battleId));
-            setReconnectBattleId(null);
-            setViewMode('battle');
+            activateDungeonBattleContext(instanceId, String(startRes.data.battleId));
             gameSocket.refreshCharacter();
           } catch (e) {
             void 0;

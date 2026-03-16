@@ -92,6 +92,16 @@ router.post('/instance/next', requireAuth, asyncHandler(async (req, res) => {
   sendResult(res, result);
 }));
 
+router.get('/instance/by-battle/:battleId', requireAuth, asyncHandler(async (req, res) => {
+  const userId = req.userId!;
+  const battleId = getSingleParam(req.params.battleId);
+  if (!battleId) {
+    throw new BusinessError('缺少战斗ID');
+  }
+  const result = await dungeonService.getDungeonInstanceByBattleId(userId, battleId);
+  sendResult(res, result);
+}));
+
 router.get('/instance/:id', requireAuth, asyncHandler(async (req, res) => {
   const userId = req.userId!;
   const id = getSingleParam(req.params.id);

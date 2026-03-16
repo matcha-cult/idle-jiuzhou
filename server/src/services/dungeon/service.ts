@@ -21,6 +21,7 @@ import {
   createDungeonInstance,
   joinDungeonInstance,
   getDungeonInstance,
+  getDungeonInstanceByBattleId,
 } from './instance.js';
 import {
   startDungeonInstance,
@@ -51,6 +52,10 @@ class DungeonService {
 
   async getDungeonInstance(userId: number, instanceId: string) {
     return getDungeonInstance(userId, instanceId);
+  }
+
+  async getDungeonInstanceByBattleId(userId: number, battleId: string) {
+    return getDungeonInstanceByBattleId(userId, battleId);
   }
 
   @Transactional

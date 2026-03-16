@@ -307,6 +307,19 @@ export type DungeonInstanceParticipant = {
   role: 'leader' | 'member';
 };
 
+export interface DungeonInstanceSnapshotDto {
+  id: string;
+  dungeonId: string;
+  difficultyId: string;
+  status: DungeonInstanceStatus;
+  currentStage: number;
+  currentWave: number;
+  participants: DungeonInstanceParticipant[];
+  currentBattleId: string | null;
+  startTime: string | null;
+  endTime: string | null;
+}
+
 export interface CreateDungeonInstanceResponse {
   success: boolean;
   message?: string;
@@ -351,23 +364,24 @@ export interface GetDungeonInstanceResponse {
   success: boolean;
   message?: string;
   data?: {
-    instance: {
-      id: string;
-      dungeonId: string;
-      difficultyId: string;
-      status: DungeonInstanceStatus;
-      currentStage: number;
-      currentWave: number;
-      participants: DungeonInstanceParticipant[];
-      currentBattleId: string | null;
-      startTime: string | null;
-      endTime: string | null;
-    };
+    instance: DungeonInstanceSnapshotDto;
   };
 }
 
 export const getDungeonInstance = (instanceId: string): Promise<GetDungeonInstanceResponse> => {
   return api.get(`/dungeon/instance/${instanceId}`);
+};
+
+export interface GetDungeonInstanceByBattleIdResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    instance: DungeonInstanceSnapshotDto;
+  };
+}
+
+export const getDungeonInstanceByBattleId = (battleId: string): Promise<GetDungeonInstanceByBattleIdResponse> => {
+  return api.get(`/dungeon/instance/by-battle/${encodeURIComponent(battleId)}`);
 };
 
 export interface InfoTargetDetailResponse {
