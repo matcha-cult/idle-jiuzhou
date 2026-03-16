@@ -1031,13 +1031,14 @@
     grid-template-columns: 1fr;
   }
 
-  .partner-skill-policy-item {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: stretch;
-  }
-
   .partner-skill-policy-actions {
     justify-content: flex-end;
+    gap: 4px;
+  }
+
+  .partner-skill-policy-action-btn.ant-btn {
+    width: 30px;
+    height: 30px;
   }
 
   .partner-combat-grid {
