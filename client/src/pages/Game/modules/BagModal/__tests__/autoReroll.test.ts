@@ -84,6 +84,7 @@ describe('autoReroll', () => {
       lockIndexes: [0],
       initialAffixes: [{ key: 'crit', name: '暴击', apply_type: 'flat', tier: 1, value: 10 }],
       targetKeys: ['crit', 'speed'],
+      matchMode: 'all',
       maxAttempts: 5,
       reroll,
     });

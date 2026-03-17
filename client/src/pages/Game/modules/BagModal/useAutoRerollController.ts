@@ -30,6 +30,7 @@ import {
   hasMatchedAutoRerollTargets,
   normalizeAutoRerollTargetKeys,
   runAutoRerollUntilMatch,
+  type AutoRerollMatchMode,
 } from './autoReroll';
 import { useAffixPoolPreview } from './useAffixPoolPreview';
 
@@ -76,6 +77,8 @@ export const useAutoRerollController = ({
 }: UseAutoRerollControllerOptions): {
   autoRerollTargetKeys: string[];
   setAutoRerollTargetKeys: (targetKeys: string[]) => void;
+  autoRerollMatchMode: AutoRerollMatchMode;
+  setAutoRerollMatchMode: (mode: AutoRerollMatchMode) => void;
   autoRerollMaxAttempts: number;
   setAutoRerollMaxAttempts: (maxAttempts: number) => void;
   autoRerollSubmitting: boolean;
@@ -91,6 +94,7 @@ export const useAutoRerollController = ({
   handleAutoReroll: () => Promise<void>;
 } => {
   const [autoRerollTargetKeys, setAutoRerollTargetKeys] = useState<string[]>([]);
+  const [autoRerollMatchMode, setAutoRerollMatchMode] = useState<AutoRerollMatchMode>('all');
   const [autoRerollMaxAttempts, setAutoRerollMaxAttempts] = useState(50);
   const [autoRerollSubmitting, setAutoRerollSubmitting] = useState(false);
 
@@ -154,7 +158,7 @@ export const useAutoRerollController = ({
       messageApi.warning('请先设置目标词条');
       return;
     }
-    if (hasMatchedAutoRerollTargets(rerollState.affixes, normalizedTargetKeys)) {
+    if (hasMatchedAutoRerollTargets(rerollState.affixes, normalizedTargetKeys, autoRerollMatchMode)) {
       messageApi.success('当前词条已满足目标，无需自动洗炼');
       return;
     }
@@ -189,6 +193,7 @@ export const useAutoRerollController = ({
         lockIndexes,
         initialAffixes: rerollState.affixes,
         targetKeys: normalizedTargetKeys,
+        matchMode: autoRerollMatchMode,
         maxAttempts: maxTimes,
         reroll: rerollInventoryAffixes,
       });
@@ -224,6 +229,7 @@ export const useAutoRerollController = ({
       setAutoRerollSubmitting(false);
     }
   }, [
+    autoRerollMatchMode,
     autoRerollMaxAttempts,
     item,
     messageApi,
@@ -242,6 +248,8 @@ export const useAutoRerollController = ({
   return {
     autoRerollTargetKeys,
     setAutoRerollTargetKeys,
+    autoRerollMatchMode,
+    setAutoRerollMatchMode,
     autoRerollMaxAttempts,
     setAutoRerollMaxAttempts,
     autoRerollSubmitting,

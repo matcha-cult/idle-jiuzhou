@@ -35,6 +35,13 @@ export type AutoRerollTargetOption = {
   label: string;
 };
 
+/**
+ * 自动洗炼目标匹配模式
+ * - 'any': 命中任意一条目标词条即停止
+ * - 'all': 命中全部目标词条才停止
+ */
+export type AutoRerollMatchMode = 'any' | 'all';
+
 export type AutoRerollStopReason = 'matched' | 'max_attempts' | 'request_failed';
 
 export type AutoRerollRunResult = {
@@ -101,6 +108,7 @@ export const buildAutoRerollTargetOptions = (
 export const hasMatchedAutoRerollTargets = (
   affixes: AutoRerollRuntimeAffix[],
   targetKeys: string[],
+  matchMode: AutoRerollMatchMode = 'all',
 ): boolean => {
   const normalizedTargets = normalizeAutoRerollTargetKeys(targetKeys);
   if (normalizedTargets.length <= 0) return false;
@@ -111,7 +119,9 @@ export const hasMatchedAutoRerollTargets = (
       .filter((key) => key.length > 0),
   );
 
-  return normalizedTargets.every((targetKey) => currentKeys.has(targetKey));
+  return matchMode === 'any'
+    ? normalizedTargets.some((targetKey) => currentKeys.has(targetKey))
+    : normalizedTargets.every((targetKey) => currentKeys.has(targetKey));
 };
 
 export const getAffordableAutoRerollTimes = (input: {
@@ -141,6 +151,7 @@ export const runAutoRerollUntilMatch = async (input: {
   lockIndexes: number[];
   initialAffixes: AutoRerollRuntimeAffix[];
   targetKeys: string[];
+  matchMode: AutoRerollMatchMode;
   maxAttempts: number;
   reroll: (body: InventoryRerollRequest) => Promise<InventoryRerollResponse>;
 }): Promise<AutoRerollRunResult> => {
@@ -148,7 +159,7 @@ export const runAutoRerollUntilMatch = async (input: {
   let latestAffixes = input.initialAffixes;
   let latestLockIndexes = input.lockIndexes;
 
-  if (hasMatchedAutoRerollTargets(latestAffixes, normalizedTargets)) {
+  if (hasMatchedAutoRerollTargets(latestAffixes, normalizedTargets, input.matchMode)) {
     return {
       stopReason: 'matched',
       attempts: 0,
@@ -178,7 +189,7 @@ export const runAutoRerollUntilMatch = async (input: {
     latestLockIndexes = response.data.lockIndexes;
     const attempts = attemptIndex + 1;
 
-    if (hasMatchedAutoRerollTargets(latestAffixes, normalizedTargets)) {
+    if (hasMatchedAutoRerollTargets(latestAffixes, normalizedTargets, input.matchMode)) {
       return {
         stopReason: 'matched',
         attempts,

@@ -3,6 +3,7 @@ import { FilterOutlined, SearchOutlined } from '@ant-design/icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import MobileBagModal from './MobileBagModal';
 import { AffixPoolPreviewModal } from './AffixPoolPreviewModal';
+import { AutoRerollConfigModal } from './AutoRerollConfigModal';
 
 import { gameSocket } from '../../../../services/gameSocket';
 import {
@@ -117,6 +118,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const [batchIncludeKeywordsText, setBatchIncludeKeywordsText] = useState('');
   const [batchExcludeKeywordsText, setBatchExcludeKeywordsText] = useState('');
   const [batchSubmitting, setBatchSubmitting] = useState(false);
+  const [autoRerollConfigOpen, setAutoRerollConfigOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<InventoryInfoData | null>(null);
   const [items, setItems] = useState<BagItem[]>([]);
@@ -629,6 +631,8 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const {
     autoRerollTargetKeys,
     setAutoRerollTargetKeys,
+    autoRerollMatchMode,
+    setAutoRerollMatchMode,
     autoRerollMaxAttempts,
     setAutoRerollMaxAttempts,
     autoRerollSubmitting,
@@ -1695,25 +1699,45 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                 <div className="bag-growth-cost-card">
                   <div className="bag-growth-cost-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span>消耗</span>
-                    <a
-                      href="#"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        if (!activeItem?.locked && !autoRerollSubmitting) {
-                          void openPoolPreview();
-                        }
-                      }}
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 'normal',
-                        color: activeItem?.locked ? 'var(--text-tertiary)' : 'var(--primary-color)',
-                        cursor: activeItem?.locked ? 'not-allowed' : 'pointer',
-                        textDecoration: 'none'
-                      }}
-                    >
-                      <SearchOutlined style={{ marginRight: 4 }} />
-                      查看词条池
-                    </a>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+                      <a
+                        href="#"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          if (!activeItem?.locked && !autoRerollSubmitting && !rerollSubmitting) {
+                            setAutoRerollConfigOpen(true);
+                          }
+                        }}
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 'normal',
+                          color: (activeItem?.locked || autoRerollSubmitting || rerollSubmitting) ? 'var(--text-tertiary)' : 'var(--primary-color)',
+                          cursor: (activeItem?.locked || autoRerollSubmitting || rerollSubmitting) ? 'not-allowed' : 'pointer',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        ⚙ {autoRerollSubmitting ? '自动洗炼中...' : '自动洗炼'}
+                      </a>
+                      <a
+                        href="#"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          if (!activeItem?.locked && !autoRerollSubmitting) {
+                            void openPoolPreview();
+                          }
+                        }}
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 'normal',
+                          color: activeItem?.locked ? 'var(--text-tertiary)' : 'var(--primary-color)',
+                          cursor: activeItem?.locked ? 'not-allowed' : 'pointer',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        <SearchOutlined style={{ marginRight: 4 }} />
+                        查看词条池
+                      </a>
+                    </span>
                   </div>
                   <div className="bag-growth-cost-list">
                     <div className={'bag-growth-cost-chip' + (rerollState.rerollScrollOwned < rerollState.rerollScrollQty ? ' is-insufficient' : '')}>
@@ -1767,46 +1791,6 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                   })}
                 </div>
 
-                <div className="bag-reroll-auto-card">
-                  <div className="bag-reroll-auto-title">自动洗炼</div>
-                  <div className="bag-reroll-auto-controls">
-                    <Select
-                      mode="multiple"
-                      value={autoRerollTargetKeys}
-                      onChange={(values) => setAutoRerollTargetKeys(values)}
-                      placeholder={poolPreviewLoading ? '词条池加载中...' : '选择目标词条（命中全部后停止）'}
-                      options={autoRerollOptions.map((option) => ({ value: option.key, label: option.label }))}
-                      disabled={rerollSubmitting || autoRerollSubmitting || !!activeItem?.locked || !poolPreviewReady}
-                      loading={poolPreviewLoading}
-                      size="middle"
-                      showSearch
-                      optionFilterProp="label"
-                    />
-                    <InputNumber
-                      min={1}
-                      max={2000}
-                      value={autoRerollMaxAttempts}
-                      onChange={(value) => {
-                        if (typeof value !== 'number') return;
-                        setAutoRerollMaxAttempts(Math.max(1, Math.min(2000, Math.floor(value))));
-                      }}
-                      addonBefore="最大次数"
-                      disabled={rerollSubmitting || autoRerollSubmitting || !!activeItem?.locked}
-                    />
-                  </div>
-                  {!poolPreviewReady && poolPreviewErrorMessage ? (
-                    <div className="bag-growth-tip-muted">{poolPreviewErrorMessage}</div>
-                  ) : null}
-                  <Button
-                    block
-                    onClick={() => void handleAutoReroll()}
-                    loading={autoRerollSubmitting}
-                    disabled={autoRerollDisabled}
-                  >
-                    开启自动洗炼
-                  </Button>
-                </div>
-
                 <Button
                   block
                   type="primary"
@@ -1839,6 +1823,24 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
         loading={poolPreviewLoading}
         poolName={poolPreviewReady && poolPreviewData ? poolPreviewData.poolName : ''}
         affixes={poolPreviewReady && poolPreviewData ? poolPreviewData.affixes : []}
+      />
+
+      <AutoRerollConfigModal
+        open={autoRerollConfigOpen}
+        onClose={() => setAutoRerollConfigOpen(false)}
+        targetKeys={autoRerollTargetKeys}
+        onTargetKeysChange={setAutoRerollTargetKeys}
+        matchMode={autoRerollMatchMode}
+        onMatchModeChange={setAutoRerollMatchMode}
+        maxAttempts={autoRerollMaxAttempts}
+        onMaxAttemptsChange={setAutoRerollMaxAttempts}
+        options={autoRerollOptions}
+        disabled={autoRerollDisabled}
+        loading={poolPreviewLoading}
+        submitting={autoRerollSubmitting}
+        poolReady={poolPreviewReady}
+        poolErrorMessage={poolPreviewErrorMessage}
+        onStart={() => void handleAutoReroll()}
       />
 
       <Modal

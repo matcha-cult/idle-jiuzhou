@@ -73,6 +73,7 @@ import { formatDisassembleSuccessMessage } from './disassembleRewardText';
 import { getEquipmentGrowthFailModeText, useEquipmentGrowthPreview } from './useEquipmentGrowthPreview';
 import { useTechniqueBookSkills } from './useTechniqueBookSkills';
 import { useAutoRerollController } from './useAutoRerollController';
+import { AutoRerollConfigModal } from './AutoRerollConfigModal';
 import { collectEquipmentUnbindCandidates } from './equipmentUnbind';
 import { TechniqueSkillSection } from '../../shared/TechniqueSkillSection';
 import { useCharacterRenameCardFlow } from '../../shared/useCharacterRenameCardFlow';
@@ -641,6 +642,7 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
   const { message } = App.useApp();
   const [mode, setMode] = useState<GrowthMode>(initialMode);
   const [submitting, setSubmitting] = useState(false);
+  const [autoRerollConfigOpen, setAutoRerollConfigOpen] = useState(false);
   const [rerollLockIndexes, setRerollLockIndexes] = useState<number[]>([]);
   const [rerollCostTable, setRerollCostTable] = useState<{
     rerollScrollItemDefId: string;
@@ -737,6 +739,8 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
   const {
     autoRerollTargetKeys,
     setAutoRerollTargetKeys,
+    autoRerollMatchMode,
+    setAutoRerollMatchMode,
     autoRerollMaxAttempts,
     setAutoRerollMaxAttempts,
     autoRerollSubmitting,
@@ -1112,24 +1116,44 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
               <div className="mbag-sheet-section">
                 <div className="mbag-sheet-section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>消耗</span>
-                  <a
-                    href="#"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      if (!item.locked && !autoRerollSubmitting) {
-                        void openPoolPreview();
-                      }
-                    }}
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 'normal',
-                      color: item.locked ? 'var(--text-tertiary)' : 'var(--primary-color)',
-                      cursor: item.locked ? 'not-allowed' : 'pointer',
-                      textDecoration: 'none'
-                    }}
-                  >
-                    查看词条池
-                  </a>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+                    <a
+                      href="#"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        if (!item.locked && !autoRerollSubmitting && !submitting) {
+                          setAutoRerollConfigOpen(true);
+                        }
+                      }}
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 'normal',
+                        color: (item.locked || autoRerollSubmitting || submitting) ? 'var(--text-tertiary)' : 'var(--primary-color)',
+                        cursor: (item.locked || autoRerollSubmitting || submitting) ? 'not-allowed' : 'pointer',
+                        textDecoration: 'none'
+                      }}
+                    >
+                      ⚙ {autoRerollSubmitting ? '洗炼中...' : '自动洗炼'}
+                    </a>
+                    <a
+                      href="#"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        if (!item.locked && !autoRerollSubmitting) {
+                          void openPoolPreview();
+                        }
+                      }}
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 'normal',
+                        color: item.locked ? 'var(--text-tertiary)' : 'var(--primary-color)',
+                        cursor: item.locked ? 'not-allowed' : 'pointer',
+                        textDecoration: 'none'
+                      }}
+                    >
+                      查看词条池
+                    </a>
+                  </span>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   <CostChip label="洗炼符" cost={rerollState.rerollScrollQty} owned={rerollState.rerollScrollOwned} />
@@ -1173,53 +1197,6 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
                 </div>
               </div>
 
-              <div className="mbag-sheet-section">
-                <div className="mbag-sheet-section-title">自动洗炼</div>
-                <div className="mbag-auto-reroll-controls">
-                  <select
-                    className="mbag-auto-reroll-select"
-                    multiple
-                    value={autoRerollTargetKeys}
-                    onChange={(event) => {
-                      const values = Array.from(event.currentTarget.selectedOptions).map((option) => option.value);
-                      setAutoRerollTargetKeys(values);
-                    }}
-                    disabled={submitting || autoRerollSubmitting || item.locked || !poolPreviewReady}
-                  >
-                    {poolPreviewLoading ? (
-                      <option value="" disabled>词条池加载中...</option>
-                    ) : null}
-                    {autoRerollOptions.map((option) => (
-                      <option key={option.key} value={option.key}>{option.label}</option>
-                    ))}
-                  </select>
-                  <label className="mbag-auto-reroll-attempts">
-                    <span>最大次数</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={2000}
-                      value={autoRerollMaxAttempts}
-                      onChange={(event) => {
-                        const value = Number(event.target.value);
-                        if (!Number.isFinite(value)) return;
-                        setAutoRerollMaxAttempts(Math.max(1, Math.min(2000, Math.floor(value))));
-                      }}
-                      disabled={submitting || autoRerollSubmitting || item.locked}
-                    />
-                  </label>
-                  {!poolPreviewReady && poolPreviewErrorMessage ? (
-                    <div className="mbag-sheet-hint">{poolPreviewErrorMessage}</div>
-                  ) : null}
-                  <button
-                    className="mbag-sheet-act-btn is-primary"
-                    disabled={autoRerollDisabled}
-                    onClick={() => void handleAutoReroll()}
-                  >
-                    {autoRerollSubmitting ? '自动洗炼中...' : '开启自动洗炼'}
-                  </button>
-                </div>
-              </div>
             </>
           ) : null}
 
@@ -1294,6 +1271,24 @@ const GrowthSheet: React.FC<GrowthSheetProps> = ({
         loading={poolPreviewLoading}
         poolName={poolPreviewReady && poolPreviewData ? poolPreviewData.poolName : ''}
         affixes={poolPreviewReady && poolPreviewData ? poolPreviewData.affixes : []}
+      />
+
+      <AutoRerollConfigModal
+        open={autoRerollConfigOpen}
+        onClose={() => setAutoRerollConfigOpen(false)}
+        targetKeys={autoRerollTargetKeys}
+        onTargetKeysChange={setAutoRerollTargetKeys}
+        matchMode={autoRerollMatchMode}
+        onMatchModeChange={setAutoRerollMatchMode}
+        maxAttempts={autoRerollMaxAttempts}
+        onMaxAttemptsChange={setAutoRerollMaxAttempts}
+        options={autoRerollOptions}
+        disabled={autoRerollDisabled}
+        loading={poolPreviewLoading}
+        submitting={autoRerollSubmitting}
+        poolReady={poolPreviewReady}
+        poolErrorMessage={poolPreviewErrorMessage}
+        onStart={() => void handleAutoReroll()}
       />
     </>
   );
