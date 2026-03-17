@@ -36,6 +36,10 @@ const joinClassNames = (...parts: Array<string | null | undefined | false>): str
   return parts.filter((part): part is string => Boolean(part)).join(' ');
 };
 
+const buildPanelClassName = (kind: 'metrics' | 'base' | 'gem' | 'affix' | 'status'): string => {
+  return joinClassNames('equip-attr-panel', `equip-attr-panel--${kind}`);
+};
+
 export const EquipmentDetailAttrList: React.FC<EquipmentDetailAttrListProps> = ({ lines, variant, className }) => {
   const metricLines: PlainLine[] = [];
   const baseLines: PlainLine[] = [];
@@ -93,7 +97,7 @@ export const EquipmentDetailAttrList: React.FC<EquipmentDetailAttrListProps> = (
   return (
     <div className={joinClassNames('equip-attr-board', `equip-attr-board--${variant}`, className)}>
       {metricLines.length > 0 ? (
-        <div className="equip-attr-panel equip-attr-panel--metrics">
+        <div className={buildPanelClassName('metrics')}>
           <div className="equip-attr-metric-list">
             {metricLines.map((line, idx) => (
               <div key={`${idx}-${line.text}`} className="equip-attr-metric-pill">
@@ -106,7 +110,7 @@ export const EquipmentDetailAttrList: React.FC<EquipmentDetailAttrListProps> = (
       ) : null}
 
       {baseLines.length > 0 ? (
-        <div className="equip-attr-panel">
+        <div className={buildPanelClassName('base')}>
           <div className="equip-attr-panel-title">基础属性</div>
           <div className="equip-attr-base-grid">
             {baseLines.map((line, idx) => (
@@ -120,7 +124,7 @@ export const EquipmentDetailAttrList: React.FC<EquipmentDetailAttrListProps> = (
       ) : null}
 
       {gemGroups.length > 0 ? (
-        <div className="equip-attr-panel">
+        <div className={buildPanelClassName('gem')}>
           <div className="equip-attr-panel-title">宝石增益</div>
           <div className="equip-attr-gem-list">
             {gemGroups.map((group, idx) => (
@@ -146,7 +150,7 @@ export const EquipmentDetailAttrList: React.FC<EquipmentDetailAttrListProps> = (
       ) : null}
 
       {affixLines.length > 0 ? (
-        <div className="equip-attr-panel">
+        <div className={buildPanelClassName('affix')}>
           <div className="equip-attr-panel-title">词条</div>
           <div className="equip-attr-affix-list">
             {affixLines.map((line, idx) => {
@@ -174,7 +178,7 @@ export const EquipmentDetailAttrList: React.FC<EquipmentDetailAttrListProps> = (
       ) : null}
 
       {statusLines.length > 0 ? (
-        <div className="equip-attr-panel">
+        <div className={buildPanelClassName('status')}>
           <div className="equip-attr-panel-title">状态</div>
           <div className="equip-attr-status-list">
             {statusLines.map((line, idx) => (

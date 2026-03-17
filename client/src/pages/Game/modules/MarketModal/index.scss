@@ -982,8 +982,15 @@
 
 .market-list-detail-attr-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px 12px;
+}
+
+.market-list-detail-attr-grid .equip-attr-panel--metrics,
+.market-list-detail-attr-grid .equip-attr-panel--gem,
+.market-list-detail-attr-grid .equip-attr-panel--affix,
+.market-list-detail-attr-grid .equip-attr-panel--status {
+  grid-column: 1 / -1;
 }
 
 .market-partner-technique-grid {
