@@ -532,6 +532,66 @@ export class BattleEngine {
     if (!unit || !unit.isAlive || !unit.canAct) return null;
     return unit;
   }
+
+  private findNextActableUnit(
+    units: BattleUnit[],
+    startExclusiveIndex: number,
+  ): BattleUnit | null {
+    for (let i = startExclusiveIndex + 1; i < units.length; i++) {
+      const unit = units[i];
+      if (unit.isAlive && unit.canAct) {
+        return unit;
+      }
+    }
+    return null;
+  }
+
+  private moveToNextActableUnitOrSwitch(startExclusiveIndex: number): void {
+    const team = this.state.teams[this.state.currentTeam];
+    const nextUnit = this.findNextActableUnit(team.units, startExclusiveIndex);
+    if (nextUnit) {
+      this.state.currentUnitId = nextUnit.id;
+      return;
+    }
+    this.state.currentUnitId = null;
+    this.switchTeam();
+  }
+
+  /**
+   * 从攻击方移除指定单位，并在必要时修正当前行动指针。
+   *
+   * 作用：
+   * - 组队成员离队时同步收缩 attacker.units，避免战斗状态残留已失去参战资格的玩家单位。
+   * - 若被移除的是当前行动单位，继续推进到后续合法单位或下一行动方，防止 currentUnitId 悬空卡死。
+   *
+   * 边界条件：
+   * 1) 仅处理攻击方单位，不触碰 defender 阵营。
+   * 2) 战斗已结束时只做列表收缩与速度重算，不再触发额外回合推进。
+   */
+  removeAttackerUnits(unitIds: string[]): void {
+    const normalizedUnitIds = [...new Set(unitIds.filter((unitId) => typeof unitId === 'string' && unitId.length > 0))];
+    if (normalizedUnitIds.length === 0) return;
+
+    const removedUnitIdSet = new Set(normalizedUnitIds);
+    const attackerUnits = this.state.teams.attacker.units;
+    const currentUnitId = this.state.currentUnitId;
+    const currentUnitIndex = currentUnitId
+      ? attackerUnits.findIndex((unit) => unit.id === currentUnitId)
+      : -1;
+
+    const nextAttackerUnits = attackerUnits.filter((unit) => !removedUnitIdSet.has(unit.id));
+    if (nextAttackerUnits.length === attackerUnits.length) return;
+
+    this.state.teams.attacker.units = nextAttackerUnits;
+    this.updateTeamSpeed();
+
+    if (this.state.phase === 'finished') return;
+    if (this.checkBattleEnd()) return;
+    if (this.state.currentTeam !== 'attacker') return;
+    if (!currentUnitId || !removedUnitIdSet.has(currentUnitId)) return;
+
+    this.moveToNextActableUnitOrSwitch(currentUnitIndex - 1);
+  }
   
   /**
    * 推进行动：将 currentUnitId 移动到当前队伍下一个可行动单位。
@@ -549,23 +609,7 @@ export class BattleEngine {
     const currentIdx = this.state.currentUnitId
       ? team.units.findIndex(u => u.id === this.state.currentUnitId)
       : -1;
-
-    let nextUnit: BattleUnit | null = null;
-    for (let i = currentIdx + 1; i < team.units.length; i++) {
-      const u = team.units[i];
-      if (u.isAlive && u.canAct) {
-        nextUnit = u;
-        break;
-      }
-    }
-
-    if (nextUnit) {
-      this.state.currentUnitId = nextUnit.id;
-    } else {
-      // 当前队伍所有单位行动完毕
-      this.state.currentUnitId = null;
-      this.switchTeam();
-    }
+    this.moveToNextActableUnitOrSwitch(currentIdx);
   }
   
   /**
