@@ -127,7 +127,7 @@ export const getRoomsInMap = async (mapId: string): Promise<MapRoom[]> => {
   if (cachedRooms) return cachedRooms;
 
   const map = await getMapDefById(mapId);
-  if (!map) return [];
+  if (!map || !isMapEnabled(map)) return [];
   const rooms = parseRooms(map.rooms);
   mapRoomsCache.set(mapId, rooms);
   return rooms;

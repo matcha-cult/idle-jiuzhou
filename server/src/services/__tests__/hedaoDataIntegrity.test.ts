@@ -24,6 +24,9 @@ import test from 'node:test';
 
 import { getDungeonDefinitions, getDungeonDifficultiesByDungeonId } from '../staticConfigLoader.js';
 import { resolveOrderedMonsters } from '../battle/shared/monsters.js';
+import { getDungeonDefById } from '../dungeon/shared/configLoader.js';
+import { getEnabledMainQuestChapterById } from '../mainQuest/shared/questConfig.js';
+import { getRoomInMap, getRoomsInMap, isMapEnabled } from '../mapService.js';
 import {
   asArray,
   asObject,
@@ -53,6 +56,40 @@ const HEDAO_MONSTER_IDS = [
   'monster-elite-hedao-jingyu-sipan',
   HEDAO_BOSS_ID,
 ] as const;
+
+test('合道一期主线、地图与秘境应统一处于关闭态', async () => {
+  const mainQuestSeed = loadSeed('main_quest_chapter7.json');
+  const mapSeed = loadSeed('map_def.json');
+  const dungeonSeed = loadSeed(HEDAO_DUNGEON_FILE);
+
+  const chapterById = buildObjectMap(asArray(mainQuestSeed.chapters), 'id');
+  const mapById = buildObjectMap(asArray(mapSeed.maps), 'id');
+  const chapter = chapterById.get('mq-chapter-7');
+  const map = mapById.get('map-dadao-jingxu');
+  const dungeonDef = asObject(asObject(asArray(dungeonSeed.dungeons)[0])?.def);
+
+  assert.ok(chapter, '缺少第七章章节定义');
+  assert.equal(chapter?.enabled, false, '第七章应关闭，避免玩家推进到未开放内容');
+  assert.equal(getEnabledMainQuestChapterById('mq-chapter-7'), null, '运行时不应再暴露第七章章节');
+
+  assert.ok(map, '缺少大道镜墟地图定义');
+  assert.equal(map?.enabled, false, '大道镜墟地图应关闭');
+  assert.equal(
+    isMapEnabled(map as { enabled?: boolean | null }),
+    false,
+    '地图可用性判定应识别大道镜墟为关闭态',
+  );
+  assert.deepEqual(await getRoomsInMap('map-dadao-jingxu'), [], '关闭地图后不应再返回房间列表');
+  assert.equal(
+    await getRoomInMap('map-dadao-jingxu', 'room-jingxu-dukou'),
+    null,
+    '关闭地图后不应再返回房间详情',
+  );
+
+  assert.ok(dungeonDef, '缺少玄鉴司天宫秘境定义');
+  assert.equal(dungeonDef?.enabled, false, '玄鉴司天宫秘境应关闭');
+  assert.equal(getDungeonDefById(HEDAO_DUNGEON_ID), null, '运行时不应再暴露玄鉴司天宫秘境');
+});
 
 test('第七章主线目标应只引用已存在地图/NPC/怪物/物品/秘境', () => {
   const mainQuestSeed = loadSeed('main_quest_chapter7.json');
