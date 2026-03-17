@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Tag } from 'antd';
 import type { InfoTarget } from '../InfoModal';
-import { getRoomObjects } from '../../../../services/api';
+import { getRoomObjects, type MapObjectDto } from '../../../../services/api';
 import { getUnifiedApiErrorMessage } from '../../../../services/api';
 import { gameSocket, type GameTimeSyncPayload } from '../../../../services/gameSocket';
+import { renderRoomObjectName } from './renderRoomObjectName';
 import './index.scss';
 
 interface RoomObjectsProps {
@@ -13,7 +14,7 @@ interface RoomObjectsProps {
 }
 
 type RoomObjectType = InfoTarget['type'];
-type RoomObject = InfoTarget & { task_marker?: '!' | '?'; task_tracked?: boolean };
+type RoomObject = MapObjectDto;
 
 const typeLabel: Record<RoomObjectType, { text: string; color: string }> = {
   npc: { text: 'NPC', color: 'blue' },
@@ -145,7 +146,7 @@ const RoomObjects: React.FC<RoomObjectsProps> = ({ mapId, roomId, onSelect }) =>
             setError(res?.message || '获取房间对象失败');
             return;
           }
-          setObjects((res.data.objects ?? []) as unknown as RoomObject[]);
+          setObjects(res.data.objects ?? []);
         })
         .catch((e) => {
           if (cancelled) return;
@@ -241,7 +242,7 @@ const RoomObjects: React.FC<RoomObjectsProps> = ({ mapId, roomId, onSelect }) =>
                       {obj.task_marker}
                     </span>
                   ) : null}
-                  <span className="room-objects-item-name-text">{obj.name}</span>
+                  {renderRoomObjectName(obj)}
                 </div>
                 {renderResourceStatus(obj)}
               </div>

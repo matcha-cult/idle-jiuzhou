@@ -14,6 +14,7 @@ import {
 } from './staticConfigLoader.js';
 import { getTaskDefinitionsByIds, getTaskDefinitionsByNpcIds } from './taskDefinitionService.js';
 import { getCharacterIdByUserId } from './shared/characterId.js';
+import { buildRoomPlayerObject } from './shared/roomPlayerObject.js';
 
 export type MapObjectDto =
   | {
@@ -843,16 +844,7 @@ const getRoomObjectsImpl = async (mapId: string, roomId: string, excludeUserId?:
       const pid = String(p.id);
       if (seen.has(pid)) continue;
       seen.add(pid);
-      const realmText = p.subRealm ? `${p.realm}·${p.subRealm}` : p.realm;
-      objects.push({
-        type: 'player',
-        id: pid,
-        name: p.nickname,
-        title: p.title || undefined,
-        gender: p.gender || undefined,
-        realm: realmText || undefined,
-        avatar: p.avatar ?? null,
-      });
+      objects.push(buildRoomPlayerObject(p));
     }
   } catch {
     // 忽略
