@@ -59,9 +59,6 @@ export const battleTickers = new Map<string, true>();
 /** 战斗 tick 锁（防止并发 tick） */
 export const battleTickLocks = new Set<string>();
 
-/** 日志增量追踪 */
-export const battleLastEmittedLogLen = new Map<string, number>();
-
 /** Redis 持久化时间追踪 */
 export const battleLastRedisSavedAt = new Map<string, number>();
 

@@ -19,6 +19,7 @@
 
 import { redis } from "../../../config/redis.js";
 import { BattleEngine } from "../../../battle/battleEngine.js";
+import { getBattleLogCursor } from "../../../battle/logStream.js";
 import type { BattleState, BattleUnit } from "../../../battle/types.js";
 import {
   normalizeBattleParticipantUserIds,
@@ -98,8 +99,9 @@ type PersistedBattleStaticState = Pick<
 
 type PersistedBattleDynamicState = Pick<
   BattleState,
-  "roundCount" | "currentTeam" | "currentUnitId" | "phase" | "logs" | "result" | "rewards" | "randomIndex"
+  "roundCount" | "currentTeam" | "currentUnitId" | "phase" | "result" | "rewards" | "randomIndex"
 > & {
+  logCursor: number;
   teams: {
     attacker: PersistedBattleDynamicTeam;
     defender: PersistedBattleDynamicTeam;
@@ -194,7 +196,7 @@ const buildPersistedBattleDynamicState = (
   currentTeam: state.currentTeam,
   currentUnitId: state.currentUnitId,
   phase: state.phase,
-  logs: state.logs,
+  logCursor: getBattleLogCursor(state.battleId),
   result: state.result,
   rewards: state.rewards,
   randomIndex: state.randomIndex,
@@ -382,12 +384,21 @@ export const restoreBattleStateFromRedisSnapshot = (
     currentUnitId: dynamicState.currentUnitId,
     phase: dynamicState.phase,
     firstMover: staticState.firstMover,
-    logs: dynamicState.logs,
     result: dynamicState.result,
     rewards: dynamicState.rewards,
     randomSeed: staticState.randomSeed,
     randomIndex: dynamicState.randomIndex,
   };
+};
+
+export const restoreBattleLogCursorFromRedisSnapshot = (
+  dynamicStateJson: string,
+): number => {
+  const dynamicState = JSON.parse(dynamicStateJson) as PersistedBattleDynamicState;
+  if (!Number.isFinite(dynamicState.logCursor) || dynamicState.logCursor < 0) {
+    throw new Error("恢复战斗失败: 日志游标缺失");
+  }
+  return Math.floor(dynamicState.logCursor);
 };
 
 // ------ 恢复参与者 ------

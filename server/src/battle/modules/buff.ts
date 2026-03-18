@@ -23,6 +23,7 @@ import { BATTLE_CONSTANTS } from '../types.js';
 import { applyDamage } from './damage.js';
 import { applyHealing } from './healing.js';
 import { applySoulShackleRecoveryReduction } from './mark.js';
+import { appendBattleLog } from '../logStream.js';
 
 /**
  * 添加Buff到单位
@@ -384,7 +385,7 @@ function applyAuraSubEffect(
       const { actualDamage } = applyDamage(state, target, sub.resolvedValue, dmgType);
       subResult.damage = (subResult.damage ?? 0) + actualDamage;
       if (!target.isAlive) {
-        state.logs.push({
+        appendBattleLog(state, {
           type: 'death',
           round: state.roundCount,
           unitId: target.id,

@@ -7,7 +7,7 @@
  * 3. 不做什么：不挂载 React 组件、不建立 socket 连接，也不验证 BattleArea 内部自动下一场的定时器行为。
  *
  * 输入/输出：
- * - 输入：battleId、队伍身份、当前视图、本地目标是否存在、当前外部战斗上下文。
+ * - 输入：battleId、队伍身份、当前视图、本地目标是否存在、当前 battleSession/reconnect 上下文。
  * - 输出：`resolveRealtimeBattleViewSyncMode` 返回的接管模式。
  *
  * 数据流/状态流：
@@ -30,8 +30,7 @@ test('普通地图本地战斗已由 BattleArea 持有时，不应再接成 reco
       isTeamLeader: true,
       viewMode: 'battle',
       hasLocalBattleTargets: true,
-      currentArenaBattleId: null,
-      currentDungeonBattleId: null,
+      currentSessionBattleId: null,
       currentReconnectBattleId: null,
     }),
     'keep_local_battle',
@@ -46,8 +45,7 @@ test('真正的普通地图重连场景仍应接管 reconnect 战斗视图', () 
       isTeamLeader: true,
       viewMode: 'map',
       hasLocalBattleTargets: false,
-      currentArenaBattleId: null,
-      currentDungeonBattleId: null,
+      currentSessionBattleId: null,
       currentReconnectBattleId: null,
     }),
     'sync_reconnect_battle',
@@ -62,8 +60,7 @@ test('队伍跟随者收到战斗更新时，应始终进入队友战斗视图',
       isTeamLeader: false,
       viewMode: 'battle',
       hasLocalBattleTargets: true,
-      currentArenaBattleId: null,
-      currentDungeonBattleId: null,
+      currentSessionBattleId: null,
       currentReconnectBattleId: null,
     }),
     'sync_team_battle',
@@ -78,8 +75,7 @@ test('已经处于 reconnect 外部上下文时，不应错误回退成本地战
       isTeamLeader: true,
       viewMode: 'battle',
       hasLocalBattleTargets: true,
-      currentArenaBattleId: null,
-      currentDungeonBattleId: null,
+      currentSessionBattleId: null,
       currentReconnectBattleId: 'battle-1001-1700000000000',
     }),
     'sync_reconnect_battle',

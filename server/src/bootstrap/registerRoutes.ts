@@ -11,6 +11,7 @@ import mailRoutes from '../routes/mailRoutes.js';
 import mapRoutes from '../routes/mapRoutes.js';
 import infoRoutes from '../routes/infoRoutes.js';
 import battleRoutes from '../routes/battleRoutes.js';
+import battleSessionRoutes from '../routes/battleSessionRoutes.js';
 import techniqueRoutes from '../routes/techniqueRoutes.js';
 import characterTechniqueRoutes from '../routes/characterTechniqueRoutes.js';
 import teamRoutes from '../routes/teamRoutes.js';
@@ -52,6 +53,7 @@ export const registerRoutes = (app: Express): void => {
   app.use('/api/map', mapRoutes);
   app.use('/api/info', infoRoutes);
   app.use('/api/battle', battleRoutes);
+  app.use('/api/battle-session', battleSessionRoutes);
   app.use('/api/technique', techniqueRoutes);
   app.use('/api/character', characterTechniqueRoutes);
   app.use('/api/team', teamRoutes);

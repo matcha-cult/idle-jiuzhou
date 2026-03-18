@@ -20,6 +20,10 @@
  */
 
 import type { BattleSkill, BattleState, BattleUnit } from "../../../battle/types.js";
+import {
+  clearBattleLogStream,
+  consumeBattleLogDelta,
+} from "../../../battle/logStream.js";
 import { canUseSkill, isFeared, isStunned } from "../../../battle/modules/control.js";
 import { getNormalAttack } from "../../../battle/modules/skill.js";
 import { getSkillCooldownRemainingRounds } from "../../../battle/utils/cooldown.js";
@@ -30,19 +34,22 @@ import {
   battleParticipants,
   battleTickLocks,
   battleTickers,
-  battleLastEmittedLogLen,
   battleLastRedisSavedAt,
   BATTLE_TICK_MS,
   getAttackerPlayerCount,
   getUserIdByCharacterId,
-  stripStaticFieldsFromState,
 } from "./state.js";
 import { saveBattleToRedis, shouldPersistBattleToRedis } from "./persistence.js";
+import { getAttachedBattleSessionSnapshot } from "../../battleSession/index.js";
+import {
+  buildBattleDeltaState,
+  buildBattleRealtimePayload,
+  buildBattleSnapshotState,
+} from "./realtime.js";
 
 // ------ 常量 ------
 
 const BATTLE_REDIS_SAVE_INTERVAL_MS = 2000;
-const MAX_BATTLE_LOG_DELTA = 80;
 const PLAYER_ACTION_TIMEOUT_MS = 30_000;
 const lastWaitingPlayerTurnKeyByBattleId = new Map<string, string>();
 let battleTickerScheduler: ReturnType<typeof setInterval> | null = null;
@@ -62,13 +69,21 @@ function patchBattleUpdatePayload(battleId: string, payload: Record<string, unkn
 
   if (kind === "battle_started") {
     const state = payload.state as unknown as BattleState | undefined;
-    const logsLen = Array.isArray(state?.logs) ? state.logs.length : 0;
-    battleLastEmittedLogLen.set(battleId, logsLen);
-    return payload;
+    if (!state) return payload;
+    const logSnapshot = consumeBattleLogDelta(battleId);
+    return buildBattleRealtimePayload({
+      kind: "battle_started",
+      battleId,
+      state: buildBattleSnapshotState(state),
+      logs: logSnapshot.logs,
+      extras: {
+        logStart: logSnapshot.logStart,
+        logDelta: logSnapshot.logDelta,
+      },
+    });
   }
 
   if (kind === "battle_finished" || kind === "battle_abandoned") {
-    battleLastEmittedLogLen.delete(battleId);
     return payload;
   }
 
@@ -76,30 +91,20 @@ function patchBattleUpdatePayload(battleId: string, payload: Record<string, unkn
 
   const state = payload.state as BattleState | undefined;
   if (!state || typeof state !== "object") return payload;
+  const logSnapshot = consumeBattleLogDelta(battleId);
 
-  const logs = Array.isArray(state.logs) ? state.logs : [];
-  const currentLen = logs.length;
-  const prevLenRaw = battleLastEmittedLogLen.get(battleId);
-  const prevLen =
-    typeof prevLenRaw === "number" && prevLenRaw >= 0 ? prevLenRaw : 0;
-  const startIndex = currentLen >= prevLen ? prevLen : 0;
-  const deltaLogs = logs.slice(startIndex);
-
-  battleLastEmittedLogLen.set(battleId, currentLen);
-
-  const strippedState = stripStaticFieldsFromState(state);
-  strippedState.logs =
-    deltaLogs.length > MAX_BATTLE_LOG_DELTA ? logs : deltaLogs;
-  const logDelta = deltaLogs.length <= MAX_BATTLE_LOG_DELTA;
-  const logStart = logDelta ? startIndex : 0;
-
-  return {
-    ...payload,
-    state: strippedState,
-    logStart,
-    logDelta,
-    unitsDelta: true,
-  };
+  return buildBattleRealtimePayload({
+    kind: "battle_state",
+    battleId,
+    state: buildBattleDeltaState(state),
+    logs: logSnapshot.logs,
+    extras: {
+      ...(payload.session ? { session: payload.session as Record<string, unknown> } : {}),
+      logStart: logSnapshot.logStart,
+      logDelta: logSnapshot.logDelta,
+      unitsDelta: true,
+    },
+  });
 }
 
 // ------ 推送更新 ------
@@ -110,9 +115,13 @@ export function emitBattleUpdate(battleId: string, payload: Record<string, unkno
     if (participants.length === 0) return;
     const gameServer = getGameServer();
     const patched = patchBattleUpdatePayload(battleId, payload);
+    const session = getAttachedBattleSessionSnapshot(battleId);
+    const payloadWithSession = session
+      ? { ...patched, session }
+      : patched;
     for (const userId of participants) {
       if (!Number.isFinite(userId)) continue;
-      gameServer.emitToUser(userId, "battle:update", patched);
+      gameServer.emitToUser(userId, "battle:update", payloadWithSession);
     }
     const engine = activeBattles.get(battleId);
     if (engine && shouldPersistBattleToRedis(battleId)) {
@@ -316,10 +325,21 @@ async function tickBattle(battleId: string): Promise<void> {
       return;
     }
 
+    if (!engine.getCurrentUnit()) {
+      engine.ensureActionableUnit();
+    }
+
     const currentUnit = engine.getCurrentUnit();
     if (!currentUnit) {
       clearPlayerTurnTimeoutState(battleId);
       clearWaitingPlayerTurnState(battleId);
+      if (engine.getState().phase === "finished") {
+        const { finishBattle } = await import("../settlement.js");
+        const { getBattleMonsters } = await import("../settlement.js");
+        const monsters = await getBattleMonsters(engine);
+        await finishBattle(battleId, engine, monsters);
+        stopBattleTicker(battleId);
+      }
       return;
     }
 
@@ -451,7 +471,7 @@ export function stopBattleTicker(battleId: string): void {
   battleTickers.delete(battleId);
   stopBattleTickerSchedulerIfIdle();
   battleTickLocks.delete(battleId);
-  battleLastEmittedLogLen.delete(battleId);
+  clearBattleLogStream(battleId);
   battleLastRedisSavedAt.delete(battleId);
 }
 

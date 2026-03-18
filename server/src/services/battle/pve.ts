@@ -4,14 +4,14 @@
  * 作用：处理 PVE 战斗的完整创建流程（校验、准备、创建引擎、注册）。
  *
  * 输入/输出：
- * - startPVEBattle: (userId, monsterIds) -> BattleResult
+ * - startPVEBattle: (userId, monsterIds, options?) -> BattleResult
  * - startDungeonPVEBattle: (userId, monsterDefIds, options?) -> BattleResult
  *
  * 复用点：路由层 / dungeon combat.ts 调用。
  *
  * 边界条件：
  * 1) 普通 PVE 需校验怪物是否在当前房间
- * 2) 秘境 PVE 可跳过冷却检查（skipCooldown）
+ * 2) 会话驱动/秘境驱动的系统续战可显式跳过冷却检查（skipCooldown）
  */
 
 import {
@@ -41,10 +41,12 @@ import {
   prepareTeamBattleParticipants,
 } from "./shared/preparation.js";
 import { uniqueStringIds, randomIntInclusive } from "./shared/helpers.js";
+import { buildBattleSnapshotState } from "./runtime/realtime.js";
 
 export async function startPVEBattle(
   userId: number,
   monsterIds: string[],
+  options?: StartDungeonPVEBattleOptions,
 ): Promise<BattleResult> {
   try {
     const characterBase = await getCharacterComputedByUserId(userId);
@@ -74,12 +76,14 @@ export async function startPVEBattle(
       "角色正在战斗中",
     );
     if (selfInBattleResult) return selfInBattleResult;
-    const selfCooldown = validateBattleStartCooldown(characterId);
-    if (selfCooldown) {
-      return buildBattleStartCooldownResult(
-        selfCooldown,
-        "battle_start_cooldown",
-      );
+    if (!options?.skipCooldown) {
+      const selfCooldown = validateBattleStartCooldown(characterId);
+      if (selfCooldown) {
+        return buildBattleStartCooldownResult(
+          selfCooldown,
+          "battle_start_cooldown",
+        );
+      }
     }
     const character = withBattleStartResources(characterWithSetBonus);
 
@@ -101,7 +105,7 @@ export async function startPVEBattle(
     const preparedTeamPromise = prepareTeamBattleParticipants(
       userId,
       character.id,
-      { ignoreMemberCooldown: false },
+      { ignoreMemberCooldown: Boolean(options?.skipCooldown) },
     );
 
     const room = await roomPromise;
@@ -190,7 +194,7 @@ export async function startPVEBattle(
         playerCount > 1 ? `组队战斗开始（${playerCount}人）` : "战斗开始",
       data: {
         battleId,
-        state: engine.getState(),
+        state: buildBattleSnapshotState(engine.getState()),
         isTeamBattle: playerCount > 1,
         teamMemberCount: playerCount,
         battleStartCooldownMs: BATTLE_START_COOLDOWN_MS,
@@ -308,7 +312,7 @@ export async function startDungeonPVEBattle(
       message: "战斗开始",
       data: {
         battleId,
-        state: engine.getState(),
+        state: buildBattleSnapshotState(engine.getState()),
         isTeamBattle: playerCount > 1,
         teamMemberCount: playerCount,
         battleStartCooldownMs: BATTLE_START_COOLDOWN_MS,

@@ -1,5 +1,6 @@
 import type { AxiosRequestConfig } from 'axios';
 import api from './core';
+import type { BattleSessionSnapshotDto } from './battleSession';
 
 export type BattleStateDto = {
   battleId: string;
@@ -14,7 +15,6 @@ export type BattleStateDto = {
   currentUnitId: string | null;
   phase: 'roundStart' | 'action' | 'roundEnd' | 'finished';
   firstMover: 'attacker' | 'defender';
-  logs: BattleLogEntryDto[];
   result?: 'attacker_win' | 'defender_win' | 'draw';
 };
 
@@ -157,12 +157,9 @@ export interface BattleRewardsDto {
 export interface BattleActionResponse {
   success: boolean;
   message: string;
-  data?: BattleCooldownMetaDto & {
-    state: BattleStateDto;
-    result?: 'attacker_win' | 'defender_win' | 'draw';
-    rewards?: BattleRewardsDto;
-    isTeamBattle?: boolean;
-  };
+  data?: {
+    session?: BattleSessionSnapshotDto;
+  } & BattleCooldownMetaDto;
 }
 
 export const battleAction = (
@@ -174,18 +171,11 @@ export const battleAction = (
   return api.post('/battle/action', { battleId, skillId, targetIds }, config);
 };
 
-export interface BattleStateResponse {
-  success: boolean;
-  message: string;
-  data?: { state: BattleStateDto; rewards?: BattleRewardsDto };
-}
-
-export const getBattleState = (battleId: string): Promise<BattleStateResponse> => {
-  return api.get(`/battle/state/${battleId}`);
-};
-
-export const abandonBattle = (battleId: string): Promise<{ success: boolean; message: string; data?: BattleCooldownMetaDto }> => {
-  return api.post('/battle/abandon', { battleId });
+export const abandonBattle = (
+  battleId: string,
+  config?: AxiosRequestConfig,
+): Promise<{ success: boolean; message: string; data?: BattleCooldownMetaDto }> => {
+  return api.post('/battle/abandon', { battleId }, config);
 };
 
 export type ArenaStatusDto = {
@@ -231,12 +221,12 @@ export const getArenaRecords = (limit: number = 50): Promise<{ success: boolean;
 export const arenaMatch = (): Promise<{
   success: boolean;
   message: string;
-  data?: { battleId: string; opponent: ArenaOpponentDto };
+  data?: { battleId: string; opponent: ArenaOpponentDto; session?: BattleSessionSnapshotDto };
 }> => {
   return api.post('/arena/match', {});
 };
 
-export const arenaChallenge = (opponentCharacterId: number): Promise<{ success: boolean; message: string; data?: { battleId: string } }> => {
+export const arenaChallenge = (opponentCharacterId: number): Promise<{ success: boolean; message: string; data?: { battleId: string; session?: BattleSessionSnapshotDto } }> => {
   return api.post('/arena/challenge', { opponentCharacterId });
 };
 

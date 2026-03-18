@@ -3,17 +3,18 @@ import { App, Button, Tag } from 'antd';
 import {
   abandonBattle,
   battleAction,
-  getBattleState,
   getUnifiedApiErrorMessage,
   SILENT_API_REQUEST_CONFIG,
+  startPveBattleSession,
   toUnifiedApiError,
-  startPVEBattle,
+  type BattleSessionSnapshotDto,
   type BattleStartResponse,
   type BattleLogEntryDto,
   type BattleRewardsDto,
   type BattleStateDto,
 } from '../../../../services/api';
-import { gameSocket } from '../../../../services/gameSocket';
+import type { BattleRealtimePayload } from '../../../../services/battleRealtime';
+import { gameSocket, type BattleCooldownState } from '../../../../services/gameSocket';
 import {
   FAST_BATTLE_LOG_SYSTEM_LINES,
   buildBattleEndLineFast,
@@ -26,7 +27,7 @@ import {
   resolveLocalBattleMonsterIds,
   shouldAutoStartLocalBattle,
 } from './localStartResolver';
-import { resolveFinishedBattleAdvanceMode } from './autoNextPolicy';
+import { isCooldownDrivenAdvanceMode, type BattleAdvanceMode } from './autoNextPolicy';
 import './index.scss';
 
 export type BattleUnit = {
@@ -57,6 +58,8 @@ interface BattleAreaProps {
   onAppendBattleLines?: (lines: string[]) => void;
   onNext?: () => Promise<void>;
   nextLabel?: string;
+  advanceMode?: BattleAdvanceMode;
+  onSessionChange?: (session: BattleSessionSnapshotDto | null) => void;
 }
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
@@ -86,6 +89,10 @@ type StartBattleOptions = {
   silentCooldown?: boolean;
 };
 
+type PendingCooldownAction =
+  | { kind: 'restart_local'; monsterIds: string[] }
+  | { kind: 'advance_session' };
+
 type BattleTeamMeta = {
   isTeamBattle?: boolean;
   teamMemberCount?: number;
@@ -99,7 +106,12 @@ const getBattleStartFailurePayload = (
   const raw = error.raw;
   if (!raw || typeof raw !== 'object') return null;
   const response = (raw as { response?: { data?: { data?: BattleStartFailurePayload } } }).response;
-  const payload = response?.data?.data;
+  const payloadFromAxios = response?.data?.data;
+  if (payloadFromAxios && typeof payloadFromAxios === 'object') {
+    return payloadFromAxios;
+  }
+  const payloadFromBusiness = (raw as { raw?: { data?: BattleStartFailurePayload } }).raw?.data;
+  const payload = payloadFromBusiness;
   if (!payload || typeof payload !== 'object') return null;
   return payload;
 };
@@ -227,15 +239,18 @@ const getPhaseRank = (phase: BattleStateDto['phase']): number => {
   return 0;
 };
 
-const isNewerBattleState = (next: BattleStateDto, current: BattleStateDto | null): boolean => {
+const isNewerBattleState = (
+  next: BattleStateDto,
+  current: BattleStateDto | null,
+  nextLogCount: number,
+  currentLogCount: number,
+): boolean => {
   if (!current) return true;
   if (next.battleId !== current.battleId) return true;
 
   if (current.phase === 'finished' && next.phase !== 'finished') return false;
 
-  const nextLogs = next.logs?.length ?? 0;
-  const currentLogs = current.logs?.length ?? 0;
-  if (nextLogs !== currentLogs) return nextLogs > currentLogs;
+  if (nextLogCount !== currentLogCount) return nextLogCount > currentLogCount;
 
   if (next.phase === 'finished' && current.phase !== 'finished') return true;
 
@@ -257,23 +272,6 @@ const isNewerBattleState = (next: BattleStateDto, current: BattleStateDto | null
   return false;
 };
 
-const TRANSIENT_BATTLE_ACTION_ERRORS = new Set([
-  '当前不是玩家行动回合',
-  '不是玩家方的回合',
-  '不是该单位的行动回合',
-  '被控制无法使用技能',
-  '目标不是有效的敌方单位',
-  '目标不是有效的友方单位',
-]);
-
-const isTransientBattleActionError = (msg: unknown): boolean => {
-  const text = String(msg ?? '').trim();
-  if (!text) return false;
-  if (TRANSIENT_BATTLE_ACTION_ERRORS.has(text)) return true;
-  // 战斗结束瞬间 auto-release 可能命中服务端技能冷却检查，属于瞬态错误
-  return text.includes('目标不是有效的') || text.includes('行动回合') || text.includes('冷却中');
-};
-
 const isBattleMissingError = (msg: unknown): boolean => {
   const text = String(msg ?? '').trim();
   return text === '战斗不存在' || text === '战斗不存在或已结束';
@@ -283,14 +281,14 @@ const canAutoRestartMissingLocalBattle = (params: {
   allowLocalStart: boolean;
   externalBattleId: string | null;
   allowAutoNext: boolean;
-  finishedBattleAdvanceMode: ReturnType<typeof resolveFinishedBattleAdvanceMode>;
+  finishedBattleAdvanceMode: BattleAdvanceMode;
   monsterIds: string[];
   lastKnownBattleState: BattleStateDto | null;
 }): boolean => {
   if (!params.allowLocalStart) return false;
   if (params.externalBattleId) return false;
   if (!params.allowAutoNext) return false;
-  if (params.finishedBattleAdvanceMode !== 'use_local_retry') return false;
+  if (params.finishedBattleAdvanceMode !== 'auto_local_retry') return false;
   if (params.monsterIds.length <= 0) return false;
   return params.lastKnownBattleState?.phase === 'finished'
     && params.lastKnownBattleState.result === 'attacker_win';
@@ -307,6 +305,17 @@ const canAdoptIncomingStartedBattle = (
   return currentBattleState?.phase === 'finished';
 };
 
+const isBattleCooldownReadyForMeta = (
+  cooldownState: BattleCooldownState | null,
+  characterId: number | null,
+  nextBattleAvailableAt: number | null,
+): boolean => {
+  if (!cooldownState || cooldownState.active) return false;
+  if (!characterId || cooldownState.characterId !== characterId) return false;
+  if (nextBattleAvailableAt == null) return false;
+  return cooldownState.timestamp >= nextBattleAvailableAt;
+};
+
 const BattleArea: React.FC<BattleAreaProps> = ({
   enemies,
   allowLocalStart,
@@ -318,18 +327,15 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   onAppendBattleLines,
   onNext,
   nextLabel,
+  advanceMode,
+  onSessionChange,
 }) => {
   const { message } = App.useApp();
   const resolvedExternalBattleId = externalBattleId ?? null;
   const resolvedAllowAutoNext = allowAutoNext ?? true;
-  const finishedBattleAdvanceMode = useMemo(
-    () => resolveFinishedBattleAdvanceMode({
-      externalBattleId: resolvedExternalBattleId,
-      hasOnNext: typeof onNext === 'function',
-    }),
-    [onNext, resolvedExternalBattleId],
-  );
+  const finishedBattleAdvanceMode = advanceMode ?? 'none';
   const [battleState, setBattleState] = useState<BattleStateDto | null>(null);
+  const [battleLogs, setBattleLogs] = useState<BattleLogEntryDto[]>([]);
   const [battleId, setBattleId] = useState<string | null>(null);
   const [selectedEnemyId, setSelectedEnemyId] = useState<string | null>(null);
   const [selectedAllyId, setSelectedAllyId] = useState<string | null>(null);
@@ -345,6 +351,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   const nextingRef = useRef(false);
   const battleIdRef = useRef<string | null>(null);
   const battleStateRef = useRef<BattleStateDto | null>(null);
+  const battleLogsRef = useRef<BattleLogEntryDto[]>([]);
   const lastLogIndexRef = useRef(0);
   const lastChatLogIndexRef = useRef(0);
   const announcedBattleIdRef = useRef<string | null>(null);
@@ -352,13 +359,11 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   const announcedBattleDropsIdRef = useRef<string | null>(null);
   const onAppendBattleLinesRef = useRef<((lines: string[]) => void) | null>(null);
   const lastMonsterIdsRef = useRef<string[]>([]);
-  const autoNextTimerRef = useRef<number | null>(null);
+  const pendingCooldownActionRef = useRef<PendingCooldownAction | null>(null);
   const announcedAutoNextBattleIdRef = useRef<string | null>(null);
   const startingBattleRef = useRef(false);
-  const lastSocketBattleUpdateAtRef = useRef(0);
-  const pollInFlightRef = useRef(false);
   const battleStartCooldownMsRef = useRef(DEFAULT_BATTLE_START_COOLDOWN_MS);
-  const nextBattleAvailableAtRef = useRef<number | null>(null);
+  const battleCooldownActiveRef = useRef(false);
   const startBattleRef = useRef<(monsterIds: string[], options?: StartBattleOptions) => Promise<void>>(async () => {});
   const localBattleMonsterIds = useMemo(
     () => resolveLocalBattleMonsterIds(enemies),
@@ -374,11 +379,8 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     floatTimerSetRef.current.clear();
   }, []);
 
-  const clearAutoNextTimer = useCallback(() => {
-    if (autoNextTimerRef.current) {
-      window.clearTimeout(autoNextTimerRef.current);
-      autoNextTimerRef.current = null;
-    }
+  const clearPendingCooldownAction = useCallback(() => {
+    pendingCooldownActionRef.current = null;
   }, []);
 
   /**
@@ -400,9 +402,10 @@ const BattleArea: React.FC<BattleAreaProps> = ({
    * 2) 必须同步清空日志游标与公告去重标记，否则跨波次会出现旧日志串到新战斗的问题。
    */
   const resetBattlePresentationState = useCallback(() => {
-    clearAutoNextTimer();
+    clearPendingCooldownAction();
     clearFloatTimers();
     setWaitingForCooldown(false);
+    battleCooldownActiveRef.current = false;
     setFloats([]);
     floatDxIndexRef.current = 0;
     lastLogIndexRef.current = 0;
@@ -415,17 +418,19 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     setSelectedAllyId(null);
     setIsTeamBattle(false);
     setTeamMemberCount(1);
-  }, [clearAutoNextTimer, clearFloatTimers]);
+  }, [clearFloatTimers, clearPendingCooldownAction]);
 
   const resetBattleRuntimeState = useCallback((endedBattleId?: string | null) => {
     const normalizedEndedBattleId =
       typeof endedBattleId === 'string' && endedBattleId.length > 0
         ? endedBattleId
         : null;
-    clearAutoNextTimer();
+    clearPendingCooldownAction();
     setWaitingForCooldown(false);
+    battleCooldownActiveRef.current = false;
     setBattleId(null);
     setBattleState(null);
+    setBattleLogs([]);
     setResult('idle');
     setStartupStatus('none');
     setIsTeamBattle(false);
@@ -433,6 +438,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     setNexting(false);
     battleIdRef.current = null;
     battleStateRef.current = null;
+    battleLogsRef.current = [];
     nextingRef.current = false;
     lastLogIndexRef.current = 0;
     lastChatLogIndexRef.current = 0;
@@ -440,7 +446,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     announcedBattleEndIdRef.current = normalizedEndedBattleId;
     announcedBattleDropsIdRef.current = normalizedEndedBattleId;
     announcedAutoNextBattleIdRef.current = normalizedEndedBattleId;
-  }, [clearAutoNextTimer]);
+  }, [clearPendingCooldownAction]);
 
   const handleMissingBattle = useCallback((messageText?: string): void => {
     const currentBattleId = battleIdRef.current;
@@ -459,6 +465,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
 
     resetBattlePresentationState();
     resetBattleRuntimeState(currentBattleId);
+    onSessionChange?.(null);
 
     if (shouldAutoRestartLocalBattle) {
       message.info('当前战斗已失效，正在重新接敌');
@@ -475,56 +482,48 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     finishedBattleAdvanceMode,
     message,
     onEscape,
+    onSessionChange,
     resetBattlePresentationState,
     resetBattleRuntimeState,
     resolvedAllowAutoNext,
     resolvedExternalBattleId,
   ]);
 
-  const getRemainingBattleCooldownMs = useCallback((): number => {
-    const nextAvailableAt = nextBattleAvailableAtRef.current;
-    if (nextAvailableAt == null) return 0;
-    const remainingMs = Math.max(0, nextAvailableAt - Date.now());
-    if (remainingMs <= 0) {
-      nextBattleAvailableAtRef.current = null;
-      return 0;
-    }
-    return remainingMs;
-  }, []);
-
   /**
-   * 统一进入“等待战斗冷却结束后再开战”的状态。
+   * 统一记录“冷却结束后要执行的动作”，真正执行时机只认服务端 ready 推送。
    *
    * 作用：
-   * - 把冷却等待、提示文案、自动重试定时器收口到单一入口
-   * - 避免 BattleArea 在多个分支各自 setTimeout / setStartupStatus，导致连续战斗撞冷却后中断
+   * - 把冷却等待 UI、冷却元数据、待执行动作收口到单一入口
+   * - 避免 BattleArea 在多个分支各自 setTimeout 猜测冷却结束时刻，和服务端单一真源冲突
    *
    * 输入/输出：
-   * - 输入：monsterIds、remainingMs、silent
-   * - 输出：无返回值，直接更新冷却状态并安排下一次 startBattle
+   * - 输入：remainingMs、silent，以及可选的待执行动作
+   * - 输出：无返回值，直接更新冷却等待状态
    *
    * 数据流：
-   * - 服务端返回 retryAfterMs / nextBattleAvailableAt，或客户端已知 deadline -> 本函数 -> 定时器 -> startBattleRef.current(...)
+   * - 服务端返回 retryAfterMs / nextBattleAvailableAt，或重连同步 remainingMs -> 本函数记录待执行动作 -> 服务端 `battle:cooldown-ready` 到达后真正执行
    *
    * 关键边界条件与坑点：
-   * 1) 这里只负责“等待再开战”，不清空当前 finished 战斗画面，避免连续战斗期间视觉闪断。
-   * 2) 必须先 clearAutoNextTimer，再重建定时器，避免多次冷却同步叠多个自动开战任务。
+   * 1) 这里只记录意图，不直接推进下一场；推进动作必须等服务端 ready，避免客户端时钟误差提前开战。
+   * 2) 新的冷却同步必须覆盖旧动作，避免连续收到 sync 包时保留过期的待执行动作。
    */
-  const scheduleBattleStartAfterCooldown = useCallback(
-    (monsterIds: string[], remainingMs: number, silent: boolean): void => {
+  const activateCooldownWait = useCallback(
+    (
+      remainingMs: number,
+      silent: boolean,
+      pendingAction: PendingCooldownAction | null,
+      messageText: string,
+    ): void => {
       const delayMs = Math.max(0, Math.floor(remainingMs));
-      nextBattleAvailableAtRef.current = Date.now() + delayMs;
-      clearAutoNextTimer();
+      battleCooldownActiveRef.current = true;
+      pendingCooldownActionRef.current = pendingAction;
       setWaitingForCooldown(true);
       setStartupStatus('cooldown');
       if (!silent && delayMs >= MINIMUM_MEANINGFUL_COOLDOWN_DISPLAY_MS) {
-        message.info(`冷却中，${(delayMs / 1000).toFixed(2)}秒后自动重试`, Math.max(1, Math.ceil(delayMs / 1000)));
+        message.info(messageText, Math.max(1, Math.ceil(delayMs / 1000)));
       }
-      autoNextTimerRef.current = window.setTimeout(() => {
-        void startBattleRef.current(monsterIds, { retryOnCooldown: true, silentCooldown: true });
-      }, delayMs);
     },
-    [clearAutoNextTimer, message],
+    [message],
   );
 
   const syncBattleCooldownMeta = useCallback((raw: BattleCooldownMetaLike | null | undefined) => {
@@ -536,19 +535,20 @@ const BattleArea: React.FC<BattleAreaProps> = ({
 
     const nextAvailableAt = toPositiveInt(raw.nextBattleAvailableAt);
     if (nextAvailableAt != null) {
-      nextBattleAvailableAtRef.current = nextAvailableAt;
+      const currentCharacterId = gameSocket.getCharacter()?.id ?? null;
+      const latestCooldownState = gameSocket.getLatestBattleCooldown();
+      if (isBattleCooldownReadyForMeta(latestCooldownState, currentCharacterId, nextAvailableAt)) {
+        battleCooldownActiveRef.current = false;
+        return;
+      }
+      battleCooldownActiveRef.current = true;
       return;
     }
 
     const retryAfterMs = toPositiveInt(raw.retryAfterMs);
     if (retryAfterMs != null) {
-      nextBattleAvailableAtRef.current = Date.now() + retryAfterMs;
+      battleCooldownActiveRef.current = true;
     }
-  }, []);
-
-  const getAutoNextDelayMs = useCallback((): number => {
-    // 优先使用服务端同步的冷却时长（相对值），避免客户端/服务端时钟偏差导致延迟不准
-    return Math.max(DEFAULT_BATTLE_START_COOLDOWN_MS, battleStartCooldownMsRef.current);
   }, []);
 
   useEffect(() => {
@@ -562,6 +562,10 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   useEffect(() => {
     battleStateRef.current = battleState;
   }, [battleState]);
+
+  useEffect(() => {
+    battleLogsRef.current = battleLogs;
+  }, [battleLogs]);
 
   const pushBattleLines = useCallback((lines: string[]) => {
     const fn = onAppendBattleLinesRef.current;
@@ -656,9 +660,9 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   useEffect(() => {
     return () => {
       clearFloatTimers();
-      clearAutoNextTimer();
+      clearPendingCooldownAction();
     };
-  }, [clearAutoNextTimer, clearFloatTimers]);
+  }, [clearFloatTimers, clearPendingCooldownAction]);
 
   const applyLogsToFloats = useCallback(
     (prevIndex: number, nextLogs: BattleLogEntryDto[]) => {
@@ -690,11 +694,11 @@ const BattleArea: React.FC<BattleAreaProps> = ({
    * - 避免 start/poll/socket/action 各自复制一套状态同步，导致日志游标和公告状态漂移
    *
    * 输入/输出：
-   * - 输入：最新战斗 state，以及可选 battleId / rewards / teamMeta
+   * - 输入：最新战斗 state、完整日志，以及可选 battleId / rewards / teamMeta
    * - 输出：无返回值，直接同步 BattleArea 的本地展示状态
    *
    * 数据流：
-   * - API/socket -> BattleStateDto -> 本函数 -> 战斗浮字/聊天日志/UI
+   * - socket/cache -> BattleStateDto + BattleLogEntryDto[] -> 本函数 -> 战斗浮字/聊天日志/UI
    *
    * 关键边界条件与坑点：
    * 1) 本函数不负责“新旧状态判定”，调用前必须先用 isNewerBattleState 过滤。
@@ -703,6 +707,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   const applyBattleStateSnapshot = useCallback(
     (
       nextState: BattleStateDto,
+      nextLogs: BattleLogEntryDto[],
       options?: {
         battleId?: string;
         rewards?: BattleRewardsDto | null;
@@ -712,18 +717,20 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       const resolvedBattleId = options?.battleId ?? nextState.battleId;
       battleIdRef.current = resolvedBattleId;
       battleStateRef.current = nextState;
+      battleLogsRef.current = nextLogs;
       const prevIndex = lastLogIndexRef.current;
-      applyLogsToFloats(prevIndex, nextState.logs ?? []);
-      lastLogIndexRef.current = nextState.logs?.length ?? prevIndex;
+      applyLogsToFloats(prevIndex, nextLogs);
+      lastLogIndexRef.current = nextLogs.length;
       ensureBattleStartAnnounced(nextState);
       const prevChatIndex = lastChatLogIndexRef.current;
-      const nextLines = formatNewLogs(prevChatIndex, nextState.logs ?? []);
-      lastChatLogIndexRef.current = nextState.logs?.length ?? prevChatIndex;
+      const nextLines = formatNewLogs(prevChatIndex, nextLogs);
+      lastChatLogIndexRef.current = nextLogs.length;
       pushBattleLines(nextLines);
       ensureBattleEndAnnounced(nextState);
       ensureBattleDropsAnnounced(nextState, options?.rewards ?? null);
       setBattleId(resolvedBattleId);
       setBattleState(nextState);
+      setBattleLogs(nextLogs);
       setStartupStatus('none');
       syncBattleTeamInfo(nextState, options?.teamMeta);
       setResult(resolveBattleResult(nextState));
@@ -744,9 +751,10 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     (
       nextBattleId: string,
       nextState: BattleStateDto,
+      nextLogs: BattleLogEntryDto[],
       teamMeta?: BattleTeamMeta,
     ): void => {
-      applyBattleStateSnapshot(nextState, {
+      applyBattleStateSnapshot(nextState, nextLogs, {
         battleId: nextBattleId,
         teamMeta,
       });
@@ -754,16 +762,33 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     [applyBattleStateSnapshot],
   );
 
+  const adoptCachedBattleSnapshot = useCallback(
+    (
+      targetBattleId: string,
+      options?: {
+        rewards?: BattleRewardsDto | null;
+        teamMeta?: BattleTeamMeta;
+      },
+    ): boolean => {
+      const cached = gameSocket.getLatestBattleUpdate(targetBattleId);
+      if (!cached || cached.kind === 'battle_abandoned' || !cached.state) return false;
+      applyBattleStateSnapshot(cached.state, cached.logs, {
+        battleId: targetBattleId,
+        rewards: options?.rewards ?? cached.rewards ?? null,
+        teamMeta: options?.teamMeta,
+      });
+      if (cached.session) {
+        onSessionChange?.(cached.session);
+      }
+      return true;
+    },
+    [applyBattleStateSnapshot, onSessionChange],
+  );
+
   const startBattle = useCallback(
     async (monsterIds: string[], options?: StartBattleOptions): Promise<void> => {
       const shouldRetryOnCooldown = options?.retryOnCooldown ?? false;
       const isSilentCooldown = options?.silentCooldown ?? false;
-      const remainingCooldownMs = getRemainingBattleCooldownMs();
-
-      if (shouldRetryOnCooldown && remainingCooldownMs > 0) {
-        scheduleBattleStartAfterCooldown(monsterIds, remainingCooldownMs, isSilentCooldown);
-        return;
-      }
 
       if (startingBattleRef.current) return;
       startingBattleRef.current = true;
@@ -772,12 +797,14 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       // 先清空旧战斗状态，防止 auto-next useEffect 在 await 期间
       // 看到旧的 finished state + 已清空的 announcedAutoNextBattleIdRef 而误弹提示
       setBattleState(null);
+      setBattleLogs([]);
       setBattleId(null);
       setStartupStatus('preparing');
 
       if (monsterIds.length === 0) {
         setBattleId(null);
         setBattleState(null);
+        setBattleLogs([]);
         setResult('idle');
         setStartupStatus('none');
         startingBattleRef.current = false;
@@ -785,49 +812,64 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       }
 
       try {
-        const res = await startPVEBattle(monsterIds, SILENT_API_REQUEST_CONFIG);
-        syncBattleCooldownMeta(res?.data);
-        if (!res?.success || !res.data?.battleId || !res.data?.state) {
+        const res = await startPveBattleSession(monsterIds, SILENT_API_REQUEST_CONFIG);
+        const session = res?.data?.session;
+        const battleIdFromSession =
+          typeof session?.currentBattleId === 'string' ? session.currentBattleId : '';
+        if (!res?.success || !session || !battleIdFromSession) {
           const failMessage = getUnifiedApiErrorMessage(res, '发起战斗失败');
           message.error(failMessage);
           setBattleId(null);
           setBattleState(null);
+          setBattleLogs([]);
           setResult('idle');
           setStartupStatus('none');
           onEscape?.();
           startingBattleRef.current = false;
           return;
         }
-        applyStartedBattleState(res.data.battleId, res.data.state, {
-          isTeamBattle: res.data.isTeamBattle,
-          teamMemberCount: res.data.teamMemberCount,
-        });
+        onSessionChange?.(session);
+        setBattleId(battleIdFromSession);
+        setResult('running');
+        if (!adoptCachedBattleSnapshot(battleIdFromSession)) {
+          gameSocket.requestBattleSync(battleIdFromSession);
+        }
       } catch (e) {
         const normalizedError = toUnifiedApiError(e, '发起战斗失败');
         const payload = getBattleStartFailurePayload(normalizedError);
         const reason = String(payload?.reason ?? '').trim();
         const retryAfterMs = toPositiveInt(payload?.retryAfterMs);
         const inBattleBattleId = typeof payload?.battleId === 'string' ? payload.battleId : '';
-        const inBattleState = payload?.state;
 
-        if (reason === 'character_in_battle' && inBattleBattleId && inBattleState) {
-          applyStartedBattleState(inBattleBattleId, inBattleState, {
-            isTeamBattle: payload?.isTeamBattle,
-            teamMemberCount: payload?.teamMemberCount,
+        if (reason === 'character_in_battle' && inBattleBattleId) {
+          setBattleId(inBattleBattleId);
+          setResult('running');
+          adoptCachedBattleSnapshot(inBattleBattleId, {
+            teamMeta: {
+              isTeamBattle: payload?.isTeamBattle,
+              teamMemberCount: payload?.teamMemberCount,
+            },
           });
           return;
         }
 
         if (reason === 'battle_start_cooldown' && shouldRetryOnCooldown && retryAfterMs != null) {
-          scheduleBattleStartAfterCooldown(monsterIds, retryAfterMs, isSilentCooldown);
+          activateCooldownWait(
+            retryAfterMs,
+            isSilentCooldown,
+            { kind: 'restart_local', monsterIds: [...monsterIds] },
+            `冷却中，${(retryAfterMs / 1000).toFixed(2)}秒后自动重试`,
+          );
           setBattleId(null);
           setBattleState(null);
+          setBattleLogs([]);
           setResult('idle');
           return;
         }
 
         setBattleId(null);
         setBattleState(null);
+        setBattleLogs([]);
         setResult('idle');
         setStartupStatus('none');
         message.error(normalizedError.message);
@@ -838,14 +880,13 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       }
     },
     [
-      applyStartedBattleState,
-      getRemainingBattleCooldownMs,
+      activateCooldownWait,
+      adoptCachedBattleSnapshot,
       message,
       onEscape,
+      onSessionChange,
       pushBattleLines,
       resetBattlePresentationState,
-      scheduleBattleStartAfterCooldown,
-      syncBattleCooldownMeta,
     ],
   );
 
@@ -874,55 +915,63 @@ const BattleArea: React.FC<BattleAreaProps> = ({
 
   // 监听服务端冷却结束推送
   useEffect(() => {
-    const handleCooldownReady = (event: Event) => {
-      const customEvent = event as CustomEvent<{ characterId: number; timestamp: number }>;
+    const handleCooldownEvent = (detail: BattleCooldownState) => {
       const myCharacterId = gameSocket.getCharacter()?.id;
-      const currentState = battleStateRef.current;
-      const isFinishedWin = currentState?.phase === 'finished' && currentState.result === 'attacker_win';
 
-      if (customEvent.detail.characterId === myCharacterId) {
-        nextBattleAvailableAtRef.current = null;
-        clearAutoNextTimer();
-        setWaitingForCooldown(false);
-        setStartupStatus('none');
-
-        // 自动触发下一场战斗
-        if (resolvedAllowAutoNext && finishedBattleAdvanceMode === 'use_local_retry' && isFinishedWin) {
-          void startBattle(lastMonsterIdsRef.current, { retryOnCooldown: true, silentCooldown: true });
-        }
-      }
-    };
-
-    const handleCooldownSync = (event: Event) => {
-      const customEvent = event as CustomEvent<{ characterId: number; remainingMs: number; timestamp: number }>;
-      const myCharacterId = gameSocket.getCharacter()?.id;
-      const currentState = battleStateRef.current;
-      const isFinishedWin = currentState?.phase === 'finished' && currentState.result === 'attacker_win';
-
-      if (customEvent.detail.characterId === myCharacterId && customEvent.detail.remainingMs > 0) {
-        const remainingMs = Math.max(0, Math.floor(customEvent.detail.remainingMs));
-        nextBattleAvailableAtRef.current = Date.now() + remainingMs;
-        if (resolvedAllowAutoNext && finishedBattleAdvanceMode === 'use_local_retry' && isFinishedWin) {
-          scheduleBattleStartAfterCooldown(lastMonsterIdsRef.current, remainingMs, true);
+      if (detail.characterId === myCharacterId) {
+        if (detail.kind === 'sync' && detail.remainingMs > 0) {
+          const currentState = battleStateRef.current;
+          const isFinishedWin = currentState?.phase === 'finished' && currentState.result === 'attacker_win';
+          const remainingMs = Math.max(0, Math.floor(detail.remainingMs));
+          battleCooldownActiveRef.current = true;
+          if (resolvedAllowAutoNext && finishedBattleAdvanceMode === 'auto_local_retry' && isFinishedWin) {
+            activateCooldownWait(
+              remainingMs,
+              true,
+              { kind: 'restart_local', monsterIds: [...lastMonsterIdsRef.current] },
+              `冷却中，${(remainingMs / 1000).toFixed(2)}秒后自动重试`,
+            );
+            return;
+          }
+          if (resolvedAllowAutoNext && finishedBattleAdvanceMode === 'auto_session_cooldown' && isFinishedWin) {
+            activateCooldownWait(
+              remainingMs,
+              true,
+              null,
+              `冷却中，${(remainingMs / 1000).toFixed(2)}秒后自动继续`,
+            );
+            return;
+          }
+          clearPendingCooldownAction();
+          setWaitingForCooldown(true);
+          setStartupStatus('cooldown');
           return;
         }
-        setWaitingForCooldown(true);
-        setStartupStatus('cooldown');
+
+        const pendingAction = pendingCooldownActionRef.current;
+        battleCooldownActiveRef.current = false;
+        clearPendingCooldownAction();
+        setWaitingForCooldown(false);
+        setStartupStatus('none');
+        if (!resolvedAllowAutoNext || !pendingAction) {
+          return;
+        }
+        if (pendingAction.kind === 'restart_local') {
+          void startBattle(pendingAction.monsterIds, { retryOnCooldown: true, silentCooldown: true });
+          return;
+        }
+        if (pendingAction.kind === 'advance_session' && onNext && !nextingRef.current) {
+          void onNext();
+        }
       }
     };
-
-    window.addEventListener('battle:cooldown-ready', handleCooldownReady);
-    window.addEventListener('battle:cooldown-sync', handleCooldownSync);
-
-    return () => {
-      window.removeEventListener('battle:cooldown-ready', handleCooldownReady);
-      window.removeEventListener('battle:cooldown-sync', handleCooldownSync);
-    };
+    return gameSocket.onBattleCooldown(handleCooldownEvent);
   }, [
-    clearAutoNextTimer,
+    activateCooldownWait,
+    clearPendingCooldownAction,
     finishedBattleAdvanceMode,
+    onNext,
     resolvedAllowAutoNext,
-    scheduleBattleStartAfterCooldown,
     startBattle,
   ]);
 
@@ -933,25 +982,14 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     setStartupStatus('preparing');
     setBattleId(resolvedExternalBattleId);
     setBattleState(null);
+    setBattleLogs([]);
     setResult('running');
-    void (async () => {
-      const res = await getBattleState(resolvedExternalBattleId);
-      if (!res?.success || !res.data?.state) {
-        if (isBattleMissingError(res?.message)) {
-          handleMissingBattle(res.message);
-          return;
-        }
-        setStartupStatus('none');
-        return;
-      }
-      applyBattleStateSnapshot(res.data.state, {
-        battleId: resolvedExternalBattleId,
-        rewards: res.data.rewards ?? null,
-      });
-    })();
+    battleLogsRef.current = [];
+    if (!adoptCachedBattleSnapshot(resolvedExternalBattleId)) {
+      gameSocket.requestBattleSync(resolvedExternalBattleId);
+    }
   }, [
-    applyBattleStateSnapshot,
-    handleMissingBattle,
+    adoptCachedBattleSnapshot,
     resetBattlePresentationState,
     resolvedExternalBattleId,
   ]);
@@ -974,7 +1012,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     if (!resolvedAllowAutoNext) return;
     if (!battleState || battleState.phase !== 'finished') {
       if (startupStatus !== 'cooldown') {
-        clearAutoNextTimer();
+        clearPendingCooldownAction();
       }
       announcedAutoNextBattleIdRef.current = null;
       return;
@@ -982,175 +1020,138 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     const currentBattleId = battleId;
     if (!currentBattleId) return;
 
-    if (finishedBattleAdvanceMode === 'wait_on_next') {
-      clearAutoNextTimer();
+    if (
+      finishedBattleAdvanceMode === 'none'
+      || finishedBattleAdvanceMode === 'wait_external'
+      || finishedBattleAdvanceMode === 'auto_session'
+      || finishedBattleAdvanceMode === 'manual_session'
+    ) {
+      clearPendingCooldownAction();
       return;
     }
 
     if (announcedAutoNextBattleIdRef.current === currentBattleId) return;
     announcedAutoNextBattleIdRef.current = currentBattleId;
-    clearAutoNextTimer();
+    clearPendingCooldownAction();
 
     // 普通地图自动连战：等待冷却结束后直接重开下一场。
-    if (finishedBattleAdvanceMode === 'use_local_retry') {
-      const remainingCooldownMs = getRemainingBattleCooldownMs();
-      if (remainingCooldownMs > 0) {
-        scheduleBattleStartAfterCooldown(lastMonsterIdsRef.current, remainingCooldownMs, true);
-        return;
-      }
-      setWaitingForCooldown(true);
-      setStartupStatus('cooldown');
+    if (!isCooldownDrivenAdvanceMode(finishedBattleAdvanceMode)) {
+      clearPendingCooldownAction();
       return;
     }
 
-    // 外部战斗（如秘境）已具备 onNext：使用前端定时器推进下一波。
-    const delayMs = getAutoNextDelayMs();
-    const delaySec = (delayMs / 1000).toFixed(1);
-    const shouldShowMessage = delayMs >= MINIMUM_MEANINGFUL_COOLDOWN_DISPLAY_MS;
-
-    if (shouldShowMessage) {
-      message.info(`战斗结束，等待${delaySec}秒后继续推进`, Math.max(1, Math.ceil(delayMs / 1000)));
+    if (finishedBattleAdvanceMode === 'auto_local_retry') {
+      if (battleCooldownActiveRef.current) {
+        activateCooldownWait(
+          battleStartCooldownMsRef.current,
+          true,
+          { kind: 'restart_local', monsterIds: [...lastMonsterIdsRef.current] },
+          `冷却中，${(battleStartCooldownMsRef.current / 1000).toFixed(2)}秒后自动重试`,
+        );
+        return;
+      }
+      void startBattle(lastMonsterIdsRef.current, { retryOnCooldown: true, silentCooldown: true });
+      return;
     }
-    autoNextTimerRef.current = window.setTimeout(() => {
-      if (battleIdRef.current !== currentBattleId) return;
-      if (nextingRef.current) return;
-      if (!onNext) return;
-      nextingRef.current = true;
-      setNexting(true);
-      Promise.resolve()
-        .then(() => onNext())
-        .finally(() => {
-          nextingRef.current = false;
-          setNexting(false);
-        });
-    }, delayMs);
+
+    if (finishedBattleAdvanceMode === 'auto_session_cooldown') {
+      if (battleCooldownActiveRef.current) {
+        activateCooldownWait(
+          battleStartCooldownMsRef.current,
+          true,
+          null,
+          `冷却中，${(battleStartCooldownMsRef.current / 1000).toFixed(2)}秒后自动继续`,
+        );
+        return;
+      }
+      if (onNext && !nextingRef.current) {
+        void onNext();
+      }
+      return;
+    }
+
   }, [
+    activateCooldownWait,
     battleId,
     battleState,
-    clearAutoNextTimer,
+    clearPendingCooldownAction,
     finishedBattleAdvanceMode,
-    getAutoNextDelayMs,
-    message,
-    onNext,
     resolvedAllowAutoNext,
-    resolvedExternalBattleId,
-    getRemainingBattleCooldownMs,
-    scheduleBattleStartAfterCooldown,
+    onNext,
+    startBattle,
     startupStatus,
   ]);
 
-  const pollBattleState = useCallback(async () => {
-    const id = battleIdRef.current;
-    if (!id) return;
-    if (pollInFlightRef.current) return;
-    pollInFlightRef.current = true;
-    try {
-      const res = await getBattleState(id);
-      if (!res?.success || !res.data?.state) {
-        if (isBattleMissingError(res?.message)) {
-          handleMissingBattle(res.message);
-        }
-        return;
-      }
-      const next = res.data.state;
-      const current = battleStateRef.current;
-      if (!isNewerBattleState(next, current)) return;
-      applyBattleStateSnapshot(next, {
-        rewards: res.data.rewards ?? null,
-      });
-    } finally {
-      pollInFlightRef.current = false;
-    }
-  }, [applyBattleStateSnapshot, handleMissingBattle]);
-
-  useEffect(() => {
-    if (!battleId) return;
-    if (battleState?.phase === 'finished') return;
-    let running = true;
-    const t = window.setInterval(() => {
-      if (!running) return;
-      if (Date.now() - lastSocketBattleUpdateAtRef.current < 2000) return;
-      void pollBattleState();
-    }, 3000);
-    return () => {
-      running = false;
-      window.clearInterval(t);
-    };
-  }, [battleId, battleState?.phase, pollBattleState]);
-
   useEffect(() => {
     gameSocket.connect();
-    const unsub = gameSocket.onBattleUpdate((raw) => {
-      const data = raw as {
-        kind?: unknown;
-        battleId?: unknown;
-        state?: BattleStateDto;
-        rewards?: BattleRewardsDto | null;
-        data?: { state?: BattleStateDto; rewards?: BattleRewardsDto } | null;
-        logStart?: unknown;
-        logDelta?: unknown;
-      };
-      const kind = String(data?.kind || '');
-      const incomingBattleId = String(data?.battleId || '');
+    const unsub = gameSocket.onBattleUpdate((data: BattleRealtimePayload) => {
+      const kind = data.kind;
+      const incomingBattleId = data.battleId;
+      const session = data.session ?? null;
       const currentId = battleIdRef.current;
       if (!incomingBattleId) return;
       if (kind !== 'battle_started' && currentId && incomingBattleId !== currentId) return;
-      lastSocketBattleUpdateAtRef.current = Date.now();
 
       if (kind === 'battle_started') {
+        if (session) {
+          onSessionChange?.(session);
+        }
         if (!canAdoptIncomingStartedBattle(currentId, battleStateRef.current, incomingBattleId)) return;
         if (incomingBattleId !== currentId) {
           resetBattlePresentationState();
         }
 
-        const nextState = data?.state as BattleStateDto | undefined;
-        if (nextState) {
+        if (data.state) {
           const current = battleStateRef.current;
-          if (incomingBattleId === currentId && current && !isNewerBattleState(nextState, current)) return;
-          applyStartedBattleState(incomingBattleId, nextState);
+          const currentLogCount = battleLogsRef.current.length;
+          if (
+            incomingBattleId === currentId
+            && current
+            && !isNewerBattleState(data.state, current, data.logs.length, currentLogCount)
+          ) {
+            return;
+          }
+          applyStartedBattleState(incomingBattleId, data.state, data.logs);
         }
         return;
       }
 
       if (kind === 'battle_state') {
-        let next = data?.state as BattleStateDto | undefined;
+        if (session) {
+          onSessionChange?.(session);
+        }
+        const next = data.state;
         if (!next) return;
         const current = battleStateRef.current;
-        const logDelta = Boolean(data?.logDelta);
-        const logStart = Math.floor(Number(data?.logStart));
-        if (logDelta && Number.isFinite(logStart) && logStart >= 0) {
-          const currentLogs = current?.logs ?? [];
-          const deltaLogs = next.logs ?? [];
-          const baseLogs = currentLogs.length >= logStart ? currentLogs.slice(0, logStart) : currentLogs;
-          const mergedLogs = baseLogs.concat(deltaLogs);
-          next = { ...next, logs: mergedLogs };
-        }
-
-        if (!isNewerBattleState(next, current)) return;
-        applyBattleStateSnapshot(next);
+        const currentLogCount = battleLogsRef.current.length;
+        if (!isNewerBattleState(next, current, data.logs.length, currentLogCount)) return;
+        applyBattleStateSnapshot(next, data.logs);
         return;
       }
 
       if (kind === 'battle_finished') {
-        syncBattleCooldownMeta(data as BattleCooldownMetaLike);
-        syncBattleCooldownMeta(data?.data as BattleCooldownMetaLike | null | undefined);
-        const rewards = data?.data?.rewards ?? data?.rewards ?? null;
-        const next = (data?.data?.state || data?.state) as BattleStateDto | undefined;
-        if (next) {
-          applyBattleStateSnapshot(next, { rewards });
+        if (session) {
+          onSessionChange?.(session);
+        }
+        syncBattleCooldownMeta(data);
+        if (data.state) {
+          applyBattleStateSnapshot(data.state, data.logs, {
+            rewards: data.rewards ?? null,
+          });
         }
         return;
       }
 
       if (kind === 'battle_abandoned') {
-        syncBattleCooldownMeta(data as BattleCooldownMetaLike);
-        syncBattleCooldownMeta(data?.data as BattleCooldownMetaLike | null | undefined);
+        onSessionChange?.(session);
+        syncBattleCooldownMeta(data);
         if (announcedBattleEndIdRef.current !== incomingBattleId) {
           announcedBattleEndIdRef.current = incomingBattleId;
           pushBattleLines([FAST_BATTLE_LOG_SYSTEM_LINES.abandoned]);
         }
         setBattleId(null);
         setBattleState(null);
+        setBattleLogs([]);
         setResult('idle');
         setStartupStatus('none');
         return;
@@ -1164,6 +1165,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     pushBattleLines,
     resetBattlePresentationState,
     syncBattleCooldownMeta,
+    onSessionChange,
   ]);
 
   const activeUnitId = useMemo(() => getCurrentUnitId(battleState), [battleState]);
@@ -1222,7 +1224,22 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   const handleEscape = useCallback(() => {
     const id = battleIdRef.current;
     if (id) {
-      void abandonBattle(id);
+      void abandonBattle(id, SILENT_API_REQUEST_CONFIG)
+        .then((res) => {
+          if (!res?.success) {
+            if (!isBattleMissingError(res?.message)) {
+              message.error(res?.message || '逃跑失败');
+            }
+            return;
+          }
+          syncBattleCooldownMeta(res.data);
+        })
+        .catch((error) => {
+          const errorText = getUnifiedApiErrorMessage(error, '逃跑失败');
+          if (!isBattleMissingError(errorText)) {
+            message.error(errorText);
+          }
+        });
     }
     if (id && announcedBattleEndIdRef.current !== id) {
       announcedBattleEndIdRef.current = id;
@@ -1231,12 +1248,12 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     resetBattlePresentationState();
     resetBattleRuntimeState(id);
     onEscape?.();
-  }, [onEscape, pushBattleLines, resetBattlePresentationState, resetBattleRuntimeState]);
+  }, [message, onEscape, pushBattleLines, resetBattlePresentationState, resetBattleRuntimeState, syncBattleCooldownMeta]);
 
   const handleNext = useCallback(async () => {
     if (!onNext) return;
     if (nextingRef.current) return;
-    clearAutoNextTimer();
+    clearPendingCooldownAction();
     nextingRef.current = true;
     setNexting(true);
     try {
@@ -1245,7 +1262,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       nextingRef.current = false;
       setNexting(false);
     }
-  }, [clearAutoNextTimer, onNext]);
+  }, [clearPendingCooldownAction, onNext]);
 
   const castSkill = useCallback(
     async (skillId: string, targetType?: string): Promise<boolean> => {
@@ -1289,56 +1306,30 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           handleMissingBattle(errorText);
           return null;
         }
-        if (isTransientBattleActionError(errorText)) {
-          void pollBattleState();
-        }
         return null;
       });
       if (!res) {
         return false;
       }
 
-      if (!res?.success || !res.data?.state) {
+      if (!res?.success) {
         if (isBattleMissingError(res?.message)) {
           handleMissingBattle(res.message);
-          return false;
-        }
-        if (isTransientBattleActionError(res?.message)) {
-          // 自动战斗/组队并发时可能命中旧回合或旧目标，静默刷新状态即可。
-          void pollBattleState();
-          return false;
-        }
-        // 检查是否是状态不同步错误，如果是则直接使用返回的最新状态
-        const resData = res?.data as any;
-        if (resData?.reason === 'state_mismatch' && resData?.state) {
-          const nextState = resData.state;
-          applyBattleStateSnapshot(nextState);
           return false;
         }
         void 0;
         return false;
       }
-      syncBattleCooldownMeta(res.data);
-      const next = res.data.state;
-      applyBattleStateSnapshot(next, {
-        rewards: res.data.rewards ?? null,
-      });
-      const nextMe = (next.teams?.attacker?.units ?? []).find((u) => u.id === currentUnitId);
-      if (nextMe) {
-        gameSocket.updateCharacterLocal({
-          lingqi: Number(nextMe.lingqi) || 0,
-          qixue: Number(nextMe.qixue) || 0,
-          maxLingqi: Number(nextMe.currentAttrs?.max_lingqi) || 0,
-          maxQixue: Number(nextMe.currentAttrs?.max_qixue) || 0,
-        });
+      const responseData = res.data;
+      syncBattleCooldownMeta(responseData);
+      if (responseData?.session) {
+        onSessionChange?.(responseData.session);
       }
       return true;
     },
     [
-      applyBattleStateSnapshot,
       handleMissingBattle,
-      message,
-      pollBattleState,
+      onSessionChange,
       selectedAllyId,
       selectedEnemyId,
       syncBattleCooldownMeta,
@@ -1371,7 +1362,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           <div className="battle-top-status">战斗情况：{statusText}</div>
         </div>
         <div className="battle-top-right">
-          {battleState?.phase === 'finished' && onNext ? (
+          {battleState?.phase === 'finished' && finishedBattleAdvanceMode === 'manual_session' && onNext ? (
             <Button size="small" type="primary" className="battle-top-action" loading={nexting} onClick={handleNext}>
               {nextLabel || '继续'}
             </Button>

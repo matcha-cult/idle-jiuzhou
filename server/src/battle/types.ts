@@ -416,8 +416,6 @@ export interface BattleState {
   
   firstMover: 'attacker' | 'defender';
   
-  logs: BattleLogEntry[];
-  
   result?: 'attacker_win' | 'defender_win' | 'draw';
   rewards?: BattleRewards;
   
@@ -535,7 +533,7 @@ export interface RoundLog {
  * 光环回合结算日志
  *
  * 作用：记录光环每回合对范围目标施加子效果的结果。
- * 数据流：processAuraEffect -> AuraLog -> state.logs。
+ * 数据流：processAuraEffect -> AuraLog -> battle log stream。
  *
  * 坑点：
  * 1) subResults 可能为空（所有目标已死亡时光环仍在但无有效目标）。

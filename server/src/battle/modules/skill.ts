@@ -64,6 +64,7 @@ import {
   resolveBuffEffectKey,
   resolveSignedAttrValue,
 } from '../utils/buffSpec.js';
+import { appendBattleLog, appendBattleLogs } from '../logStream.js';
 
 interface SkillExecutionResult {
   success: boolean;
@@ -744,7 +745,7 @@ function executeDamageEffect(
 
     if (!target.isAlive) {
       caster.stats.killCount++;
-      state.logs.push({
+      appendBattleLog(state, {
         type: 'death',
         round: state.roundCount,
         unitId: target.id,
@@ -758,23 +759,23 @@ function executeDamageEffect(
       target,
       damage: actualDamage,
     });
-    state.logs.push(...onHitLogs);
+    appendBattleLogs(state, onHitLogs);
     const onBeHitLogs = triggerSetBonusEffects(state, 'on_be_hit', target, {
       target: caster,
       damage: actualDamage,
     });
-    state.logs.push(...onBeHitLogs);
+    appendBattleLogs(state, onBeHitLogs);
     if (damageResult.isCrit) {
       const onCritLogs = triggerSetBonusEffects(state, 'on_crit', caster, {
         target,
         damage: actualDamage,
       });
-      state.logs.push(...onCritLogs);
+      appendBattleLogs(state, onCritLogs);
     }
 
     const reflectLogs = buildReflectDamageLogs(state, target, caster, actualDamage);
     if (reflectLogs.length > 0) {
-      state.logs.push(...reflectLogs);
+      appendBattleLogs(state, reflectLogs);
     }
   }
 
@@ -913,10 +914,10 @@ export function executeSkill(
     skillName: skill.name,
     targets: targetResults,
   };
-  state.logs.push(log);
+  appendBattleLog(state, log);
 
   const onSkillLogs = triggerSetBonusEffects(state, 'on_skill', caster);
-  state.logs.push(...onSkillLogs);
+  appendBattleLogs(state, onSkillLogs);
 
   processMomentumEffectsByOperation(state, caster, skill, context, 'consume');
   consumeNextSkillBonusBuffs(caster, context);
@@ -1131,7 +1132,7 @@ function executeMarkEffect(
 
     if (!target.isAlive) {
       caster.stats.killCount++;
-      state.logs.push({
+      appendBattleLog(state, {
         type: 'death',
         round: state.roundCount,
         unitId: target.id,
@@ -1201,7 +1202,7 @@ function executeHealEffect(
       target,
       heal: actualHeal,
     });
-    state.logs.push(...logs);
+    appendBattleLogs(state, logs);
   }
 }
 

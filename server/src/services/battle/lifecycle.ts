@@ -15,6 +15,7 @@
 
 import { redis } from "../../config/redis.js";
 import { BattleEngine } from "../../battle/battleEngine.js";
+import { restoreBattleLogCursor } from "../../battle/logStream.js";
 import type { BattleState } from "../../battle/types.js";
 import { migrateRecoveredLegacyBattleCooldownState } from "../../battle/utils/cooldown.js";
 import {
@@ -36,6 +37,7 @@ import {
   REDIS_BATTLE_STATIC_PREFIX,
   REDIS_BATTLE_PARTICIPANTS_PREFIX,
   removeBattleFromRedis,
+  restoreBattleLogCursorFromRedisSnapshot,
   restoreBattleStateFromRedisSnapshot,
   resolveRecoveredBattleParticipants,
   shouldPersistBattleToRedis,
@@ -76,6 +78,7 @@ export async function recoverBattlesFromRedis(): Promise<number> {
           stateJson,
           staticStateJson,
         );
+        const logCursor = restoreBattleLogCursorFromRedisSnapshot(stateJson);
 
         if (state.phase === "finished") {
           await removeBattleFromRedis(battleId);
@@ -98,6 +101,7 @@ export async function recoverBattlesFromRedis(): Promise<number> {
 
         migrateRecoveredLegacyBattleCooldownState(state);
         const engine = new BattleEngine(state);
+        restoreBattleLogCursor(battleId, logCursor);
         activeBattles.set(battleId, engine);
         setBattleParticipantsForBattle(battleId, participants);
         syncBattleCharacterIndex(battleId, state);

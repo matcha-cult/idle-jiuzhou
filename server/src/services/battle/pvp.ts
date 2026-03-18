@@ -41,6 +41,7 @@ import {
   withBattleStartResources,
   syncBattleStartResourcesForUsers,
 } from "./shared/preparation.js";
+import { buildBattleSnapshotState } from "./runtime/realtime.js";
 
 export async function startPVPBattle(
   userId: number,
@@ -170,7 +171,7 @@ export async function startPVPBattle(
       message: "战斗开始",
       data: {
         battleId: finalBattleId,
-        state: engine.getState(),
+        state: buildBattleSnapshotState(engine.getState()),
         battleStartCooldownMs: BATTLE_START_COOLDOWN_MS,
       },
     };

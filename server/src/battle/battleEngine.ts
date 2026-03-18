@@ -6,7 +6,6 @@
 import type { 
   BattleState, 
   BattleUnit, 
-  BattleLogEntry,
   RoundLog,
   ActionLog,
   AttrModifier,
@@ -15,6 +14,7 @@ import type {
   TargetResult,
 } from './types.js';
 import { BATTLE_CONSTANTS } from './types.js';
+import { appendBattleLog, appendBattleLogs } from './logStream.js';
 import { validateBattleState, validateSkillUse, validatePlayerAction } from './utils/validation.js';
 import { addBuff, processRoundStartEffects, processRoundEndBuffs } from './modules/buff.js';
 import { executeSkill, getNormalAttack } from './modules/skill.js';
@@ -79,6 +79,69 @@ export class BattleEngine {
    */
   getState(): BattleState {
     return this.state;
+  }
+
+  private isBattleFinished(): boolean {
+    return this.state.phase === 'finished';
+  }
+
+  /**
+   * 修复“当前行动位失效”导致的运行时停滞。
+   *
+   * 作用：
+   * - 当 `currentUnitId` 为空、指向已死亡单位、或指向已不可行动单位时，
+   *   统一把战斗推进到下一个合法行动单位、下一行动方，或直接结束战斗。
+   * - 让 ticker、玩家行动入口、自动战斗共用同一套修复逻辑，避免三处各写一遍推进分支。
+   *
+   * 输入/输出：
+   * - 输入：无，直接读取当前战斗状态。
+   * - 输出：`true` 表示本次调用推进了战斗游标或结束了战斗；`false` 表示原本就已有合法行动单位，或状态无法再推进。
+   *
+   * 数据流/状态流：
+   * `currentUnitId/currentTeam/phase` 异常
+   * -> 本方法循环调用 `advanceAction`
+   * -> 直到拿到合法行动单位 / 进入 finished / 无法继续变化。
+   *
+   * 关键边界条件与坑点：
+   * 1) 必须限制最大推进次数，避免脏状态下无限循环卡死事件循环。
+   * 2) 这里只修复“行动游标”问题，不主动替玩家出手；拿到合法玩家单位后仍交给上层决定等待还是代操。
+   */
+  ensureActionableUnit(): boolean {
+    if (this.isBattleFinished()) return false;
+    if (this.getCurrentUnit()) return false;
+
+    const maxRepairSteps =
+      this.state.teams.attacker.units.length
+      + this.state.teams.defender.units.length
+      + 2;
+    let didAdvance = false;
+
+    for (let step = 0; step < maxRepairSteps; step++) {
+      const beforeKey = [
+        this.state.phase,
+        this.state.roundCount,
+        this.state.currentTeam,
+        this.state.currentUnitId ?? '',
+      ].join('|');
+
+      this.advanceAction(null);
+      didAdvance = true;
+
+      if (this.isBattleFinished()) return true;
+      if (this.getCurrentUnit()) return true;
+
+      const afterKey = [
+        this.state.phase,
+        this.state.roundCount,
+        this.state.currentTeam,
+        this.state.currentUnitId ?? '',
+      ].join('|');
+      if (afterKey === beforeKey) {
+        return didAdvance;
+      }
+    }
+
+    return didAdvance;
   }
   
   /**
@@ -166,7 +229,7 @@ export class BattleEngine {
     this.state.phase = 'roundStart';
     
     // 记录回合开始日志
-    this.state.logs.push({
+    appendBattleLog(this.state, {
       type: 'round_start',
       round: this.state.roundCount,
     } as RoundLog);
@@ -188,10 +251,10 @@ export class BattleEngine {
       
       // DOT/HOT结算
       const effectLogs = processRoundStartEffects(this.state, unit);
-      this.state.logs.push(...effectLogs);
+      appendBattleLogs(this.state, effectLogs);
 
       const setLogs = triggerSetBonusEffects(this.state, 'on_turn_start', unit);
-      this.state.logs.push(...setLogs);
+      appendBattleLogs(this.state, setLogs);
       
       // 气血/灵气恢复（只有属性值才恢复，没有基础恢复）
       this.recoverResources(unit);
@@ -243,6 +306,9 @@ export class BattleEngine {
    */
   playerAction(userId: number, skillId: string, targetIds: string[]): { success: boolean; error?: string } {
     // 验证行动权限
+    if (!this.getCurrentUnit()) {
+      this.ensureActionableUnit();
+    }
     const currentUnit = this.getCurrentUnit();
     if (!currentUnit) {
       return { success: false, error: '没有当前行动单位' };
@@ -278,6 +344,9 @@ export class BattleEngine {
    * AI行动（自动执行当前AI单位的行动）
    */
   aiAction(allowPlayer: boolean = false, playerSkillSelector?: PlayerSkillSelector): void {
+    if (!this.getCurrentUnit()) {
+      this.ensureActionableUnit();
+    }
     const currentUnit = this.getCurrentUnit();
     if (!currentUnit) return;
     if (!allowPlayer && currentUnit.type === 'player') return;
@@ -289,7 +358,7 @@ export class BattleEngine {
 
     // 检查是否被控制
     if (isStunned(currentUnit) || isFeared(currentUnit)) {
-      this.state.logs.push({
+      appendBattleLog(this.state, {
         type: 'action',
         round: this.state.roundCount,
         actorId: currentUnit.id,
@@ -514,7 +583,7 @@ export class BattleEngine {
       skillName,
       targets,
     };
-    this.state.logs.push(log);
+    appendBattleLog(this.state, log);
   }
   
   /**
@@ -608,7 +677,7 @@ export class BattleEngine {
       ? team.units.find((unit) => unit.id === this.state.currentUnitId) ?? null
       : null;
 
-    if (currentUnit) {
+    if (currentUnit?.isAlive && currentUnit.canAct) {
       this.progressUnitCooldownsAfterAction(currentUnit, usedSkillId);
     }
 
@@ -659,12 +728,12 @@ export class BattleEngine {
       if (!unit.isAlive) continue;
       
       const buffLogs = processRoundEndBuffs(this.state, unit);
-      this.state.logs.push(...buffLogs);
+      appendBattleLogs(this.state, buffLogs);
       decayUnitMomentumAtRoundEnd(unit);
     }
     
     // 记录回合结束日志
-    this.state.logs.push({
+    appendBattleLog(this.state, {
       type: 'round_end',
       round: this.state.roundCount,
     } as RoundLog);
@@ -743,8 +812,8 @@ export class BattleEngine {
       const currentUnit = this.getCurrentUnit();
 
       if (!currentUnit) {
-        // 没有当前单位，推进
-        this.advanceAction();
+        // 没有当前单位时统一走共享修复入口，避免离线执行与在线 ticker 行为漂移。
+        this.ensureActionableUnit();
         continue;
       }
 
@@ -769,7 +838,6 @@ export class BattleEngine {
   getResult(): {
     result: string;
     rounds: number;
-    logs: BattleLogEntry[];
     stats: {
       attacker: { damageDealt: number; healingDone: number };
       defender: { damageDealt: number; healingDone: number };
@@ -794,7 +862,6 @@ export class BattleEngine {
     return {
       result: this.state.result || 'unknown',
       rounds: this.state.roundCount,
-      logs: this.state.logs,
       stats: {
         attacker: attackerStats,
         defender: defenderStats,

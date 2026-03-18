@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { consumeBattleLogDelta } from '../../battle/logStream.js';
 import { triggerSetBonusEffects } from '../../battle/modules/setBonus.js';
 import { executeSkill } from '../../battle/modules/skill.js';
 import type {
@@ -91,7 +92,6 @@ const createState = (attacker: BattleUnit, defender: BattleUnit): BattleState =>
   currentUnitId: null,
   phase: 'action',
   firstMover: 'attacker',
-  logs: [],
   randomSeed: 1,
   randomIndex: 0,
 });
@@ -245,10 +245,11 @@ test('技能与词条触发日志应按时机排序（主动作在前，on_skill
 
   const result = executeSkill(state, owner, skill, [target.id]);
   assert.equal(result.success, true);
-  assert.equal(state.logs.length >= 2, true);
+  const logs = consumeBattleLogDelta(state.battleId).logs;
+  assert.equal(logs.length >= 2, true);
 
-  const firstLog = state.logs[0];
-  const secondLog = state.logs[1];
+  const firstLog = logs[0];
+  const secondLog = logs[1];
   const firstAction = assertActionLog(firstLog);
   const secondAction = assertActionLog(secondLog);
 

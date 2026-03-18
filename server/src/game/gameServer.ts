@@ -15,7 +15,14 @@ import {
 } from "../services/characterComputedService.js";
 import { withUnlockedFeatures } from "../services/featureUnlockService.js";
 import { getRemainingCooldown } from "../services/battle/cooldownManager.js";
-import { syncBattleStateOnReconnect } from "../services/battle/index.js";
+import {
+  getBattleState,
+  syncBattleSnapshotToUser,
+  syncBattleStateOnReconnect,
+} from "../services/battle/index.js";
+import { buildBattleFinishedRealtimePayload } from "../services/battle/runtime/realtime.js";
+import type { BattleSessionSnapshot } from "../services/battleSession/index.js";
+import { getCurrentBattleSessionDetail } from "../services/battleSession/index.js";
 import { detectSensitiveWords } from "../services/sensitiveWordService.js";
 import { mailService } from "../services/mailService.js";
 import { notifyAchievementUpdate } from "../services/achievementPush.js";
@@ -227,11 +234,12 @@ class GameServer {
 
           // 同步战斗冷却状态（重连时）
           if (character) {
-            await this.syncBattleCooldownOnReconnect(socket, character.id);
+            await this.syncBattleCooldownOnReconnect(socket, userId, character.id);
           }
 
           // 同步战斗状态（重连时）
           await syncBattleStateOnReconnect(userId);
+          await this.syncFinishedBattleOnReconnect(userId);
 
           this.scheduleEmitOnlinePlayers(true);
         } catch (error) {
@@ -246,6 +254,23 @@ class GameServer {
         }
         socket.emit("game:onlinePlayers", this.buildOnlinePlayersFullPayload());
       });
+
+      socket.on(
+        "battle:sync",
+        this.createSocketTask(async (payload: { battleId?: string }) => {
+          const session = this.sessions.get(socket.id);
+          if (!session) {
+            socket.emit("game:error", { message: "未认证" });
+            return;
+          }
+          const battleId = String(payload?.battleId ?? "").trim();
+          if (!battleId) {
+            socket.emit("game:error", { message: "缺少战斗ID" });
+            return;
+          }
+          await syncBattleSnapshotToUser(session.userId, battleId);
+        }),
+      );
 
       socket.on(
         "chat:send",
@@ -1039,8 +1064,30 @@ class GameServer {
   /**
    * 处理断线重连时的冷却状态同步
    */
+  private async getReconnectWaitingTransitionSession(
+    userId: number,
+  ): Promise<BattleSessionSnapshot | null> {
+    const sessionRes = await getCurrentBattleSessionDetail(userId);
+    const session =
+      sessionRes.success && sessionRes.data.session ? sessionRes.data.session : null;
+    if (!session || !session.currentBattleId || session.status !== "waiting_transition") {
+      return null;
+    }
+    return session;
+  }
+
+  /**
+   * 处理断线重连时的冷却状态同步。
+   *
+   * 规则：
+   * 1. 冷却仍在进行：推 `battle:cooldown-sync`
+   * 2. 冷却已结束但会话还停在 waiting_transition：补一条 `battle:cooldown-ready`
+   *
+   * 这样客户端即使先收到 finished battle snapshot，再挂载 BattleArea，也不会永远卡在“等待服务端通知”。
+   */
   private async syncBattleCooldownOnReconnect(
     socket: Socket,
+    userId: number,
     characterId: number,
   ): Promise<void> {
     const remaining = getRemainingCooldown(characterId);
@@ -1050,7 +1097,45 @@ class GameServer {
         remainingMs: remaining,
         timestamp: Date.now(),
       });
+      return;
     }
+
+    const waitingSession = await this.getReconnectWaitingTransitionSession(userId);
+    if (!waitingSession) {
+      return;
+    }
+
+    socket.emit("battle:cooldown-ready", {
+      characterId,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * 处理断线重连时“刚结算完成但尚未推进会话”的终态战斗同步。
+   */
+  private async syncFinishedBattleOnReconnect(userId: number): Promise<void> {
+    const session = await this.getReconnectWaitingTransitionSession(userId);
+    const battleId = session?.currentBattleId ?? null;
+    if (!session || !battleId) {
+      return;
+    }
+
+    const battleRes = await getBattleState(battleId);
+    if (!battleRes.success) {
+      return;
+    }
+
+    const payload = buildBattleFinishedRealtimePayload({
+      battleId,
+      battleResult: battleRes,
+      session,
+    });
+    if (!payload) {
+      return;
+    }
+
+    this.emitToUser(userId, "battle:update", payload);
   }
 }
 

@@ -255,7 +255,6 @@ export function createPVEBattle(
     currentUnitId: null,
     phase: 'roundStart',
     firstMover: 'attacker',
-    logs: [],
     randomSeed,
     randomIndex: 0,
   };
@@ -309,7 +308,6 @@ export function createPVPBattle(
     currentUnitId: null,
     phase: 'roundStart',
     firstMover: 'attacker',
-    logs: [],
     randomSeed: generateBattleSeed(),
     randomIndex: 0,
   };

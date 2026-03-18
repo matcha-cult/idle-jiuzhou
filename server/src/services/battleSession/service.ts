@@ -1,0 +1,441 @@
+/**
+ * BattleSession 统一战斗会话服务。
+ *
+ * 作用：
+ * - 为普通战斗、秘境战斗、PVP 战斗提供统一的 start/advance/query 生命周期；
+ * - 把“当前 battle 结束后下一步做什么”集中在服务端单一入口。
+ *
+ * 不做什么：
+ * - 不替代单场 battle engine；
+ * - 不直接处理单个技能释放。
+ *
+ * 输入/输出：
+ * - 输入：用户 ID、战斗类型、模式上下文。
+ * - 输出：统一的 session 快照，以及当前 battle state（若存在）。
+ *
+ * 数据流：
+ * start -> underlying battle service -> runtime session
+ * advance -> resolve by session type -> runtime session update
+ * query -> session snapshot + optional battle state
+ *
+ * 边界条件：
+ * 1) session 访问权限只认 owner/participant，避免任意 battleId 反查越权。
+ * 2) session 的 currentBattleId 变化必须通过 runtime 更新，禁止调用方私下维护 battleId。
+ */
+
+import crypto from 'crypto';
+import { battleParticipants } from '../battle/runtime/state.js';
+import { getBattleState } from '../battle/queries.js';
+import { startPVEBattle } from '../battle/pve.js';
+import { startPVPBattle } from '../battle/pvp.js';
+import { dungeonService } from '../dungeon/service.js';
+import type { BattleState } from '../../battle/types.js';
+import type { BattleResult } from '../battle/battleTypes.js';
+import {
+  createBattleSessionRecord,
+  getBattleSessionRecord,
+  getBattleSessionSnapshotByBattleId,
+  listBattleSessionRecords,
+  updateBattleSessionRecord,
+  toBattleSessionSnapshot,
+} from './runtime.js';
+import type {
+  BattleSessionContext,
+  BattleSessionNextAction,
+  BattleSessionRecord,
+  BattleSessionResult,
+  BattleSessionSnapshot,
+  BattleSessionStatus,
+  BattleSessionType,
+} from './types.js';
+
+type BattleSessionResponse =
+  | {
+    success: true;
+    data: {
+      session: BattleSessionSnapshot;
+      state?: unknown;
+      finished?: boolean;
+    };
+  }
+  | {
+    success: false;
+    message: string;
+  };
+
+const normalizeParticipantUserIds = (
+  participantUserIds: number[],
+  ownerUserId: number,
+): number[] => {
+  const ids = new Set<number>();
+  for (const raw of participantUserIds) {
+    const userId = Math.floor(Number(raw));
+    if (!Number.isFinite(userId) || userId <= 0) continue;
+    ids.add(userId);
+  }
+  ids.add(ownerUserId);
+  return [...ids];
+};
+
+const getParticipantUserIdsForBattle = (
+  battleId: string,
+  ownerUserId: number,
+): number[] => {
+  return normalizeParticipantUserIds(battleParticipants.get(battleId) || [], ownerUserId);
+};
+
+const createRunningSession = (params: {
+  type: BattleSessionType;
+  ownerUserId: number;
+  currentBattleId: string;
+  context: BattleSessionContext;
+}): BattleSessionRecord => {
+  return createBattleSessionRecord({
+    sessionId: crypto.randomUUID(),
+    type: params.type,
+    ownerUserId: params.ownerUserId,
+    participantUserIds: getParticipantUserIdsForBattle(
+      params.currentBattleId,
+      params.ownerUserId,
+    ),
+    currentBattleId: params.currentBattleId,
+    status: 'running',
+    nextAction: 'none',
+    canAdvance: false,
+    lastResult: null,
+    context: params.context,
+  });
+};
+
+const buildSessionSuccess = (
+  session: BattleSessionRecord,
+  state?: unknown,
+  finished?: boolean,
+): BattleSessionResponse => ({
+  success: true,
+  data: {
+    session: toBattleSessionSnapshot(session),
+    ...(state === undefined ? {} : { state }),
+    ...(finished === undefined ? {} : { finished }),
+  },
+});
+
+const getSessionFinalStatus = (
+  type: BattleSessionType,
+  result: BattleSessionResult,
+): BattleSessionStatus => {
+  if (result === 'defender_win') {
+    return type === 'pvp' ? 'completed' : 'failed';
+  }
+  if (result === 'draw') {
+    return type === 'dungeon' ? 'failed' : 'completed';
+  }
+  return 'completed';
+};
+
+const getWaitingTransitionPolicy = (
+  type: BattleSessionType,
+  result: BattleSessionResult,
+): { nextAction: BattleSessionNextAction; canAdvance: boolean } => {
+  if (type === 'pvp') {
+    return { nextAction: 'return_to_map', canAdvance: true };
+  }
+  if (result === 'attacker_win') {
+    return { nextAction: 'advance', canAdvance: true };
+  }
+  return { nextAction: 'return_to_map', canAdvance: true };
+};
+
+const ensureSessionAccess = (
+  userId: number,
+  session: BattleSessionRecord | null,
+): session is BattleSessionRecord => {
+  if (!session) return false;
+  if (session.ownerUserId === userId) return true;
+  return session.participantUserIds.includes(userId);
+};
+
+const getBattleStateResult = (battleRes: BattleResult): BattleSessionResult => {
+  const resultRaw = battleRes.data?.result;
+  if (resultRaw === 'attacker_win' || resultRaw === 'defender_win' || resultRaw === 'draw') {
+    return resultRaw;
+  }
+  return null;
+};
+
+const getBattleStatePayload = async (battleId: string): Promise<{
+  ok: boolean;
+  result: BattleSessionResult;
+  state?: BattleState;
+  message?: string;
+}> => {
+  const battleRes = await getBattleState(battleId);
+  if (!battleRes.success) {
+    return { ok: false, result: null, message: battleRes.message || '获取战斗状态失败' };
+  }
+  const result = getBattleStateResult(battleRes);
+  return {
+    ok: true,
+    result,
+    state: battleRes.data?.state as BattleState | undefined,
+  };
+};
+
+export const startPVEBattleSession = async (
+  userId: number,
+  monsterIds: string[],
+): Promise<BattleSessionResponse> => {
+  const battleRes = await startPVEBattle(userId, monsterIds);
+  if (!battleRes.success || !battleRes.data?.battleId) {
+    return { success: false, message: battleRes.message || '开启战斗失败' };
+  }
+  const session = createRunningSession({
+    type: 'pve',
+    ownerUserId: userId,
+    currentBattleId: String(battleRes.data.battleId),
+    context: {
+      monsterIds: monsterIds
+        .filter((monsterId) => typeof monsterId === 'string' && monsterId.length > 0)
+        .slice(0, 5),
+    },
+  });
+  return buildSessionSuccess(session, battleRes.data.state);
+};
+
+export const startDungeonBattleSession = async (
+  userId: number,
+  instanceId: string,
+): Promise<BattleSessionResponse> => {
+  const dungeonRes = await dungeonService.startDungeonInstance(userId, instanceId);
+  if (!dungeonRes.success || !dungeonRes.data?.battleId) {
+    return {
+      success: false,
+      message: dungeonRes.success ? '开启秘境战斗失败' : (dungeonRes.message || '开启秘境战斗失败'),
+    };
+  }
+  const session = createRunningSession({
+    type: 'dungeon',
+    ownerUserId: userId,
+    currentBattleId: String(dungeonRes.data.battleId),
+    context: { instanceId },
+  });
+  return buildSessionSuccess(session, dungeonRes.data.state);
+};
+
+export const startPVPBattleSession = async (params: {
+  userId: number;
+  opponentCharacterId: number;
+  battleId?: string;
+  mode: 'arena' | 'challenge';
+}): Promise<BattleSessionResponse> => {
+  const pvpRes = await startPVPBattle(
+    params.userId,
+    params.opponentCharacterId,
+    params.battleId,
+  );
+  if (!pvpRes.success || !pvpRes.data?.battleId) {
+    return { success: false, message: pvpRes.message || '开启 PVP 战斗失败' };
+  }
+  const session = createRunningSession({
+    type: 'pvp',
+    ownerUserId: params.userId,
+    currentBattleId: String(pvpRes.data.battleId),
+    context: {
+      opponentCharacterId: params.opponentCharacterId,
+      mode: params.mode,
+    },
+  });
+  return buildSessionSuccess(session, pvpRes.data.state);
+};
+
+export const getBattleSessionDetail = async (
+  userId: number,
+  sessionId: string,
+): Promise<BattleSessionResponse> => {
+  const session = getBattleSessionRecord(sessionId);
+  if (!ensureSessionAccess(userId, session)) {
+    return { success: false, message: '战斗会话不存在或无权访问' };
+  }
+
+  if (!session.currentBattleId) {
+    return buildSessionSuccess(session, undefined, session.status !== 'running');
+  }
+
+  const battleStateRes = await getBattleStatePayload(session.currentBattleId);
+  if (!battleStateRes.ok) {
+    return buildSessionSuccess(session, undefined, session.status !== 'running');
+  }
+  return buildSessionSuccess(
+    session,
+    battleStateRes.state,
+    session.status !== 'running',
+  );
+};
+
+export const getBattleSessionDetailByBattleId = async (
+  userId: number,
+  battleId: string,
+): Promise<BattleSessionResponse> => {
+  const snapshot = getBattleSessionSnapshotByBattleId(battleId);
+  if (!snapshot) {
+    return { success: false, message: '战斗会话不存在' };
+  }
+  const session = getBattleSessionRecord(snapshot.sessionId);
+  if (!ensureSessionAccess(userId, session)) {
+    return { success: false, message: '战斗会话不存在或无权访问' };
+  }
+  return getBattleSessionDetail(userId, snapshot.sessionId);
+};
+
+export const getCurrentBattleSessionDetail = async (
+  userId: number,
+): Promise<BattleSessionResponse | { success: true; data: { session: null } }> => {
+  const session = listBattleSessionRecords()
+    .filter((candidate) => ensureSessionAccess(userId, candidate))
+    .filter((candidate) => candidate.status === 'running' || candidate.status === 'waiting_transition')
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
+
+  if (!session) {
+    return { success: true, data: { session: null } };
+  }
+
+  return getBattleSessionDetail(userId, session.sessionId);
+};
+
+const completeSessionReturnToMap = (
+  session: BattleSessionRecord,
+): BattleSessionResponse => {
+  const nextStatus = getSessionFinalStatus(session.type, session.lastResult);
+  const updated = updateBattleSessionRecord(session.sessionId, {
+    status: nextStatus,
+    currentBattleId: null,
+    nextAction: 'none',
+    canAdvance: false,
+  });
+  if (!updated) {
+    return { success: false, message: '战斗会话不存在' };
+  }
+  return buildSessionSuccess(updated, undefined, true);
+};
+
+export const advanceBattleSession = async (
+  userId: number,
+  sessionId: string,
+): Promise<BattleSessionResponse> => {
+  const session = getBattleSessionRecord(sessionId);
+  if (!ensureSessionAccess(userId, session)) {
+    return { success: false, message: '战斗会话不存在或无权访问' };
+  }
+  if (!session.canAdvance) {
+    return { success: false, message: '当前战斗会话不可推进' };
+  }
+
+  if (session.type === 'pve') {
+    if (session.nextAction === 'return_to_map') {
+      return completeSessionReturnToMap(session);
+    }
+    const context = session.context as { monsterIds: string[] };
+    const battleRes = await startPVEBattle(userId, context.monsterIds, {
+      skipCooldown: true,
+    });
+    if (!battleRes.success || !battleRes.data?.battleId) {
+      return { success: false, message: battleRes.message || '开启下一场战斗失败' };
+    }
+    const updated = updateBattleSessionRecord(session.sessionId, {
+      currentBattleId: String(battleRes.data.battleId),
+      participantUserIds: getParticipantUserIdsForBattle(
+        String(battleRes.data.battleId),
+        session.ownerUserId,
+      ),
+      status: 'running',
+      nextAction: 'none',
+      canAdvance: false,
+      lastResult: null,
+    });
+    if (!updated) {
+      return { success: false, message: '战斗会话不存在' };
+    }
+    return buildSessionSuccess(updated, battleRes.data.state, false);
+  }
+
+  if (session.type === 'dungeon') {
+    const context = session.context as { instanceId: string };
+    const dungeonRes = await dungeonService.nextDungeonInstance(userId, context.instanceId);
+    if (!dungeonRes.success || !dungeonRes.data) {
+      return {
+        success: false,
+        message: dungeonRes.success ? '推进秘境失败' : (dungeonRes.message || '推进秘境失败'),
+      };
+    }
+    if (dungeonRes.data.finished || !dungeonRes.data.battleId) {
+      const nextStatus: BattleSessionStatus =
+        dungeonRes.data.status === 'cleared' ? 'completed' : 'failed';
+      const updated = updateBattleSessionRecord(session.sessionId, {
+        currentBattleId: null,
+        status: nextStatus,
+        nextAction: 'none',
+        canAdvance: false,
+      });
+      if (!updated) {
+        return { success: false, message: '战斗会话不存在' };
+      }
+      return buildSessionSuccess(updated, undefined, true);
+    }
+    const updated = updateBattleSessionRecord(session.sessionId, {
+      currentBattleId: String(dungeonRes.data.battleId),
+      participantUserIds: getParticipantUserIdsForBattle(
+        String(dungeonRes.data.battleId),
+        session.ownerUserId,
+      ),
+      status: 'running',
+      nextAction: 'none',
+      canAdvance: false,
+      lastResult: null,
+    });
+    if (!updated) {
+      return { success: false, message: '战斗会话不存在' };
+    }
+    return buildSessionSuccess(updated, dungeonRes.data.state, false);
+  }
+
+  return completeSessionReturnToMap(session);
+};
+
+export const markBattleSessionFinished = (
+  battleId: string,
+  result: BattleSessionResult,
+): BattleSessionSnapshot | null => {
+  const snapshot = getBattleSessionSnapshotByBattleId(battleId);
+  if (!snapshot) return null;
+  const session = getBattleSessionRecord(snapshot.sessionId);
+  if (!session) return null;
+  const policy = getWaitingTransitionPolicy(session.type, result);
+  const updated = updateBattleSessionRecord(session.sessionId, {
+    currentBattleId: battleId,
+    status: 'waiting_transition',
+    nextAction: policy.nextAction,
+    canAdvance: policy.canAdvance,
+    lastResult: result,
+  });
+  return updated ? toBattleSessionSnapshot(updated) : null;
+};
+
+export const markBattleSessionAbandoned = (
+  battleId: string,
+): BattleSessionSnapshot | null => {
+  const snapshot = getBattleSessionSnapshotByBattleId(battleId);
+  if (!snapshot) return null;
+  const updated = updateBattleSessionRecord(snapshot.sessionId, {
+    currentBattleId: null,
+    status: 'abandoned',
+    nextAction: 'none',
+    canAdvance: false,
+  });
+  return updated ? toBattleSessionSnapshot(updated) : null;
+};
+
+export const getAttachedBattleSessionSnapshot = (
+  battleId: string,
+): BattleSessionSnapshot | null => {
+  return getBattleSessionSnapshotByBattleId(battleId);
+};

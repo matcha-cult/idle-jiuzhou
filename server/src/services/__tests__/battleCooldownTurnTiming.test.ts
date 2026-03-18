@@ -99,7 +99,6 @@ const createState = (skillCooldown: number): BattleState => {
     firstMover: 'attacker',
     currentUnitId: null,
     result: undefined,
-    logs: [],
     teams: {
       attacker: {
         odwnerId: 1,

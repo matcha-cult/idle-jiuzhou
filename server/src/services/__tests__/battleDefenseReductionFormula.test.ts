@@ -113,7 +113,6 @@ function createState(attacker: BattleUnit, defender: BattleUnit): BattleState {
     currentUnitId: null,
     phase: 'action',
     firstMover: 'attacker',
-    logs: [],
     randomSeed: 1,
     randomIndex: 0,
   };

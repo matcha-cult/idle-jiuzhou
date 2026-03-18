@@ -23,7 +23,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { executeSkill } from '../../battle/modules/skill.js';
 import type { BattleSkill } from '../../battle/types.js';
-import { asActionLog, createState, createUnit } from './battleTestUtils.js';
+import { asActionLog, consumeBattleLogs, createState, createUnit } from './battleTestUtils.js';
 
 function createReflectBuffSkill(reflectRate = 0.5): BattleSkill {
   return {
@@ -90,7 +90,7 @@ test('reflect_damage Buff 应按本次实际受击伤害比例反弹真伤', () 
   assert.equal(defender.qixue, defender.currentAttrs.max_qixue - 200);
   assert.equal(attacker.qixue, attacker.currentAttrs.max_qixue - 100);
 
-  const actionLogs = state.logs.filter((log) => log.type === 'action');
+  const actionLogs = consumeBattleLogs(state).filter((log) => log.type === 'action');
   assert.equal(actionLogs.length, 3);
   const reflectLog = asActionLog(actionLogs[2]);
   assert.equal(reflectLog.actorId, defender.id);
@@ -115,7 +115,7 @@ test('reflect_damage Buff 应被反弹伤害减免降低', () => {
   assert.equal(attackResult.success, true);
   assert.equal(attacker.qixue, attacker.currentAttrs.max_qixue - 60);
 
-  const actionLogs = state.logs.filter((log) => log.type === 'action');
+  const actionLogs = consumeBattleLogs(state).filter((log) => log.type === 'action');
   const reflectLog = asActionLog(actionLogs[2]);
   assert.equal(reflectLog.targets[0]?.hits[0]?.damage, 60);
 });
@@ -137,7 +137,7 @@ test('reflect_damage Buff 在低伤害场景下不应因二次取整被额外抹
   assert.equal(attackResult.success, true);
   assert.equal(attacker.qixue, attacker.currentAttrs.max_qixue - 1);
 
-  const actionLogs = state.logs.filter((log) => log.type === 'action');
+  const actionLogs = consumeBattleLogs(state).filter((log) => log.type === 'action');
   const reflectLog = asActionLog(actionLogs[2]);
   assert.equal(reflectLog.targets[0]?.hits[0]?.damage, 1);
 });

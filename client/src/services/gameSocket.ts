@@ -9,6 +9,12 @@ import type {
   PartnerRecruitStatusResponse,
   TechniqueResearchStatusResponse,
 } from "./api";
+import {
+  type BattleRealtimePayload,
+  type BattleRealtimeStatePayload,
+  type BattleRealtimeWirePayload,
+  normalizeBattleRealtimePayload,
+} from "./battleRealtime";
 import type { CharacterFeatureCode } from "./feature";
 
 const isLoopbackHostname = (hostname: string): boolean => {
@@ -132,7 +138,23 @@ export interface SectIndicatorPayload {
   sectPendingApplicationCount: number;
   canManageApplications: boolean;
 }
-type BattleUpdateListener = (data: unknown) => void;
+type BattleUpdateListener = (data: BattleRealtimePayload) => void;
+export type BattleCooldownState =
+  | {
+      kind: "sync";
+      characterId: number;
+      remainingMs: number;
+      timestamp: number;
+      active: true;
+    }
+  | {
+      kind: "ready";
+      characterId: number;
+      remainingMs: 0;
+      timestamp: number;
+      active: false;
+    };
+type BattleCooldownListener = (data: BattleCooldownState) => void;
 type ArenaUpdateListener = (data: unknown) => void;
 type SectUpdateListener = (data: SectIndicatorPayload) => void;
 export type ChatChannel = "world" | "team" | "sect" | "private" | "battle";
@@ -267,6 +289,7 @@ class GameSocketService {
   private teamUpdateListeners: Set<TeamUpdateListener> = new Set();
   private sectUpdateListeners: Set<SectUpdateListener> = new Set();
   private battleUpdateListeners: Set<BattleUpdateListener> = new Set();
+  private battleCooldownListeners: Set<BattleCooldownListener> = new Set();
   private arenaUpdateListeners: Set<ArenaUpdateListener> = new Set();
   private chatMessageListeners: Set<ChatMessageListener> = new Set();
   private chatErrorListeners: Set<ChatErrorListener> = new Set();
@@ -292,6 +315,8 @@ class GameSocketService {
   private currentTechniqueResearchStatus: TechniqueResearchStatusPayload | null =
     null;
   private currentPartnerRecruitStatus: PartnerRecruitStatusPayload | null = null;
+  private currentBattleUpdate: BattleRealtimePayload | null = null;
+  private currentBattleCooldownState: BattleCooldownState | null = null;
   /** 本地在线玩家索引，用于增量合并 delta 消息 */
   private onlinePlayersMap: Map<number, OnlinePlayerDto> = new Map();
   private isConnected = false;
@@ -335,6 +360,7 @@ class GameSocketService {
       this.currentGameTimeSync = null;
       this.currentTechniqueResearchStatus = null;
       this.currentPartnerRecruitStatus = null;
+      this.currentBattleCooldownState = null;
     });
 
     this.socket.on(
@@ -394,8 +420,22 @@ class GameSocketService {
       },
     );
 
-    this.socket.on("battle:update", (data: unknown) => {
-      this.notifyBattleUpdateListeners(data);
+    this.socket.on("battle:update", (data: BattleRealtimeWirePayload) => {
+      const incomingBattleId =
+        typeof data.battleId === "string" ? data.battleId : "";
+      const previous =
+        this.currentBattleUpdate &&
+        this.currentBattleUpdate.kind !== "battle_abandoned" &&
+        this.currentBattleUpdate.battleId === incomingBattleId
+          ? this.currentBattleUpdate
+          : null;
+      const normalized = normalizeBattleRealtimePayload(
+        data,
+        previous as BattleRealtimeStatePayload | null,
+      );
+      if (!normalized) return;
+      this.currentBattleUpdate = normalized;
+      this.notifyBattleUpdateListeners(normalized);
     });
 
     this.socket.on("arena:update", (data: unknown) => {
@@ -539,9 +579,15 @@ class GameSocketService {
     this.socket.on(
       "battle:cooldown-ready",
       (data: { characterId: number; timestamp: number }) => {
-        window.dispatchEvent(
-          new CustomEvent("battle:cooldown-ready", { detail: data }),
-        );
+        const payload: BattleCooldownState = {
+          kind: "ready",
+          characterId: data.characterId,
+          remainingMs: 0,
+          timestamp: data.timestamp,
+          active: false,
+        };
+        this.currentBattleCooldownState = payload;
+        this.notifyBattleCooldownListeners(payload);
       },
     );
 
@@ -553,9 +599,15 @@ class GameSocketService {
         remainingMs: number;
         timestamp: number;
       }) => {
-        window.dispatchEvent(
-          new CustomEvent("battle:cooldown-sync", { detail: data }),
-        );
+        const payload: BattleCooldownState = {
+          kind: "sync",
+          characterId: data.characterId,
+          remainingMs: Math.max(0, Math.floor(data.remainingMs)),
+          timestamp: data.timestamp,
+          active: true,
+        };
+        this.currentBattleCooldownState = payload;
+        this.notifyBattleCooldownListeners(payload);
       },
     );
 
@@ -576,6 +628,8 @@ class GameSocketService {
       this.currentGameTimeSync = null;
       this.currentTechniqueResearchStatus = null;
       this.currentPartnerRecruitStatus = null;
+      this.currentBattleUpdate = null;
+      this.currentBattleCooldownState = null;
       this.onlinePlayersMap.clear();
     }
   }
@@ -631,7 +685,36 @@ class GameSocketService {
 
   onBattleUpdate(listener: BattleUpdateListener): () => void {
     this.battleUpdateListeners.add(listener);
+    if (this.currentBattleUpdate) {
+      listener(this.currentBattleUpdate);
+    }
     return () => this.battleUpdateListeners.delete(listener);
+  }
+
+  onBattleCooldown(listener: BattleCooldownListener): () => void {
+    this.battleCooldownListeners.add(listener);
+    if (this.currentBattleCooldownState) {
+      listener(this.currentBattleCooldownState);
+    }
+    return () => this.battleCooldownListeners.delete(listener);
+  }
+
+  getLatestBattleUpdate(battleId?: string): BattleRealtimePayload | null {
+    if (!this.currentBattleUpdate) return null;
+    if (!battleId) return this.currentBattleUpdate;
+    return this.currentBattleUpdate.battleId === battleId
+      ? this.currentBattleUpdate
+      : null;
+  }
+
+  getLatestBattleCooldown(): BattleCooldownState | null {
+    return this.currentBattleCooldownState;
+  }
+
+  requestBattleSync(battleId: string): void {
+    const normalizedBattleId = String(battleId ?? "").trim();
+    if (!normalizedBattleId || !this.socket?.connected) return;
+    this.socket.emit("battle:sync", { battleId: normalizedBattleId });
   }
 
   onArenaUpdate(listener: ArenaUpdateListener): () => void {
@@ -807,8 +890,12 @@ class GameSocketService {
     this.sectUpdateListeners.forEach((listener) => listener(data));
   }
 
-  private notifyBattleUpdateListeners(data: unknown): void {
+  private notifyBattleUpdateListeners(data: BattleRealtimePayload): void {
     this.battleUpdateListeners.forEach((listener) => listener(data));
+  }
+
+  private notifyBattleCooldownListeners(data: BattleCooldownState): void {
+    this.battleCooldownListeners.forEach((listener) => listener(data));
   }
 
   private notifyArenaUpdateListeners(data: unknown): void {

@@ -26,6 +26,7 @@ import type {
   BattleUnit,
 } from '../../battle/types.js';
 import type { CharacterData, MonsterData } from '../../battle/battleFactory.js';
+import { consumeBattleLogDelta } from '../../battle/logStream.js';
 
 const BASE_ATTRS: BattleAttrs = {
   max_qixue: 1200,
@@ -230,10 +231,15 @@ export const createState = (args: {
     currentUnitId: null,
     phase: 'action',
     firstMover: 'attacker',
-    logs: [],
     randomSeed: 1,
     randomIndex: 0,
   };
+};
+
+export const consumeBattleLogs = (
+  state: Pick<BattleState, 'battleId'>,
+): BattleLogEntry[] => {
+  return consumeBattleLogDelta(state.battleId).logs;
 };
 
 export const asActionLog = (

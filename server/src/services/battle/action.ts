@@ -34,6 +34,7 @@ import { stopBattleTicker, emitBattleUpdate } from "./runtime/ticker.js";
 import { removeBattleFromRedis } from "./runtime/persistence.js";
 import { finishBattle, getBattleMonsters } from "./settlement.js";
 import { settleArenaBattleIfNeeded } from "./pvp.js";
+import { markBattleSessionAbandoned } from "../battleSession/index.js";
 
 export async function playerAction(
   userId: number,
@@ -80,17 +81,17 @@ export async function playerAction(
     const currentState = engine.getState();
     if (currentState.phase === "finished") {
       const monsters = await getBattleMonsters(engine);
-      const battleResult = await finishBattle(battleId, engine, monsters);
+      await finishBattle(battleId, engine, monsters);
       stopBattleTicker(battleId);
-      return battleResult;
+      return {
+        success: true,
+        message: "行动已提交",
+      };
     }
 
     return {
       success: true,
-      message: "行动成功",
-      data: {
-        state: currentState,
-      },
+      message: "行动已提交",
     };
   } catch (error) {
     console.error("玩家行动失败:", error);
@@ -158,6 +159,7 @@ export async function abandonBattle(
 
   try {
     const gameServer = getGameServer();
+    const sessionSnapshot = markBattleSessionAbandoned(battleId);
     for (const participantUserId of participants) {
       if (!Number.isFinite(participantUserId)) continue;
       gameServer.emitToUser(participantUserId, "battle:update", {
@@ -167,6 +169,7 @@ export async function abandonBattle(
         message: "已放弃战斗",
         battleStartCooldownMs: BATTLE_START_COOLDOWN_MS,
         nextBattleAvailableAt: cooldownUntilMs,
+        ...(sessionSnapshot ? { session: sessionSnapshot } : {}),
       });
       void gameServer.pushCharacterUpdate(participantUserId);
       if (state.battleType === "pvp") {

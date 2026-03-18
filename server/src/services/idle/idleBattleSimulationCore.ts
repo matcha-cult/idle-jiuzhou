@@ -25,6 +25,7 @@
 import { randomUUID } from 'crypto';
 import { createPVEBattle, type CharacterData, type SkillData } from '../../battle/battleFactory.js';
 import { BattleEngine, type PlayerSkillSelector } from '../../battle/battleEngine.js';
+import { consumeBattleLogDelta } from '../../battle/logStream.js';
 import type { BattleLogEntry } from '../../battle/types.js';
 import { resolveMonsterDataForBattle } from '../battle/index.js';
 import { hasConfiguredAutoSkillPolicy } from './autoSkillPolicyGuard.js';
@@ -176,11 +177,12 @@ export function simulateIdleBattle(
   engine.autoExecute(playerSelector);
 
   const finalState = engine.getState();
+  const battleLog = consumeBattleLogDelta(finalState.battleId).logs;
   return {
     result: finalState.result ?? 'draw',
     randomSeed: finalState.randomSeed,
     roundCount: finalState.roundCount,
-    battleLog: finalState.logs as BattleLogEntry[],
+    battleLog,
     monsterIds,
   };
 }

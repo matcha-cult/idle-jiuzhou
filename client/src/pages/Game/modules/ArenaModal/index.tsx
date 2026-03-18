@@ -5,6 +5,7 @@ import {
   arenaMatch,
   getArenaRecords,
   getArenaStatus,
+  type BattleSessionSnapshotDto,
   type ArenaRecordDto,
   type ArenaStatusDto,
 } from '../../../../services/api';
@@ -14,7 +15,7 @@ interface ArenaModalProps {
   open: boolean;
   onClose: () => void;
   character: CharacterData | null;
-  onStartBattle?: (battleId: string) => void;
+  onStartBattle?: (session: BattleSessionSnapshotDto) => void;
 }
 
 type ArenaTab = 'match' | 'record' | 'rule';
@@ -172,13 +173,14 @@ const ArenaModal: React.FC<ArenaModalProps> = ({ open, onClose, character, onSta
         try {
           const res = await arenaMatch();
           if (!isMatchingRef.current) return;
-          if (!res?.success || !res.data?.battleId) {
+          const session = res?.data?.session;
+          if (!res?.success || !session?.currentBattleId) {
             stopMatching();
             return;
           }
           stopMatching();
           onClose();
-          onStartBattle?.(res.data.battleId);
+          onStartBattle?.(session);
         } catch (e) {
           if (!isMatchingRef.current) return;
           stopMatching();

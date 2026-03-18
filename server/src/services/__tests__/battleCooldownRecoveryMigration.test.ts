@@ -89,7 +89,6 @@ const createLegacyState = (): BattleState => {
     currentUnitId: 'attacker-1',
     phase: 'action',
     firstMover: 'attacker',
-    logs: [],
     randomSeed: 1,
     randomIndex: 0,
   };

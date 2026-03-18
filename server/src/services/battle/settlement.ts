@@ -14,6 +14,10 @@
  */
 
 import { BattleEngine } from "../../battle/battleEngine.js";
+import {
+  consumeBattleLogDelta,
+  getBattleLogCursor,
+} from "../../battle/logStream.js";
 import type { MonsterData } from "../../battle/battleFactory.js";
 import type { BattleState } from "../../battle/types.js";
 import { query } from "../../config/database.js";
@@ -50,6 +54,10 @@ import {
 import { stopBattleTicker } from "./runtime/ticker.js";
 import { removeBattleFromRedis } from "./runtime/persistence.js";
 import { settleArenaBattleIfNeeded } from "./pvp.js";
+import { markBattleSessionFinished } from "../battleSession/index.js";
+import {
+  buildBattleFinishedRealtimePayload,
+} from "./runtime/realtime.js";
 
 type ResolvedSettlementParticipants = {
   participants: BattleParticipant[];
@@ -154,6 +162,8 @@ async function finishBattleCore(
 ): Promise<BattleResult> {
   const state = engine.getState();
   const result = engine.getResult();
+  const finalLogDelta = consumeBattleLogDelta(battleId);
+  const finalLogCursor = getBattleLogCursor(battleId);
 
   const participantUserIds = (battleParticipants.get(battleId) || []).slice();
   const { participants, notificationUserIds } = await resolveSettlementParticipants(
@@ -267,13 +277,24 @@ async function finishBattleCore(
       rounds: result.rounds,
       rewards: rewardsData,
       stats: result.stats,
-      logs: result.logs,
+      logCursor: finalLogCursor,
       state,
       isTeamBattle: participantCount > 1,
       battleStartCooldownMs: BATTLE_START_COOLDOWN_MS,
       nextBattleAvailableAt: cooldownUntilMs,
     },
   };
+
+  const sessionSnapshot = markBattleSessionFinished(
+    battleId,
+    result.result as "attacker_win" | "defender_win" | "draw",
+  );
+  if (sessionSnapshot) {
+    battleResult.data = {
+      ...battleResult.data,
+      session: sessionSnapshot,
+    };
+  }
 
   try {
     if (state.battleType === "pvp") {
@@ -288,13 +309,23 @@ async function finishBattleCore(
 
   try {
     const gameServer = getGameServer();
+    const finishedRealtimePayload = buildBattleFinishedRealtimePayload({
+      battleId,
+      battleResult,
+      session: sessionSnapshot,
+      logs: finalLogDelta.logs,
+      logStart: finalLogDelta.logStart,
+      logDelta: finalLogDelta.logDelta,
+    });
     for (const participantUserId of notificationUserIds) {
       if (!Number.isFinite(participantUserId)) continue;
-      gameServer.emitToUser(participantUserId, "battle:update", {
-        kind: "battle_finished",
-        battleId,
-        ...battleResult,
-      });
+      if (finishedRealtimePayload) {
+        gameServer.emitToUser(
+          participantUserId,
+          "battle:update",
+          finishedRealtimePayload,
+        );
+      }
       void gameServer.pushCharacterUpdate(participantUserId);
     }
     if (state.battleType === "pvp") {

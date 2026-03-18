@@ -19,6 +19,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { consumeBattleLogDelta } from '../../battle/logStream.js';
 import {
   BASE_IDLE_MAX_DURATION_MS,
   isIdleDurationMsWithinLimit,
@@ -529,6 +530,7 @@ test('属性 6：确定性战斗结算 — 相同初始状态两次 autoExecute 
     // 深拷贝初始状态，确保两次执行使用完全相同的起点
     const stateA = deepCloneBattleState(initialState);
     const stateB = deepCloneBattleState(initialState);
+    stateB.battleId = `${battleId}-mirror`;
 
     const engineA = new BattleEngine(stateA);
     const engineB = new BattleEngine(stateB);
@@ -541,6 +543,8 @@ test('属性 6：确定性战斗结算 — 相同初始状态两次 autoExecute 
 
     const resultA = engineA.getState();
     const resultB = engineB.getState();
+    const logsA = consumeBattleLogDelta(resultA.battleId).logs;
+    const logsB = consumeBattleLogDelta(resultB.battleId).logs;
 
     // 验证结果一致性
     if (resultA.result !== resultB.result) {
@@ -559,18 +563,18 @@ test('属性 6：确定性战斗结算 — 相同初始状态两次 autoExecute 
       continue;
     }
 
-    if (resultA.logs.length !== resultB.logs.length) {
+    if (logsA.length !== logsB.length) {
       failCount++;
       if (failures.length < 3) {
-        failures.push(`run=${run}: logs.length 不一致 A=${resultA.logs.length} B=${resultB.logs.length}`);
+        failures.push(`run=${run}: logs.length 不一致 A=${logsA.length} B=${logsB.length}`);
       }
       continue;
     }
 
     // 验证每条日志的 type 和 round 一致（不比较完整 JSON，避免浮点数精度问题）
-    for (let i = 0; i < resultA.logs.length; i++) {
-      const logA = resultA.logs[i]!;
-      const logB = resultB.logs[i]!;
+    for (let i = 0; i < logsA.length; i++) {
+      const logA = logsA[i]!;
+      const logB = logsB[i]!;
       if (logA.type !== logB.type || logA.round !== logB.round) {
         failCount++;
         if (failures.length < 3) {
@@ -694,6 +698,7 @@ test('属性 8：战斗日志完整性 — autoExecute 后日志包含 round_sta
     engine.autoExecute();
 
     const state = engine.getState();
+    const logs = consumeBattleLogDelta(state.battleId).logs;
 
     // 验证 phase 已结束
     if (state.phase !== 'finished') {
@@ -715,27 +720,27 @@ test('属性 8：战斗日志完整性 — autoExecute 后日志包含 round_sta
     }
 
     // 验证日志包含 round_start
-    const hasRoundStart = state.logs.some((log) => log.type === 'round_start');
+    const hasRoundStart = logs.some((log) => log.type === 'round_start');
     if (!hasRoundStart) {
       failCount++;
       if (failures.length < 3) {
-        failures.push(`run=${run}: logs 中缺少 round_start 日志（共 ${state.logs.length} 条）`);
+        failures.push(`run=${run}: logs 中缺少 round_start 日志（共 ${logs.length} 条）`);
       }
       continue;
     }
 
     // 验证日志包含 round_end
-    const hasRoundEnd = state.logs.some((log) => log.type === 'round_end');
+    const hasRoundEnd = logs.some((log) => log.type === 'round_end');
     if (!hasRoundEnd) {
       failCount++;
       if (failures.length < 3) {
-        failures.push(`run=${run}: logs 中缺少 round_end 日志（共 ${state.logs.length} 条）`);
+        failures.push(`run=${run}: logs 中缺少 round_end 日志（共 ${logs.length} 条）`);
       }
       continue;
     }
 
     // 验证日志非空
-    if (state.logs.length === 0) {
+    if (logs.length === 0) {
       failCount++;
       if (failures.length < 3) {
         failures.push(`run=${run}: logs 为空`);

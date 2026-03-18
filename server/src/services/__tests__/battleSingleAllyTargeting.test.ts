@@ -23,7 +23,7 @@ import assert from 'node:assert/strict';
 import { executeSkill } from '../../battle/modules/skill.js';
 import { validateSkillUse } from '../../battle/utils/validation.js';
 import type { BattleSkill } from '../../battle/types.js';
-import { createState, createUnit } from './battleTestUtils.js';
+import { consumeBattleLogs, createState, createUnit } from './battleTestUtils.js';
 
 function createSingleAllySupportSkill(): BattleSkill {
   return {
@@ -100,7 +100,7 @@ test('单体友方技能显式指定队友时，治疗与增益都应命中该�
   const result = executeSkill(state, caster, skill, [ally.id]);
   assert.equal(result.success, true);
 
-  const actionLog = state.logs[0];
+  const actionLog = consumeBattleLogs(state)[0];
   if (!actionLog || actionLog.type !== 'action') {
     assert.fail('期望产生 action 日志');
   }

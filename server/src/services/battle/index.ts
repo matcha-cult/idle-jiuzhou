@@ -52,7 +52,12 @@ export {
 } from "./lifecycle.js";
 
 // ------ 组队钩子 ------
-export { onUserJoinTeam, onUserLeaveTeam, syncBattleStateOnReconnect } from "./teamHooks.js";
+export {
+  onUserJoinTeam,
+  onUserLeaveTeam,
+  syncBattleSnapshotToUser,
+  syncBattleStateOnReconnect,
+} from "./teamHooks.js";
 
 // ------ 快照 ------
 export { buildCharacterBattleSnapshot } from "./snapshot.js";

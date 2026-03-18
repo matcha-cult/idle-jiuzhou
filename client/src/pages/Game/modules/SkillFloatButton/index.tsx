@@ -4,6 +4,7 @@ import { getCharacterTechniqueStatus, resolveAssetUrl, type CharacterSkillSlotDt
 import { formatElementLabel, getElementToneClassName } from '../../shared/elementTheme';
 import { resolveIconUrl } from '../../shared/resolveIcon';
 import { gameSocket } from '../../../../services/gameSocket';
+import type { BattleRealtimePayload } from '../../../../services/battleRealtime';
 import { readIsMobileViewport, useIsMobile } from '../../shared/responsive';
 import { buildSkillCostEntries, normalizeSkillCost, resolveSkillCostRequirement } from '../../shared/skillCost';
 import { formatSkillEffectLines } from '../skillEffectFormatter';
@@ -62,13 +63,6 @@ type BattleStateWithUnitsDto = {
       units?: unknown;
     };
   };
-};
-
-type BattleUpdatePayloadDto = {
-  kind?: unknown;
-  battleId?: unknown;
-  state?: unknown;
-  data?: { state?: unknown } | null;
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
@@ -657,10 +651,9 @@ const SkillFloatButton: React.FC<SkillFloatButtonProps> = ({
     };
 
     gameSocket.connect();
-    const unsub = gameSocket.onBattleUpdate((raw) => {
-      const data = (isRecord(raw) ? (raw as BattleUpdatePayloadDto) : null) as BattleUpdatePayloadDto | null;
-      const kind = String(data?.kind ?? '');
-      const state = data?.state ?? data?.data?.state;
+    const unsub = gameSocket.onBattleUpdate((data: BattleRealtimePayload) => {
+      const kind = data.kind;
+      const state = data.kind === 'battle_abandoned' ? null : data.state;
       if (!state) return;
       // battle_started 表示新战斗开始（含秘境波次切换），需清除旧 battleId
       // 以便 syncFromState 能接受新战斗的 skillCooldowns（为 {}，即重置所有冷却）

@@ -7,11 +7,11 @@
  * 3. 不做什么：不直接修改 React state、不请求接口，也不决定 BattleArea 的自动下一场策略。
  *
  * 输入/输出：
- * - 输入：当前 socket battleId、队伍身份、Game 当前视图，以及是否已存在竞技场/秘境/重连/本地普通地图战斗上下文。
+ * - 输入：当前 socket battleId、队伍身份、Game 当前视图，以及是否已存在当前会话 battleId / 重连 battleId / 本地普通地图战斗上下文。
  * - 输出：`RealtimeBattleViewSyncMode`，供 Game 页决定接管 teamBattleId / reconnectBattleId，或保持本地战斗不变。
  *
  * 数据流/状态流：
- * - socket battle:update -> 本模块判定接管模式 -> Game 页决定是否写入 teamBattleId / reconnectBattleId -> BattleArea 再依据 externalBattleId 决定是否走外部驱动。
+ * - socket battle:update -> 本模块判定接管模式 -> Game 页决定是否写入 teamBattleId / reconnectBattleId 或接管 battleSession -> BattleArea 再依据 externalBattleId 决定是否走外部驱动。
  *
  * 关键边界条件与坑点：
  * 1. 普通地图本地战斗在 BattleArea 已经持有时，不能再额外写入 reconnectBattleId；否则 BattleArea 会把“本地连战”误判成“外部战斗等待 onNext”，自动下一场会被掐断。
@@ -37,8 +37,7 @@ export const resolveRealtimeBattleViewSyncMode = (params: {
   isTeamLeader: boolean;
   viewMode: BattleViewMode;
   hasLocalBattleTargets: boolean;
-  currentArenaBattleId: string | null;
-  currentDungeonBattleId: string | null;
+  currentSessionBattleId: string | null;
   currentReconnectBattleId: string | null;
 }): RealtimeBattleViewSyncMode => {
   if (params.inTeam && !params.isTeamLeader) {
@@ -46,7 +45,7 @@ export const resolveRealtimeBattleViewSyncMode = (params: {
   }
 
   const hasExternalBattleContext = Boolean(
-    params.currentArenaBattleId || params.currentDungeonBattleId || params.currentReconnectBattleId,
+    params.currentSessionBattleId || params.currentReconnectBattleId,
   );
   const isHoldingLocalPlainMapBattle =
     params.viewMode === 'battle'

@@ -3,7 +3,7 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireCharacter } from '../middleware/auth.js';
 import { query } from '../config/database.js';
 import { canChallengeToday, getArenaOpponents, getArenaRecords, getArenaStatus } from '../services/arenaService.js';
-import { startPVPBattle } from '../domains/battle/index.js';
+import { startPVPBattleSession } from '../services/battleSession/index.js';
 import { sendSuccess, sendResult } from '../middleware/response.js';
 import { BusinessError } from '../middleware/BusinessError.js';
 import { getSingleQueryValue, parsePositiveInt } from '../services/shared/httpParam.js';
@@ -56,8 +56,13 @@ router.post('/challenge', asyncHandler(async (req, res) => {
   }
 
   const battleId = `arena-battle-${characterId}-${opponentCharacterId}-${Date.now()}`;
-  const startRes = await startPVPBattle(userId, opponentCharacterId, battleId);
-  if (!startRes.success || !startRes.data?.battleId) return sendResult(res, startRes);
+  const startRes = await startPVPBattleSession({
+    userId,
+    opponentCharacterId,
+    battleId,
+    mode: 'arena',
+  });
+  if (!startRes.success || !startRes.data?.session.currentBattleId) return sendResult(res, startRes);
 
   await query(
     `
@@ -68,7 +73,7 @@ router.post('/challenge', asyncHandler(async (req, res) => {
     [battleId, characterId, opponentCharacterId]
   );
 
-  return sendSuccess(res, { battleId });
+  return sendSuccess(res, { battleId, session: startRes.data.session });
 }));
 
 router.post('/match', asyncHandler(async (req, res) => {
@@ -92,8 +97,13 @@ router.post('/match', asyncHandler(async (req, res) => {
   }
 
   const battleId = `arena-battle-${characterId}-${opponentCharacterId}-${Date.now()}`;
-  const startRes = await startPVPBattle(userId, opponentCharacterId, battleId);
-  if (!startRes.success || !startRes.data?.battleId) return sendResult(res, startRes);
+  const startRes = await startPVPBattleSession({
+    userId,
+    opponentCharacterId,
+    battleId,
+    mode: 'arena',
+  });
+  if (!startRes.success || !startRes.data?.session.currentBattleId) return sendResult(res, startRes);
 
   await query(
     `
@@ -106,6 +116,7 @@ router.post('/match', asyncHandler(async (req, res) => {
 
   return sendSuccess(res, {
     battleId,
+    session: startRes.data.session,
     opponent: { id: pick.id, name: pick.name, realm: pick.realm, power: pick.power, score: pick.score },
   });
 }));

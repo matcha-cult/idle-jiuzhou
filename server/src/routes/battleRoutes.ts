@@ -8,7 +8,6 @@ import { requireAuth } from '../middleware/auth.js';
 import { battleService } from '../domains/battle/index.js';
 import { sendResult } from '../middleware/response.js';
 import { BusinessError } from '../middleware/BusinessError.js';
-import { getSingleParam, parseNonEmptyText } from '../services/shared/httpParam.js';
 
 const router = Router();
 
@@ -55,22 +54,6 @@ router.post('/action', requireAuth, asyncHandler(async (req, res) => {
     skillId,
     targetIds || []
   );
-
-  return sendResult(res, result);
-}));
-
-/**
- * GET /api/battle/state/:battleId
- * 获取战斗状态
- */
-router.get('/state/:battleId', requireAuth, asyncHandler(async (req, res) => {
-  const battleId = parseNonEmptyText(getSingleParam(req.params.battleId));
-
-  if (!battleId) {
-    throw new BusinessError('缺少战斗ID');
-  }
-
-  const result = await battleService.getBattleState(battleId);
 
   return sendResult(res, result);
 }));
