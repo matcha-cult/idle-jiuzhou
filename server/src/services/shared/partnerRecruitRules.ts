@@ -733,6 +733,15 @@ export type PartnerRecruitCooldownState = {
   isCoolingDown: boolean;
 };
 
+export const shouldPartnerRecruitApplyCooldown = (
+  latestJobStatus: string | null | undefined,
+): boolean => {
+  return latestJobStatus === 'pending'
+    || latestJobStatus === 'generated_draft'
+    || latestJobStatus === 'accepted'
+    || latestJobStatus === 'discarded';
+};
+
 type PartnerRecruitCooldownOptions = {
   bypassCooldown?: boolean;
   cooldownReductionRate?: number;

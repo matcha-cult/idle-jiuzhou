@@ -21,6 +21,7 @@ import test from 'node:test';
 import {
   PARTNER_RECRUIT_COOLDOWN_HOURS,
   buildPartnerRecruitCooldownState,
+  shouldPartnerRecruitApplyCooldown,
   shouldBypassPartnerRecruitCooldown,
 } from '../shared/partnerRecruitRules.js';
 
@@ -74,4 +75,14 @@ test('buildPartnerRecruitCooldownState: 开发口径下应直接返回无冷却�
   assert.equal(state.cooldownUntil, null);
   assert.equal(state.cooldownRemainingSeconds, 0);
   assert.equal(state.isCoolingDown, false);
+});
+
+test('shouldPartnerRecruitApplyCooldown: 生成失败或退款后不应继续占用招募冷却', () => {
+  assert.equal(shouldPartnerRecruitApplyCooldown('pending'), true);
+  assert.equal(shouldPartnerRecruitApplyCooldown('generated_draft'), true);
+  assert.equal(shouldPartnerRecruitApplyCooldown('accepted'), true);
+  assert.equal(shouldPartnerRecruitApplyCooldown('discarded'), true);
+  assert.equal(shouldPartnerRecruitApplyCooldown('failed'), false);
+  assert.equal(shouldPartnerRecruitApplyCooldown('refunded'), false);
+  assert.equal(shouldPartnerRecruitApplyCooldown(null), false);
 });

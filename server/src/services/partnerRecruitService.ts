@@ -61,6 +61,7 @@ import {
   isPartnerRecruitPreviewExpired,
   PARTNER_RECRUIT_SPIRIT_STONES_COST,
   resolvePartnerRecruitQualityByWeight,
+  shouldPartnerRecruitApplyCooldown,
   type PartnerRecruitCombatStyle,
   type PartnerRecruitDraft,
   type PartnerRecruitQuality,
@@ -722,7 +723,10 @@ class PartnerRecruitService {
     await this.discardExpiredDraftJobsTx(characterId);
     const latestJob = await this.loadLatestJobRow(characterId, false);
     const cooldownReductionRate = await getActiveMonthCardCooldownReductionRate(characterId);
-    const cooldownState = buildPartnerRecruitCooldownState(latestJob?.cooldownStartedAt ?? null, new Date(), {
+    const latestCooldownStartedAt = latestJob && shouldPartnerRecruitApplyCooldown(latestJob.status)
+      ? latestJob.cooldownStartedAt
+      : null;
+    const cooldownState = buildPartnerRecruitCooldownState(latestCooldownStartedAt, new Date(), {
       cooldownReductionRate,
     });
     const preview = latestJob?.previewPartnerDefId
@@ -777,7 +781,10 @@ class PartnerRecruitService {
     }
 
     const cooldownReductionRate = await getActiveMonthCardCooldownReductionRate(characterId);
-    const cooldownState = buildPartnerRecruitCooldownState(latestJob?.cooldownStartedAt ?? null, new Date(), {
+    const latestCooldownStartedAt = latestJob && shouldPartnerRecruitApplyCooldown(latestJob.status)
+      ? latestJob.cooldownStartedAt
+      : null;
+    const cooldownState = buildPartnerRecruitCooldownState(latestCooldownStartedAt, new Date(), {
       cooldownReductionRate,
     });
     if (cooldownState.isCoolingDown) {
