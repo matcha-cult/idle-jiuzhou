@@ -11,12 +11,13 @@
  * - 输出：自动洗炼目标选择状态、可用性、词条池预览控制器与执行函数。
  *
  * 数据流/状态流：
- * - 当前装备/洗炼状态 -> 本 Hook 计算目标选项与禁用态；
+ * - 当前装备/洗炼状态 -> 本 Hook 计算目标选项与禁用态，并独立管理“查看词条池”的预览数据流；
  * - 点击开始自动洗炼 -> 调用共享执行器 -> 成功后通知外层刷新库存与锁定索引。
  *
  * 关键边界条件与坑点：
  * 1) 词条池未就绪时必须禁止自动洗炼，否则目标下拉会只剩当前词条，用户会误以为目标池不完整。
- * 2) 自动洗炼中如果已经成功洗出若干次再失败，仍需刷新外层库存状态，否则界面会停留在旧词条。
+ * 2) “查看词条池”属于手动查询能力，不能被自动洗炼开关一并关闭，否则按钮会可见但点击无响应。
+ * 3) 自动洗炼中如果已经成功洗出若干次再失败，仍需刷新外层库存状态，否则界面会停留在旧词条。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -102,6 +103,7 @@ export const useAutoRerollController = ({
   const [autoRerollMaxAttempts, setAutoRerollMaxAttempts] = useState(50);
   const [autoRerollSubmitting, setAutoRerollSubmitting] = useState(false);
   const autoRerollFeatureEnabled = enabled && AUTO_REROLL_FEATURE_ENABLED;
+  const poolPreviewEnabled = enabled;
 
   const {
     poolPreviewOpen,
@@ -113,7 +115,7 @@ export const useAutoRerollController = ({
     closePoolPreview,
   } = useAffixPoolPreview({
     itemId: item?.id ?? null,
-    enabled: autoRerollFeatureEnabled,
+    enabled: poolPreviewEnabled,
     autoLoad: autoRerollFeatureEnabled,
   });
 
