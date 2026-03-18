@@ -4,6 +4,7 @@ import { requireAuth, requireCharacter } from '../middleware/auth.js';
 import { bountyService } from '../services/bountyService.js';
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
 import { sendSuccess, sendResult } from '../middleware/response.js';
+import { notifyTaskOverviewUpdate } from '../services/taskOverviewPush.js';
 
 const router = Router();
 
@@ -28,6 +29,7 @@ router.post('/claim', requireCharacter, asyncHandler(async (req, res) => {
     const result = await bountyService.claimBounty(characterId, bountyInstanceId);
     if (!result.success) return sendResult(res, result);
     await safePushCharacterUpdate(userId);
+    await notifyTaskOverviewUpdate(characterId, ['bounty']);
     return sendResult(res, result);
 }));
 
@@ -88,6 +90,7 @@ router.post('/submit-materials', requireCharacter, asyncHandler(async (req, res)
     const result = await bountyService.submitBountyMaterials(characterId, taskId);
     if (!result.success) return sendResult(res, result);
     await safePushCharacterUpdate(userId);
+    await notifyTaskOverviewUpdate(characterId, ['bounty']);
     return sendResult(res, result);
 }));
 

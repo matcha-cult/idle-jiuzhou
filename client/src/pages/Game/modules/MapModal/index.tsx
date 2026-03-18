@@ -1,6 +1,6 @@
 import { Button, Input, Modal, Select, Table, Tabs, Tag } from 'antd';
 import { LeftOutlined, SearchOutlined } from '@ant-design/icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IMG_MAP_01 as map01, IMG_MAP_02 as map02, IMG_MAP_03 as map03, IMG_MAP_04 as map04, IMG_MAP_05 as map05, IMG_MAP_06 as map06 } from '../../shared/imageAssets';
 import {
   type DungeonDefLite,
@@ -47,6 +47,12 @@ type DungeonDifficultyOption = {
   label: string;
 };
 
+type MapEntryDetail = Pick<MapEntry, 'npcs' | 'monsters' | 'drops' | 'dungeonStages' | 'dungeonEntry'> & {
+  startRoomId: string;
+  monsterObjs?: MapMonster[];
+  monsterDropsById?: Record<string, MonsterDrop[]>;
+};
+
 const categoryLabels: Record<MapCategory, string> = {
   world: '大世界',
   dungeon: '秘境',
@@ -72,6 +78,52 @@ const dungeonDifficultyFallbackLabels: Record<number, string> = {
 };
 const getDungeonDetailCacheKey = (dungeonId: string, rank: number): string => `${dungeonId}@@${rank}`;
 
+const resolveDungeonDifficultyOption = (
+  difficulty: NonNullable<DungeonPreviewResponse['data']>['difficulty'],
+  fallbackRank: number,
+): DungeonDifficultyOption => {
+  const parsedRank =
+    typeof difficulty?.difficulty_rank === 'number' && Number.isFinite(difficulty.difficulty_rank)
+      ? Math.floor(difficulty.difficulty_rank)
+      : fallbackRank;
+  const label =
+    typeof difficulty?.name === 'string' && difficulty.name.trim()
+      ? difficulty.name.trim()
+      : dungeonDifficultyFallbackLabels[parsedRank] || `难度${parsedRank}`;
+  return {
+    value: parsedRank,
+    label,
+  };
+};
+
+const mergeDungeonDifficultyOptions = (
+  current: DungeonDifficultyOption[],
+  next: DungeonDifficultyOption,
+): DungeonDifficultyOption[] => {
+  const optionByRank = new Map<number, DungeonDifficultyOption>();
+  for (const option of current) {
+    optionByRank.set(option.value, option);
+  }
+  optionByRank.set(next.value, next);
+  return Array.from(optionByRank.values()).sort((a, b) => a.value - b.value);
+};
+
+const buildDungeonPreviewDetail = (
+  preview: NonNullable<DungeonPreviewResponse['data']> | null | undefined,
+): MapEntryDetail => {
+  const monsters = preview?.monsters ?? [];
+  const drops = preview?.drops ?? [];
+  return {
+    npcs: [],
+    monsters: monsters.map((monster) => monster.name).filter(Boolean),
+    monsterObjs: monsters.map((monster) => ({ id: monster.id, name: monster.name })).filter((monster) => monster.id && monster.name),
+    drops: drops.map((drop) => ({ name: drop.name, quality: drop.quality || '普通', from: drop.from || '奖励' })),
+    dungeonStages: preview?.stages ?? [],
+    dungeonEntry: preview?.entry ?? null,
+    startRoomId: '',
+  };
+};
+
 interface MapModalProps {
   open: boolean;
   onClose: () => void;
@@ -96,11 +148,7 @@ const MapModal: React.FC<MapModalProps> = ({
   const [detailById, setDetailById] = useState<
     Record<
       string,
-      Pick<MapEntry, 'npcs' | 'monsters' | 'drops' | 'dungeonStages' | 'dungeonEntry'> & {
-        startRoomId: string;
-        monsterObjs?: MapMonster[];
-        monsterDropsById?: Record<string, MonsterDrop[]>;
-      }
+      MapEntryDetail
     >
   >({});
   const [listLoading, setListLoading] = useState(false);
@@ -110,6 +158,7 @@ const MapModal: React.FC<MapModalProps> = ({
   const [dungeonRankById, setDungeonRankById] = useState<Record<string, number>>({});
   const [dungeonDifficultyOptionsById, setDungeonDifficultyOptionsById] = useState<Record<string, DungeonDifficultyOption[]>>({});
   const [dungeonDifficultyLoadingById, setDungeonDifficultyLoadingById] = useState<Record<string, boolean>>({});
+  const [dungeonDifficultyResolvedById, setDungeonDifficultyResolvedById] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (open) setShowMobileDetail(false);
@@ -123,6 +172,7 @@ const MapModal: React.FC<MapModalProps> = ({
     setListLoading(false);
     setDetailById({});
     setDetailLoading(false);
+    setDungeonDifficultyResolvedById({});
   }, [open]);
 
   useEffect(() => {
@@ -225,52 +275,45 @@ const MapModal: React.FC<MapModalProps> = ({
     return activeMap.category === 'dungeon' ? getDungeonDetailCacheKey(activeMap.id, activeDungeonRank) : activeMap.id;
   }, [activeDungeonRank, activeMap]);
 
-  useEffect(() => {
-    if (!open || !activeMap || activeMap.category !== 'dungeon') return;
-    if (dungeonDifficultyOptionsById[activeMap.id]) return;
-    let cancelled = false;
-    const dungeonId = activeMap.id;
+  const loadDungeonDifficultyOptions = useCallback(async (dungeonId: string): Promise<void> => {
+    if (dungeonDifficultyResolvedById[dungeonId] || dungeonDifficultyLoadingById[dungeonId]) {
+      return;
+    }
     setDungeonDifficultyLoadingById((prev) => ({ ...prev, [dungeonId]: true }));
-    const loadOptions = async () => {
-      try {
-        const optionByRank = new Map<number, DungeonDifficultyOption>();
-        for (const rank of DUNGEON_DIFFICULTY_CANDIDATES) {
-          const res = await getDungeonPreview(dungeonId, rank, SILENT_API_REQUEST_CONFIG).catch(() => null);
-          const difficulty = res?.success ? (res.data?.difficulty ?? null) : null;
-          if (!difficulty) continue;
-          const parsedRank =
-            typeof difficulty.difficulty_rank === 'number' && Number.isFinite(difficulty.difficulty_rank)
-              ? Math.floor(difficulty.difficulty_rank)
-              : rank;
-          if (parsedRank <= 0 || optionByRank.has(parsedRank)) continue;
-          const name =
-            typeof difficulty.name === 'string' && difficulty.name.trim()
-              ? difficulty.name.trim()
-              : dungeonDifficultyFallbackLabels[parsedRank] || `难度${parsedRank}`;
-          optionByRank.set(parsedRank, { value: parsedRank, label: name });
-        }
-        if (cancelled) return;
-        const options = Array.from(optionByRank.values()).sort((a, b) => a.value - b.value);
-        const normalizedOptions =
-          options.length > 0 ? options : [{ value: 1, label: dungeonDifficultyFallbackLabels[1] || '普通' }];
-        setDungeonDifficultyOptionsById((prev) => ({ ...prev, [dungeonId]: normalizedOptions }));
-        setDungeonRankById((prev) => {
-          const currentRank = prev[dungeonId];
-          if (typeof currentRank === 'number' && normalizedOptions.some((opt) => opt.value === currentRank)) {
-            return prev;
-          }
-          return { ...prev, [dungeonId]: normalizedOptions[0].value };
-        });
-      } finally {
-        if (cancelled) return;
-        setDungeonDifficultyLoadingById((prev) => ({ ...prev, [dungeonId]: false }));
+    try {
+      let mergedOptions = dungeonDifficultyOptionsById[dungeonId] ?? [];
+      for (const rank of DUNGEON_DIFFICULTY_CANDIDATES) {
+        if (mergedOptions.some((option) => option.value === rank)) continue;
+        const res = await getDungeonPreview(dungeonId, rank, SILENT_API_REQUEST_CONFIG).catch(() => null);
+        if (!res?.success || !res.data?.difficulty) continue;
+        const option = resolveDungeonDifficultyOption(res.data.difficulty, rank);
+        mergedOptions = mergeDungeonDifficultyOptions(mergedOptions, option);
+        const detailKey = getDungeonDetailCacheKey(dungeonId, option.value);
+        const previewDetail = buildDungeonPreviewDetail(res.data);
+        setDetailById((prev) => (
+          prev[detailKey]
+            ? prev
+            : {
+              ...prev,
+              [detailKey]: previewDetail,
+            }
+        ));
       }
-    };
-    void loadOptions();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeMap, dungeonDifficultyOptionsById, open]);
+      const normalizedOptions =
+        mergedOptions.length > 0 ? mergedOptions : [{ value: 1, label: dungeonDifficultyFallbackLabels[1] || '普通' }];
+      setDungeonDifficultyOptionsById((prev) => ({ ...prev, [dungeonId]: normalizedOptions }));
+      setDungeonDifficultyResolvedById((prev) => ({ ...prev, [dungeonId]: true }));
+      setDungeonRankById((prev) => {
+        const currentRank = prev[dungeonId];
+        if (typeof currentRank === 'number' && normalizedOptions.some((option) => option.value === currentRank)) {
+          return prev;
+        }
+        return { ...prev, [dungeonId]: normalizedOptions[0].value };
+      });
+    } finally {
+      setDungeonDifficultyLoadingById((prev) => ({ ...prev, [dungeonId]: false }));
+    }
+  }, [dungeonDifficultyLoadingById, dungeonDifficultyOptionsById, dungeonDifficultyResolvedById]);
 
   useEffect(() => {
     if (!open) return;
@@ -286,22 +329,19 @@ const MapModal: React.FC<MapModalProps> = ({
       getDungeonPreview(safeActiveId, activeDungeonRank, SILENT_API_REQUEST_CONFIG)
         .then((detailRes) => {
           if (cancelled) return;
-          const monsters = detailRes?.success && detailRes.data?.monsters ? detailRes.data.monsters : [];
-          const drops = detailRes?.success && detailRes.data?.drops ? detailRes.data.drops : [];
-          const dungeonStages = detailRes?.success && detailRes.data?.stages ? detailRes.data.stages : [];
-          const dungeonEntry = detailRes?.success ? (detailRes.data?.entry ?? null) : null;
+          const previewData = detailRes?.success ? (detailRes.data ?? null) : null;
+          const detailEntry = buildDungeonPreviewDetail(previewData);
           setDetailById((prev) => ({
             ...prev,
-            [detailKey]: {
-              npcs: [],
-              monsters: monsters.map((m) => m.name).filter(Boolean),
-              monsterObjs: monsters.map((m) => ({ id: m.id, name: m.name })).filter((m) => m.id && m.name),
-              drops: drops.map((d) => ({ name: d.name, quality: d.quality || '普通', from: d.from || '奖励' })),
-              dungeonStages,
-              dungeonEntry,
-              startRoomId: '',
-            },
+            [detailKey]: detailEntry,
           }));
+          if (previewData?.difficulty) {
+            const difficultyOption = resolveDungeonDifficultyOption(previewData.difficulty, activeDungeonRank);
+            setDungeonDifficultyOptionsById((prev) => ({
+              ...prev,
+              [safeActiveId]: mergeDungeonDifficultyOptions(prev[safeActiveId] ?? [], difficultyOption),
+            }));
+          }
         })
         .catch(() => {
           if (cancelled) return;
@@ -666,6 +706,10 @@ const MapModal: React.FC<MapModalProps> = ({
                         value={activeDungeonRank}
                         options={activeDungeonDifficultyOptions}
                         loading={activeDungeonDifficultyLoading}
+                        onOpenChange={(nextOpen) => {
+                          if (!nextOpen) return;
+                          void loadDungeonDifficultyOptions(mergedActiveMap.id);
+                        }}
                         onChange={(value) => {
                           const nextRank = Number(value);
                           if (!Number.isFinite(nextRank) || nextRank <= 0) return;

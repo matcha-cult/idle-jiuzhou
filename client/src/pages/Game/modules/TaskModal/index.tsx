@@ -8,6 +8,7 @@ import {
   submitTaskToNpc,
   submitBountyMaterials,
 } from '../../../../services/api';
+import { gameSocket, type TaskOverviewScope } from '../../../../services/gameSocket';
 import { getMainQuestProgress, type MainQuestProgressDto } from '../../../../services/mainQuestApi';
 import { useIsMobile } from '../../shared/responsive';
 import { getRealmRankFromLiteral as getRealmRank } from '../../shared/realm';
@@ -80,6 +81,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [mainQuestProgress, setMainQuestProgress] = useState<MainQuestProgressDto | null>(null);
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const lastExpireRefreshAtRef = useRef<number>(0);
+  const socketRefreshTimerRef = useRef<number | null>(null);
+  const socketRefreshTaskListRef = useRef<boolean>(false);
+  const socketRefreshBountyRef = useRef<boolean>(false);
   const loadedByCategoryRef = useRef<Record<TaskCategory, boolean>>(createEmptyTaskLoadedState());
   const inflightRequestsRef = useRef<Record<TaskCategory | 'taskList', Promise<void> | null>>({
     main: null,
@@ -248,6 +252,42 @@ const TaskModal: React.FC<TaskModalProps> = ({
     await loadTaskOverview(true);
   }, [loadBountyTaskOverview, loadMainQuestProgress, loadTaskOverview]);
 
+  const clearSocketRefreshTimer = useCallback(() => {
+    if (socketRefreshTimerRef.current == null) return;
+    window.clearTimeout(socketRefreshTimerRef.current);
+    socketRefreshTimerRef.current = null;
+  }, []);
+
+  const flushSocketRefresh = useCallback(() => {
+    const shouldRefreshTaskList = socketRefreshTaskListRef.current;
+    const shouldRefreshBounty = socketRefreshBountyRef.current;
+    socketRefreshTaskListRef.current = false;
+    socketRefreshBountyRef.current = false;
+    if (shouldRefreshTaskList) {
+      void refreshCategory('side');
+    }
+    if (shouldRefreshBounty) {
+      void refreshCategory('bounty');
+    }
+  }, [refreshCategory]);
+
+  const queueSocketRefresh = useCallback((scopes: readonly TaskOverviewScope[]) => {
+    for (const scope of scopes) {
+      if (scope === 'task') {
+        socketRefreshTaskListRef.current = true;
+      }
+      if (scope === 'bounty') {
+        socketRefreshBountyRef.current = true;
+      }
+    }
+    if (!socketRefreshTaskListRef.current && !socketRefreshBountyRef.current) return;
+    clearSocketRefreshTimer();
+    socketRefreshTimerRef.current = window.setTimeout(() => {
+      socketRefreshTimerRef.current = null;
+      flushSocketRefresh();
+    }, 180);
+  }, [clearSocketRefreshTimer, flushSocketRefresh]);
+
   const markCategoriesStale = useCallback((categories: TaskCategory[]) => {
     for (const targetCategory of categories) {
       loadedByCategoryRef.current[targetCategory] = false;
@@ -310,6 +350,21 @@ const TaskModal: React.FC<TaskModalProps> = ({
     lastExpireRefreshAtRef.current = now;
     void refreshCategory('bounty');
   }, [bountyTasks, category, loadingByCategory.bounty, nowTs, open, refreshCategory]);
+
+  useEffect(() => {
+    if (!open) {
+      socketRefreshTaskListRef.current = false;
+      socketRefreshBountyRef.current = false;
+      clearSocketRefreshTimer();
+      return;
+    }
+
+    return gameSocket.onTaskOverviewUpdate((payload) => {
+      const currentCharacterId = gameSocket.getCharacter()?.id ?? 0;
+      if (payload.characterId !== currentCharacterId) return;
+      queueSocketRefresh(payload.scopes);
+    });
+  }, [clearSocketRefreshTimer, open, queueSocketRefresh]);
 
   const loading = loadingByCategory[category];
   const taskOverviewRows = useMemo(

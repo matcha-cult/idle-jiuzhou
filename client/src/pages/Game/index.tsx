@@ -735,8 +735,6 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const taskIndicatorQueuedRefreshTimerRef = useRef<number | null>(null);
   const taskIndicatorExpiryTimerRef = useRef<number | null>(null);
   const latestBountyOverviewTasksRef = useRef<BountyTaskOverviewRowDto[]>([]);
-  const currentMapIdSnapshotRef = useRef(currentMapId);
-  const hasHydratedPositionStateRef = useRef(hasHydratedPosition);
   const dungeonBattleIdRef = useRef<string | null>(null);
   const dungeonInstanceIdRef = useRef<string | null>(null);
   const arenaBattleIdRef = useRef<string | null>(null);
@@ -780,14 +778,6 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   useEffect(() => {
     reconnectBattleIdRef.current = reconnectBattleId;
   }, [reconnectBattleId]);
-
-  useEffect(() => {
-    currentMapIdSnapshotRef.current = currentMapId;
-  }, [currentMapId]);
-
-  useEffect(() => {
-    hasHydratedPositionStateRef.current = hasHydratedPosition;
-  }, [hasHydratedPosition]);
 
   useEffect(() => {
     viewModeRef.current = viewMode;
@@ -1052,7 +1042,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
       setTrackedRoomIds([]);
       return;
     }
-    if (homeOverviewLoadingRef.current) {
+    if (!homeOverviewSettled) {
       return;
     }
 
@@ -1066,7 +1056,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     }
 
     await loadTrackedRoomIdsByMap(currentMapId);
-  }, [currentMapId, hasHydratedPosition, loadTrackedRoomIdsByMap]);
+  }, [currentMapId, hasHydratedPosition, homeOverviewSettled, loadTrackedRoomIdsByMap]);
 
   useEffect(() => {
     void refreshTrackedRoomIds();
@@ -1765,6 +1755,11 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     }, Math.max(0, delayMs));
   }, [characterId, clearTaskIndicatorQueuedRefreshTimer, refreshTaskIndicator]);
 
+  const handleTaskCompletedChange = useCallback(() => {
+    if (gameSocket.isSocketConnected()) return;
+    void refreshTaskIndicator();
+  }, [refreshTaskIndicator]);
+
   useEffect(() => {
     if (!characterId) return;
 
@@ -1784,10 +1779,9 @@ const Game: FC<GameProps> = ({ onLogout }) => {
           homeOverviewLoadingRef.current = false;
           setHomeOverviewRealmOverview(null);
           setHomeOverviewIdleSession(undefined);
+          pendingHomeTaskSnapshotRef.current = null;
+          pendingHomeMainQuestSnapshotRef.current = null;
           setHomeOverviewSettled(true);
-          if (hasHydratedPositionStateRef.current && currentMapIdSnapshotRef.current) {
-            void loadTrackedRoomIdsByMap(currentMapIdSnapshotRef.current);
-          }
           return;
         }
 
@@ -1804,23 +1798,16 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         applyTaskIndicatorSnapshot(overview.task.tasks, overview.task.bountyTasks, () => {
           void refreshTaskIndicator();
         });
-
-        const currentMapIdValue = currentMapIdSnapshotRef.current;
-        if (hasHydratedPositionStateRef.current && currentMapIdValue) {
-          pendingHomeTaskSnapshotRef.current = null;
-          pendingHomeMainQuestSnapshotRef.current = null;
-          setTrackedRoomIds(resolveTrackedRoomIdsForMap(currentMapIdValue, overview.task.tasks, overview.mainQuest));
-        }
+        homeOverviewLoadingRef.current = false;
         setHomeOverviewSettled(true);
       } catch {
         if (homeOverviewRequestSeqRef.current !== requestSeq) return;
         homeOverviewLoadingRef.current = false;
         setHomeOverviewRealmOverview(null);
         setHomeOverviewIdleSession(undefined);
+        pendingHomeTaskSnapshotRef.current = null;
+        pendingHomeMainQuestSnapshotRef.current = null;
         setHomeOverviewSettled(true);
-        if (hasHydratedPositionStateRef.current && currentMapIdSnapshotRef.current) {
-          void loadTrackedRoomIdsByMap(currentMapIdSnapshotRef.current);
-        }
       } finally {
         if (homeOverviewRequestSeqRef.current === requestSeq) {
           homeOverviewLoadingRef.current = false;
@@ -1831,7 +1818,6 @@ const Game: FC<GameProps> = ({ onLogout }) => {
     applyTaskIndicatorSnapshot,
     applyTeamOverview,
     characterId,
-    loadTrackedRoomIdsByMap,
     refreshTaskIndicator,
   ]);
 
@@ -1865,16 +1851,13 @@ const Game: FC<GameProps> = ({ onLogout }) => {
 
   useEffect(() => {
     if (!characterId) return;
-    let isSyncingCurrentCharacter = true;
-    const unsubscribe = gameSocket.onCharacterUpdate(() => {
-      // `onCharacterUpdate` 订阅时会同步回放当前角色，首页首屏刷新已由上面的
-      // `characterId` 初始化 effect 承担，这里跳过这次同步回放，避免任务总览重复请求。
-      if (isSyncingCurrentCharacter) return;
+    const unsubscribe = gameSocket.onTaskOverviewUpdate((payload) => {
+      if (payload.characterId !== characterId) return;
+      if (!homeOverviewSettled) return;
       queueTaskIndicatorRefresh();
     });
-    isSyncingCurrentCharacter = false;
     return unsubscribe;
-  }, [characterId, queueTaskIndicatorRefresh]);
+  }, [characterId, homeOverviewSettled, queueTaskIndicatorRefresh]);
 
   const spiritStones = character?.spiritStones || 0;
   const silver = character?.silver || 0;
@@ -2745,9 +2728,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
               window.dispatchEvent(new Event('room:objects:changed'));
             })();
           }}
-          onTaskCompletedChange={() => {
-            void refreshTaskIndicator();
-          }}
+          onTaskCompletedChange={handleTaskCompletedChange}
         />
       )}
       {monthCardModalOpen && (

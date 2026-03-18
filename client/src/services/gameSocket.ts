@@ -184,6 +184,12 @@ type IdleUpdateListener = (data: IdleUpdatePayload) => void;
 type IdleFinishedListener = (data: IdleFinishedPayload) => void;
 export type MailIndicatorPayload = NonNullable<MailUnreadResponse["data"]>;
 type MailUpdateListener = (data: MailIndicatorPayload) => void;
+export type TaskOverviewScope = "task" | "bounty";
+export interface TaskOverviewUpdatePayload {
+  characterId: number;
+  scopes: TaskOverviewScope[];
+}
+type TaskOverviewUpdateListener = (data: TaskOverviewUpdatePayload) => void;
 export type GameTimeSyncPayload = GameTimeSnapshotDto;
 type GameTimeSyncListener = (data: GameTimeSyncPayload) => void;
 
@@ -263,6 +269,7 @@ class GameSocketService {
   private idleUpdateListeners: Set<IdleUpdateListener> = new Set();
   private idleFinishedListeners: Set<IdleFinishedListener> = new Set();
   private mailUpdateListeners: Set<MailUpdateListener> = new Set();
+  private taskOverviewUpdateListeners: Set<TaskOverviewUpdateListener> = new Set();
   private gameTimeSyncListeners: Set<GameTimeSyncListener> = new Set();
   private techniqueResearchResultListeners: Set<TechniqueResearchResultListener> = new Set();
   private techniqueResearchStatusListeners: Set<TechniqueResearchStatusListener> =
@@ -398,6 +405,10 @@ class GameSocketService {
     this.socket.on("mail:update", (data: MailIndicatorPayload) => {
       this.currentMailIndicator = data;
       this.notifyMailUpdateListeners(data);
+    });
+
+    this.socket.on("task:update", (data: TaskOverviewUpdatePayload) => {
+      this.notifyTaskOverviewUpdateListeners(data);
     });
 
     this.socket.on("game:time-sync", (data: GameTimeSyncPayload) => {
@@ -640,6 +651,11 @@ class GameSocketService {
     return () => this.gameTimeSyncListeners.delete(listener);
   }
 
+  onTaskOverviewUpdate(listener: TaskOverviewUpdateListener): () => void {
+    this.taskOverviewUpdateListeners.add(listener);
+    return () => this.taskOverviewUpdateListeners.delete(listener);
+  }
+
   onTechniqueResearchResult(listener: TechniqueResearchResultListener): () => void {
     this.techniqueResearchResultListeners.add(listener);
     return () => this.techniqueResearchResultListeners.delete(listener);
@@ -787,6 +803,12 @@ class GameSocketService {
 
   private notifyMailUpdateListeners(data: MailIndicatorPayload): void {
     this.mailUpdateListeners.forEach((listener) => listener(data));
+  }
+
+  private notifyTaskOverviewUpdateListeners(
+    data: TaskOverviewUpdatePayload,
+  ): void {
+    this.taskOverviewUpdateListeners.forEach((listener) => listener(data));
   }
 
   private notifyGameTimeSyncListeners(data: GameTimeSyncPayload): void {

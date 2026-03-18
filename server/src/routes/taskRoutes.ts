@@ -14,6 +14,7 @@ import {
 import { safePushCharacterUpdate } from '../middleware/pushUpdate.js';
 import { getSingleQueryValue } from '../services/shared/httpParam.js';
 import { sendSuccess, sendResult } from '../middleware/response.js';
+import { notifyTaskOverviewUpdate } from '../services/taskOverviewPush.js';
 
 const router = Router();
 
@@ -58,6 +59,7 @@ router.post('/claim', requireCharacter, asyncHandler(async (req, res) => {
     const result = await claimTaskReward(userId, characterId, taskId);
     if (!result.success) return sendResult(res, result);
     await safePushCharacterUpdate(userId);
+    await notifyTaskOverviewUpdate(characterId, ['task', 'bounty']);
     return sendResult(res, result);
 }));
 
@@ -79,6 +81,9 @@ router.post('/npc/accept', requireCharacter, asyncHandler(async (req, res) => {
     const npcId = typeof body?.npcId === 'string' ? body.npcId : '';
     const taskId = typeof body?.taskId === 'string' ? body.taskId : '';
     const result = await acceptTaskFromNpc(characterId, taskId, npcId);
+    if (result.success) {
+      await notifyTaskOverviewUpdate(characterId, ['task']);
+    }
     return sendResult(res, result);
 }));
 
@@ -90,6 +95,9 @@ router.post('/npc/submit', requireCharacter, asyncHandler(async (req, res) => {
     const npcId = typeof body?.npcId === 'string' ? body.npcId : '';
     const taskId = typeof body?.taskId === 'string' ? body.taskId : '';
     const result = await submitTask(characterId, taskId, npcId);
+    if (result.success) {
+      await notifyTaskOverviewUpdate(characterId, ['task']);
+    }
     return sendResult(res, result);
 }));
 

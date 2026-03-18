@@ -36,6 +36,7 @@ import {
   type RewardItemDisplayMeta,
 } from './shared/rewardDisplay.js';
 import { buildTaskRecurringUnlockState } from './shared/taskRecurringUnlock.js';
+import { notifyTaskOverviewUpdate } from './taskOverviewPush.js';
 
 export type TaskCategory = 'main' | 'side' | 'daily' | 'event';
 
@@ -1086,19 +1087,20 @@ export const submitTask = async (
 const applyTaskEvent = async (
   characterId: number,
   event: TaskEvent,
-): Promise<void> => {
+): Promise<boolean> => {
   const cid = Number(characterId);
-  if (!Number.isFinite(cid) || cid <= 0) return;
+  if (!Number.isFinite(cid) || cid <= 0) return false;
   const characterRealmState = await loadCharacterTaskRealmState(cid);
-  if (!characterRealmState) return;
+  if (!characterRealmState) return false;
 
   const eventTaskDefs = getStaticTaskDefinitions().filter((def) => (
     def.enabled
     && def.category === 'event'
     && isTaskDefinitionUnlockedForCharacter(def, characterRealmState)
   ));
+  let insertedEventTask = false;
   for (const eventTaskDef of eventTaskDefs) {
-    await query(
+    const insertResult = await query(
       `
         INSERT INTO character_task_progress (character_id, task_id, status, progress, tracked, accepted_at, completed_at, claimed_at, updated_at)
         VALUES ($1, $2, 'ongoing', '{}'::jsonb, true, NOW(), NULL, NULL, NOW())
@@ -1106,6 +1108,9 @@ const applyTaskEvent = async (
       `,
       [cid, eventTaskDef.id],
     );
+    if ((insertResult.rowCount ?? 0) > 0) {
+      insertedEventTask = true;
+    }
   }
 
   const res = await query(
@@ -1127,6 +1132,7 @@ const applyTaskEvent = async (
       .filter((taskId): taskId is string => Boolean(taskId)),
   );
 
+  let changedAnyTask = insertedEventTask;
   for (const row of res.rows ?? []) {
     const taskId = asNonEmptyString(row?.task_id);
     if (!taskId) continue;
@@ -1185,7 +1191,9 @@ const applyTaskEvent = async (
       `,
       [cid, taskId, JSON.stringify(progressRecord), nextStatus],
     );
+    changedAnyTask = true;
   }
+  return changedAnyTask;
 };
 
 const normalizePositiveInt = (value: unknown, fallback = 1): number => {
@@ -1199,11 +1207,14 @@ const recordTalkNpcEvent = async (characterId: number, npcId: string): Promise<v
   const nid = asNonEmptyString(npcId);
   if (!nid) return;
 
-  await applyTaskEvent(characterId, { type: 'talk_npc', npcId: nid });
+  const taskOverviewChanged = await applyTaskEvent(characterId, { type: 'talk_npc', npcId: nid });
 
   await updateSectionProgress(characterId, { type: 'talk_npc', npcId: nid });
 
   await updateAchievementProgress(characterId, `talk:npc:${nid}`, 1);
+  if (taskOverviewChanged) {
+    await notifyTaskOverviewUpdate(characterId, ['task', 'bounty']);
+  }
 };
 
 export const recordKillMonsterEvent = async (characterId: number, monsterId: string, count: number): Promise<void> => {
@@ -1211,11 +1222,14 @@ export const recordKillMonsterEvent = async (characterId: number, monsterId: str
   if (!mid) return;
   const c = normalizePositiveInt(count, 1);
 
-  await applyTaskEvent(characterId, { type: 'kill_monster', monsterId: mid, count: c });
+  const taskOverviewChanged = await applyTaskEvent(characterId, { type: 'kill_monster', monsterId: mid, count: c });
 
   await updateSectionProgress(characterId, { type: 'kill_monster', monsterId: mid, count: c });
 
   await updateAchievementProgress(characterId, `kill:monster:${mid}`, c);
+  if (taskOverviewChanged) {
+    await notifyTaskOverviewUpdate(characterId, ['task', 'bounty']);
+  }
 };
 
 export const recordGatherResourceEvent = async (characterId: number, resourceId: string, count: number): Promise<void> => {
@@ -1223,7 +1237,7 @@ export const recordGatherResourceEvent = async (characterId: number, resourceId:
   if (!rid) return;
   const c = normalizePositiveInt(count, 1);
 
-  await applyTaskEvent(characterId, { type: 'gather_resource', resourceId: rid, count: c });
+  const taskOverviewChanged = await applyTaskEvent(characterId, { type: 'gather_resource', resourceId: rid, count: c });
 
   await updateSectionProgressBatch(characterId, [
     { type: 'gather_resource', resourceId: rid, count: c },
@@ -1232,6 +1246,9 @@ export const recordGatherResourceEvent = async (characterId: number, resourceId:
 
   await updateAchievementProgress(characterId, `gather:resource:${rid}`, c);
   await updateAchievementProgress(characterId, `item:obtain:${rid}`, c);
+  if (taskOverviewChanged) {
+    await notifyTaskOverviewUpdate(characterId, ['task', 'bounty']);
+  }
 };
 
 export const recordCollectItemEvent = async (characterId: number, itemId: string, count: number): Promise<void> => {
@@ -1250,11 +1267,19 @@ export const recordDungeonClearEvent = async (
   const c = normalizePositiveInt(count, 1);
 
   await resetRecurringTaskProgressIfNeeded(characterId);
-  await applyTaskEvent(characterId, { type: 'dungeon_clear', dungeonId: did, difficultyId: diffId, count: c });
+  const taskOverviewChanged = await applyTaskEvent(characterId, {
+    type: 'dungeon_clear',
+    dungeonId: did,
+    difficultyId: diffId,
+    count: c,
+  });
 
   await updateSectionProgress(characterId, { type: 'dungeon_clear', dungeonId: did, difficultyId: diffId, count: c });
 
   await updateAchievementProgress(characterId, `dungeon:clear:${did}`, c);
+  if (taskOverviewChanged) {
+    await notifyTaskOverviewUpdate(characterId, ['task', 'bounty']);
+  }
 };
 
 export const recordCraftItemEvent = async (
@@ -1272,7 +1297,7 @@ export const recordCraftItemEvent = async (
   const c = normalizePositiveInt(count, 1);
 
   await resetRecurringTaskProgressIfNeeded(characterId);
-  await applyTaskEvent(characterId, {
+  const taskOverviewChanged = await applyTaskEvent(characterId, {
     type: 'craft_item',
     recipeId: rid,
     recipeType: rtype,
@@ -1293,6 +1318,9 @@ export const recordCraftItemEvent = async (
   if (rid) await updateAchievementProgress(characterId, `craft:recipe:${rid}`, c);
   if (kind) await updateAchievementProgress(characterId, `craft:kind:${kind}`, c);
   if (iid) await updateAchievementProgress(characterId, `craft:item:${iid}`, c);
+  if (taskOverviewChanged) {
+    await notifyTaskOverviewUpdate(characterId, ['task', 'bounty']);
+  }
 };
 
 type NpcTalkTaskOption = {

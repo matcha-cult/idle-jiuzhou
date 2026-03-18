@@ -55,6 +55,7 @@ import MarketCaptchaDialog from './MarketCaptchaDialog';
 import MarketPartnerPreviewSheet from './MarketPartnerPreviewSheet';
 import MarketPartnerBuyModal from './MarketPartnerBuyModal';
 import MarketEquipmentSummary from './MarketEquipmentSummary';
+import { usePagedRequestController } from './usePagedRequestController';
 import {
   buildMarketEquipmentSummary,
   type MarketEquipmentSummaryItem,
@@ -986,7 +987,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     }
   }, []);
 
-  const resetAll = () => {
+  const resetAll = useCallback(() => {
     setAssetType('item');
     setPanel('market');
     setCategory('all');
@@ -1013,7 +1014,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     setBuyDialogListing(null);
     setMarketCaptchaDialogOpen(false);
     setMarketCaptchaPurchaseIntent(null);
-  };
+  }, []);
 
   const menuItems = useMemo(
     () => [
@@ -1083,28 +1084,48 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     [],
   );
 
-  useEffect(() => {
-    if (!marketModalOpen || assetType !== 'item') return;
-    setMarketPage(1);
-    void refreshMarket(1);
-  }, [assetType, category, debouncedQuery, marketModalOpen, maxPrice, minPrice, quality, refreshMarket, sort]);
+  const itemMarketRequestKey = useMemo(
+    () => JSON.stringify({
+      assetType,
+      category,
+      quality,
+      query: debouncedQuery.trim(),
+      sort,
+      minPrice,
+      maxPrice,
+    }),
+    [assetType, category, debouncedQuery, maxPrice, minPrice, quality, sort],
+  );
+  const partnerMarketRequestKey = useMemo(
+    () => JSON.stringify({
+      assetType,
+      quality: partnerQuality,
+      element: partnerElement,
+      query: debouncedPartnerQuery.trim(),
+      sort: partnerSort,
+    }),
+    [assetType, debouncedPartnerQuery, partnerElement, partnerQuality, partnerSort],
+  );
 
-  useEffect(() => {
-    if (!marketModalOpen || assetType !== 'partner') return;
-    setMarketPage(1);
-    void refreshPartnerMarket(1);
-  }, [assetType, debouncedPartnerQuery, marketModalOpen, partnerElement, partnerQuality, partnerSort, refreshPartnerMarket]);
+  usePagedRequestController({
+    enabled: marketModalOpen && panel === 'market' && assetType === 'item',
+    requestKey: itemMarketRequestKey,
+    page: marketPage,
+    onPageReset: resetMarketPage,
+    onRequest: refreshMarket,
+  });
+
+  usePagedRequestController({
+    enabled: marketModalOpen && panel === 'market' && assetType === 'partner',
+    requestKey: partnerMarketRequestKey,
+    page: marketPage,
+    onPageReset: resetMarketPage,
+    onRequest: refreshPartnerMarket,
+  });
 
   useEffect(() => {
     if (!marketModalOpen) return;
-    if (panel === 'market') {
-      if (assetType === 'item') {
-        void refreshMarket(marketPage);
-      } else {
-        void refreshPartnerMarket(marketPage);
-      }
-      return;
-    }
+    if (panel === 'market') return;
     if (panel === 'my') {
       if (assetType === 'item') {
         void refreshMy(myPage);
@@ -1126,7 +1147,7 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     } else {
       void refreshPartnerRecords(recordPage);
     }
-  }, [assetType, marketModalOpen, marketPage, myPage, panel, recordPage, refreshBag, refreshMarket, refreshMy, refreshMyPartnerListings, refreshPartnerMarket, refreshPartnerOverview, refreshPartnerRecords, refreshRecords]);
+  }, [assetType, marketModalOpen, myPage, panel, recordPage, refreshBag, refreshMy, refreshMyPartnerListings, refreshPartnerOverview, refreshPartnerRecords, refreshRecords]);
 
   useEffect(() => {
     if (!isMobile) setMobileFilterOpen(false);
@@ -1143,6 +1164,11 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
     setMarketCaptchaDialogOpen(false);
     setMarketCaptchaPurchaseIntent(null);
   }, [marketModalOpen]);
+
+  useEffect(() => {
+    if (open) return;
+    resetAll();
+  }, [open, resetAll]);
 
   useEffect(() => {
     if (!marketModalOpen) return undefined;
@@ -1162,37 +1188,18 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
       setPanel(nextPanel);
       if (nextPanel === 'market') {
         setMarketPage(1);
-        if (assetType === 'item') {
-          void refreshMarket(1);
-        } else {
-          void refreshPartnerMarket(1);
-        }
       }
       if (nextPanel === 'my') {
         setMyPage(1);
-        if (assetType === 'item') {
-          void refreshMy(1);
-        } else {
-          void refreshMyPartnerListings(1);
-        }
       }
       if (nextPanel === 'list') {
-        if (assetType === 'item') {
-          void refreshBag();
-        } else {
-          void refreshPartnerOverview();
-        }
+        return;
       }
       if (nextPanel === 'records') {
         setRecordPage(1);
-        if (assetType === 'item') {
-          void refreshRecords(1);
-        } else {
-          void refreshPartnerRecords(1);
-        }
       }
     },
-    [assetType, refreshBag, refreshMarket, refreshMy, refreshMyPartnerListings, refreshPartnerMarket, refreshPartnerOverview, refreshPartnerRecords, refreshRecords],
+    [],
   );
 
   const handleAssetTypeChange = useCallback(
@@ -1203,13 +1210,8 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
       setMyPage(1);
       setRecordPage(1);
       setMobileFilterOpen(false);
-      if (nextAssetType === 'item') {
-        void refreshMarket(1);
-      } else {
-        void refreshPartnerMarket(1);
-      }
     },
-    [refreshMarket, refreshPartnerMarket],
+    [],
   );
 
   const executeItemPurchase = useCallback(
@@ -1791,7 +1793,6 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
             total={marketTotal}
             onChange={(p) => {
               setMarketPage(p);
-              void refreshMarket(p);
             }}
             showSizeChanger={false}
             hideOnSinglePage
@@ -1870,7 +1871,6 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
             total={partnerMarketTotal}
             onChange={(p) => {
               setMarketPage(p);
-              void refreshPartnerMarket(p);
             }}
             showSizeChanger={false}
             hideOnSinglePage
@@ -2017,7 +2017,6 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
             total={myTotal}
             onChange={(p) => {
               setMyPage(p);
-              void refreshMy(p);
             }}
             showSizeChanger={false}
             hideOnSinglePage
@@ -2087,7 +2086,6 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
             total={myPartnerTotal}
             onChange={(p) => {
               setMyPage(p);
-              void refreshMyPartnerListings(p);
             }}
             showSizeChanger={false}
             hideOnSinglePage
@@ -2546,7 +2544,6 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
             total={recordsTotal}
             onChange={(p) => {
               setRecordPage(p);
-              void refreshRecords(p);
             }}
             showSizeChanger={false}
             hideOnSinglePage
@@ -2608,7 +2605,6 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
             total={partnerRecordsTotal}
             onChange={(p) => {
               setRecordPage(p);
-              void refreshPartnerRecords(p);
             }}
             showSizeChanger={false}
             hideOnSinglePage
@@ -2644,11 +2640,6 @@ const MarketModal: React.FC<MarketModalProps> = ({ open, onClose, playerName = '
         wrapClassName="market-modal-wrap"
         destroyOnHidden
         maskClosable
-        afterOpenChange={(visible) => {
-          if (!visible) return;
-          resetAll();
-          void refreshMarket(1);
-        }}
       >
         <div className="market-modal-shell">
           <div className="market-left">

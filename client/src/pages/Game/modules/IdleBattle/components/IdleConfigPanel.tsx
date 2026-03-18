@@ -22,7 +22,7 @@
  *   3. 技能槽位最多 6 个，超出时"添加槽位"按钮 disabled
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button, Select, Slider, Switch, Tag, Tooltip } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { getEnabledMaps, getMapDetail, type MapDefLite, type MapRoom } from '../../../../../services/api/world';
@@ -90,6 +90,8 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
   const [roomsLoading, setRoomsLoading] = useState(false);
   const [availableSkills, setAvailableSkills] = useState<AvailableSkillOption[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
+  const loadedSkillsCharacterIdRef = useRef<number | null>(null);
+  const loadingSkillsCharacterIdRef = useRef<number | null>(null);
 
   // 加载地图列表
   useEffect(() => {
@@ -125,10 +127,18 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
     let cancelled = false;
 
     const loadSkills = (charId: number) => {
+      if (
+        loadedSkillsCharacterIdRef.current === charId
+        || loadingSkillsCharacterIdRef.current === charId
+      ) {
+        return;
+      }
+      loadingSkillsCharacterIdRef.current = charId;
       setSkillsLoading(true);
       void getCharacterTechniqueStatus(charId)
         .then((res) => {
           if (cancelled || !res.success || !res.data) return;
+          loadedSkillsCharacterIdRef.current = charId;
           const seen = new Set<string>();
           const merged: AvailableSkillOption[] = [];
 
@@ -156,22 +166,18 @@ const IdleConfigPanel: React.FC<IdleConfigPanelProps> = ({
 
           setAvailableSkills(merged);
         })
-        .finally(() => { if (!cancelled) setSkillsLoading(false); });
+        .finally(() => {
+          if (loadingSkillsCharacterIdRef.current === charId) {
+            loadingSkillsCharacterIdRef.current = null;
+          }
+          if (!cancelled) setSkillsLoading(false);
+        });
     };
 
-    // 尝试立即加载（角色数据可能已就绪）
-    const charId = gameSocket.getCharacter()?.id;
-    if (charId) {
-      loadSkills(charId);
-    }
-
-    // 订阅角色更新，首次拿到 id 时加载
+    // 统一只走角色订阅入口：onCharacterUpdate 会立即回放当前角色，避免“手动拉一次 + 订阅回放一次”的重复请求。
     const unsub = gameSocket.onCharacterUpdate((c) => {
       if (cancelled || !c?.id) return;
-      setAvailableSkills((prev) => {
-        if (prev.length === 0) loadSkills(c.id);
-        return prev;
-      });
+      loadSkills(c.id);
     });
 
     return () => { cancelled = true; unsub(); };

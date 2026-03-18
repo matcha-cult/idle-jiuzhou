@@ -187,19 +187,25 @@ class GameServer {
             socket.emit(event, snapshot);
           });
 
-          if (character) {
-            try {
-              socket.emit("sect:update", await getSectIndicatorByCharacterId(character.id));
-            } catch (error) {
-              console.error("宗门指示器同步失败:", error);
-            }
+	          if (character) {
+	            try {
+	              socket.emit("sect:update", await getSectIndicatorByCharacterId(character.id));
+	            } catch (error) {
+	              console.error("宗门指示器同步失败:", error);
+	            }
 
-            await Promise.all([
-              mailService.pushUnreadCounterUpdateToUser(userId),
-              notifyTechniqueResearchStatus(character.id, userId),
-              notifyPartnerRecruitStatus(character.id, userId),
-            ]);
-          }
+	            await Promise.all([
+	              mailService.pushUnreadCounterUpdateToUser(userId),
+	              notifyTechniqueResearchStatus(character.id, userId),
+	              notifyPartnerRecruitStatus(character.id, userId),
+	            ]);
+
+	            // 重连期间可能错过 task:update，认证成功后补发一次脏通知让前端回源最新任务快照。
+	            socket.emit("task:update", {
+	              characterId: character.id,
+	              scopes: ["task", "bounty"] as const,
+	            });
+	          }
 
           // 同步战斗冷却状态（重连时）
           if (character) {
