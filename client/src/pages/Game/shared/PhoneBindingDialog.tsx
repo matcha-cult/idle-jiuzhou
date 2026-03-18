@@ -53,7 +53,7 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
   description = '绑定手机号后，可继续使用坊市相关功能。每个手机号只能绑定一个账号，请务必填写真实手机号，后续可能会进行随机安全验证。',
 }) => {
   const { message } = App.useApp();
-  const { config, isTencent, loading: configLoading } = useCaptchaConfig();
+  const { config, isTencent, loading: configLoading } = useCaptchaConfig(open);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [captchaCode, setCaptchaCode] = useState('');
@@ -110,6 +110,7 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
   const confirmDisabled = useMemo(() => {
     return binding || sendingCode || !phoneNumber.trim() || !verificationCode.trim();
   }, [binding, phoneNumber, sendingCode, verificationCode]);
+  const showLocalCaptchaField = !configLoading && !isTencent;
 
   const doSendCode = async (captchaPayload: UnifiedCaptchaPayload): Promise<void> => {
     setSendingCode(true);
@@ -224,7 +225,7 @@ const PhoneBindingDialog: React.FC<PhoneBindingDialogProps> = ({
             />
           </div>
 
-          {!isTencent && (
+          {showLocalCaptchaField && (
             <div className="phone-binding__field">
               <span className="phone-binding__label">图片验证码</span>
               <CaptchaChallengeInput

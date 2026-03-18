@@ -42,7 +42,25 @@ export default function MarketCaptchaDialog({
   onCancel,
   onVerified,
 }: MarketCaptchaDialogProps) {
-  const { config, isTencent } = useCaptchaConfig();
+  const { config, isTencent, loading: configLoading } = useCaptchaConfig(open);
+
+  if (configLoading) {
+    return (
+      <Modal
+        open={open}
+        onCancel={onCancel}
+        footer={null}
+        title="坊市验证"
+        centered
+        destroyOnHidden
+        className="market-captcha-dialog"
+      >
+        <div className="market-captcha-dialog__body" style={{ textAlign: 'center', padding: '24px 0' }}>
+          验证配置加载中...
+        </div>
+      </Modal>
+    );
+  }
 
   if (isTencent) {
     return (

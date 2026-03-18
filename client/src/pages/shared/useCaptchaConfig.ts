@@ -7,7 +7,7 @@
  * 3. 不做什么：不渲染 UI，不处理验证码校验，也不管理验证码输入状态。
  *
  * 输入/输出：
- * - 输入：无。
+ * - 输入：`enabled`，控制当前组件是否需要读取验证码配置。
  * - 输出：当前验证码配置、加载态、是否为天御模式的便捷判断。
  *
  * 数据流/状态流：
@@ -57,29 +57,44 @@ export interface UseCaptchaConfigResult {
     isTencent: boolean;
 }
 
-export const useCaptchaConfig = (): UseCaptchaConfigResult => {
+export const useCaptchaConfig = (
+    enabled: boolean = true,
+): UseCaptchaConfigResult => {
     const [config, setConfig] = useState<CaptchaConfig>(
         cachedConfig ?? DEFAULT_CONFIG,
     );
-    const [loading, setLoading] = useState(cachedConfig === null);
+    const loading = enabled && cachedConfig === null;
 
     useEffect(() => {
-        if (cachedConfig) {
-            setConfig(cachedConfig);
-            setLoading(false);
+        if (!enabled) {
             return;
         }
 
+        if (cachedConfig) {
+            setConfig(cachedConfig);
+            return;
+        }
+
+        let cancelled = false;
         void loadConfig().then((result) => {
+            if (cancelled) {
+                return;
+            }
             setConfig(result);
-            setLoading(false);
         });
-    }, []);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [enabled]);
+
+    const resolvedConfig =
+        enabled && cachedConfig !== null ? cachedConfig : config;
 
     return {
-        config,
+        config: resolvedConfig,
         loading,
-        provider: config.provider,
-        isTencent: config.provider === 'tencent',
+        provider: resolvedConfig.provider,
+        isTencent: resolvedConfig.provider === 'tencent',
     };
 };

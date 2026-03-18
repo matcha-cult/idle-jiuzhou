@@ -10,7 +10,8 @@
  *   - 返回 UseIdleBattleReturn 接口，包含状态、操作、历史、回放四个维度
  *
  * 数据流：
- *   mount → loadStatus + loadConfig → 初始化状态
+ *   mount → loadStatus → 初始化活跃会话状态
+ *   打开挂机面板/显式刷新配置 → loadConfig → 初始化或同步挂机配置
  *   gameSocket.onIdleUpdate → 更新 activeSession 实时收益
  *   gameSocket.onIdleFinished → 清空 activeSession，触发历史刷新
  *   断线 30s 后 → getIdleProgress → 补全进度
@@ -133,9 +134,11 @@ export function useIdleBattle(): UseIdleBattleReturn {
   const selectedBatchIdRef = useRef<string | null>(null);
   const monthCardActiveRef = useRef(monthCardActive);
   const configSyncingRef = useRef(false);
+  const hasLoadedConfigRef = useRef(false);
+  const hasHydratedConfigRef = useRef(false);
 
   // ============================================
-  // 初始化：加载当前状态和配置
+  // 初始化：只加载当前挂机状态
   // ============================================
 
   const loadStatus = useCallback(async () => {
@@ -151,6 +154,10 @@ export function useIdleBattle(): UseIdleBattleReturn {
   const loadConfig = useCallback(async (mode: ConfigSyncMode = 'replace') => {
     try {
       const res = await getIdleConfig();
+      hasLoadedConfigRef.current = true;
+      if (mode === 'replace') {
+        hasHydratedConfigRef.current = true;
+      }
       setMaxDurationLimitMs(res.maxDurationLimitMs);
       setMonthCardActive(res.monthCardActive);
       monthCardActiveRef.current = res.monthCardActive;
@@ -226,8 +233,8 @@ export function useIdleBattle(): UseIdleBattleReturn {
 
   useEffect(() => {
     setIsLoading(true);
-    void Promise.all([loadStatus(), loadConfig()]).finally(() => setIsLoading(false));
-  }, [loadConfig, loadStatus]);
+    void loadStatus().finally(() => setIsLoading(false));
+  }, [loadStatus]);
 
   useEffect(() => {
     monthCardActiveRef.current = monthCardActive;
@@ -321,6 +328,7 @@ export function useIdleBattle(): UseIdleBattleReturn {
   useEffect(() => {
     const unsubscribe = gameSocket.onCharacterUpdate((character) => {
       if (!character) return;
+      if (!hasLoadedConfigRef.current) return;
       if (character.monthCardActive === monthCardActiveRef.current) return;
       if (configSyncingRef.current) return;
 
@@ -342,7 +350,12 @@ export function useIdleBattle(): UseIdleBattleReturn {
   }, []);
 
   const refreshConfig = useCallback(async () => {
-    await loadConfig('preserveDraft');
+    setIsLoading(true);
+    try {
+      await loadConfig(hasHydratedConfigRef.current ? 'preserveDraft' : 'replace');
+    } finally {
+      setIsLoading(false);
+    }
   }, [loadConfig]);
 
   const saveConfig = useCallback(async () => {

@@ -5,8 +5,8 @@ import { gameSocket, type CharacterData, type OnlinePlayerDto } from '../../../.
 import type { InfoTarget } from '../InfoModal';
 import { parseBattleLootLine } from '../../shared/battleLoot';
 import PhoneBindingDialog from '../../shared/PhoneBindingDialog';
-import { useDeferredGameRequest } from '../../shared/useDeferredGameRequest';
 import PlayerName from '../../shared/PlayerName';
+import { useDeferredGameRequest } from '../../shared/useDeferredGameRequest';
 import { usePhoneBindingStatus } from '../../shared/usePhoneBindingStatus';
 import StatsShell from './StatsShell';
 import './index.scss';

@@ -108,7 +108,6 @@ const PlayerInfo: React.FC = () => {
   }, []);
 
   useDeferredGameRequest(Boolean(character?.realm), refreshRealmOverview, PLAYER_INFO_AUX_REQUEST_DELAY_MS);
-  useDeferredGameRequest(true, ensurePhoneBindingStatusLoaded, PLAYER_INFO_AUX_REQUEST_DELAY_MS);
 
   const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
 
@@ -281,7 +280,7 @@ const PlayerInfo: React.FC = () => {
   ];
   const phoneBindingEnabled = phoneBindingStatus?.enabled === true;
   const phoneBindingBound = phoneBindingStatus?.isBound === true;
-  const shouldShowPhoneBindingSection = shouldLoadPhoneBindingStatus && (
+  const shouldShowPhoneBindingSection = !shouldLoadPhoneBindingStatus || (
     phoneBindingStatusLoading
     || Boolean(phoneBindingStatusErrorMessage)
     || !phoneBindingEnabled
@@ -400,7 +399,19 @@ const PlayerInfo: React.FC = () => {
           <div className="attr-section-header">
             <div className="attr-section-title">账号安全</div>
           </div>
-          {phoneBindingStatusLoading ? (
+          {!shouldLoadPhoneBindingStatus ? (
+            <div className="player-phone-binding-row">
+              <div className="player-phone-binding-tip">需要时再读取手机号绑定状态，避免首页首屏提前请求安全校验接口。</div>
+              <Button
+                size="small"
+                onClick={() => {
+                  ensurePhoneBindingStatusLoaded();
+                }}
+              >
+                查看绑定状态
+              </Button>
+            </div>
+          ) : phoneBindingStatusLoading ? (
             <div className="player-phone-binding-tip">手机号状态读取中...</div>
           ) : phoneBindingStatusErrorMessage ? (
             <div className="player-phone-binding-row">
@@ -408,6 +419,7 @@ const PlayerInfo: React.FC = () => {
               <Button
                 size="small"
                 onClick={() => {
+                  ensurePhoneBindingStatusLoaded();
                   void refreshPhoneBindingStatus();
                 }}
               >
