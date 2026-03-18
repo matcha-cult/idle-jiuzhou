@@ -55,6 +55,7 @@ import {
   disassembleEquipmentBatch,
 } from "./disassemble.js";
 import {
+  getBagInventorySnapshot,
   getInventoryItemsWithDefs,
   getEquippedItemDefIds,
 } from "./itemQuery.js";
@@ -84,6 +85,14 @@ class InventoryService {
     pageSize: number,
   ): Promise<{ items: InventoryItemWithDef[]; total: number }> {
     return getInventoryItemsWithDefs(characterId, location, page, pageSize);
+  }
+
+  async getBagInventorySnapshot(characterId: number): Promise<{
+    info: InventoryInfo;
+    bagItems: InventoryItemWithDef[];
+    equippedItems: InventoryItemWithDef[];
+  }> {
+    return getBagInventorySnapshot(characterId);
   }
 
   async getEquippedItemDefIds(characterId: number): Promise<string[]> {

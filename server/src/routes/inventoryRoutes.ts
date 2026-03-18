@@ -95,6 +95,17 @@ router.get('/info', asyncHandler(async (req, res) => {
 }));
 
 // ============================================
+// 获取背包弹窗快照
+// GET /api/inventory/bag/snapshot
+// ============================================
+router.get('/bag/snapshot', asyncHandler(async (req, res) => {
+    const characterId = req.characterId!;
+
+    const snapshot = await inventoryService.getBagInventorySnapshot(characterId);
+    sendSuccess(res, snapshot);
+}));
+
+// ============================================
 // 获取背包物品列表
 // GET /api/inventory/items?location=bag&page=1&pageSize=100
 // ============================================

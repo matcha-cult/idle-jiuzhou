@@ -5,7 +5,8 @@
  *       纯只读查询，不修改数据库。
  *
  * 输入/输出：
- * - getInventoryItemsWithDefs(characterId, location, page, pageSize) — 聚合查询
+ * - getInventoryItemsWithDefs(characterId, location, page, pageSize) — 单 location 聚合查询
+ * - getBagInventorySnapshot(characterId) — 背包弹窗所需快照（容量 + 背包物品 + 已穿戴物品）
  * - getEquippedItemDefIds(characterId) — 已装备物品定义 ID 列表
  *
  * 数据流：
@@ -42,10 +43,19 @@ import { resolveQualityRankFromName } from "../shared/itemQuality.js";
 import { resolveItemCanDisassemble } from "../shared/itemDisassembleRule.js";
 import { resolveGeneratedTechniqueBookDisplay } from "../shared/generatedTechniqueBookView.js";
 import type {
+  InventoryInfo,
+  InventoryItem,
   InventoryItemWithDef,
   InventoryLocation,
 } from "./shared/types.js";
-import { getInventoryItems } from "./bag.js";
+import { getInventoryInfo, getInventoryItems } from "./bag.js";
+
+type InventoryItemDefContext = {
+  staticDefMap: Map<string, Record<string, unknown>>;
+  setBonusMap: Map<string, Array<{ piece_count: number; effect_defs: unknown }>>;
+  equippedSetCountMap: Map<string, number>;
+  setNameMap: Map<string, string>;
+};
 
 /**
  * 查询角色已装备物品的 item_def_id 列表
@@ -72,24 +82,39 @@ export const getEquippedItemDefIds = async (
 };
 
 /**
- * 带物品定义、套装聚合、装备属性计算、词条元数据注入的物品列表查询
+ * 构建物品定义聚合上下文
+ *
+ * 作用：
+ * - 统一预加载物品定义、套装定义、已穿戴套装件数，避免不同查询入口重复拼装同一份上下文。
+ * - 为 `getInventoryItemsWithDefs` 与 `getBagInventorySnapshot` 共享同一套富化依赖，减少重复逻辑。
+ *
+ * 输入/输出：
+ * - 输入：角色 ID、待富化的原始物品列表。
+ * - 输出：物品定义、套装效果、套装已穿戴件数等只读上下文。
+ *
+ * 数据流/状态流：
+ * 原始物品列表 -> 收集 item_def_id / set_id -> 预加载静态定义与已穿戴套装件数 -> 返回上下文。
+ *
+ * 关键边界条件与坑点：
+ * 1. 传入空列表时必须直接返回空上下文，避免做无意义的静态定义与数据库查询。
+ * 2. 套装已穿戴件数统计依赖角色当前全部已穿戴装备，不能只看传入列表，否则套装件数会失真。
  */
-export const getInventoryItemsWithDefs = async (
+const buildInventoryItemDefContext = async (
   characterId: number,
-  location: InventoryLocation,
-  page: number,
-  pageSize: number,
-): Promise<{ items: InventoryItemWithDef[]; total: number }> => {
-  const result = await getInventoryItems(characterId, location, page, pageSize);
-
-  if (result.items.length === 0) {
-    return { items: [], total: 0 };
+  sourceItems: InventoryItem[],
+): Promise<InventoryItemDefContext> => {
+  if (sourceItems.length <= 0) {
+    return {
+      staticDefMap: new Map<string, Record<string, unknown>>(),
+      setBonusMap: new Map<string, Array<{ piece_count: number; effect_defs: unknown }>>(),
+      equippedSetCountMap: new Map<string, number>(),
+      setNameMap: new Map<string, string>(),
+    };
   }
 
-  // 1. 批量加载物品定义
   const itemDefIds = [
     ...new Set(
-      result.items
+      sourceItems
         .map((item) => String(item.item_def_id || "").trim())
         .filter((id) => id.length > 0),
     ),
@@ -177,14 +202,43 @@ export const getInventoryItemsWithDefs = async (
     }
   }
 
-  // 4. 逐物品聚合定义、套装、属性、词条
+  return {
+    staticDefMap,
+    setBonusMap,
+    equippedSetCountMap,
+    setNameMap,
+  };
+};
+
+/**
+ * 为物品实例列表注入定义、套装、装备成长显示属性与词条元数据
+ *
+ * 作用：
+ * - 让单 location 查询与背包快照查询共用同一份富化流程，避免在多个入口重复写映射逻辑。
+ * - 将高频变化的“物品展示规则”集中在一处，后续新增展示字段时只改这里。
+ *
+ * 输入/输出：
+ * - 输入：原始物品列表、预构建的定义聚合上下文。
+ * - 输出：可直接返回给前端的 `InventoryItemWithDef[]`。
+ *
+ * 数据流/状态流：
+ * 原始实例列表 + 预加载上下文 -> 逐项富化定义/套装/属性/词条 -> 返回展示态物品列表。
+ *
+ * 关键边界条件与坑点：
+ * 1. 缺少静态定义时仍需保留原物品实例，避免因为静态表遗漏把物品直接吞掉。
+ * 2. 词条 roll 元数据依赖词条池缓存，必须在单次富化流程内共享缓存，避免同池装备重复加载。
+ */
+const enrichInventoryItemsWithDefs = (
+  sourceItems: InventoryItem[],
+  context: InventoryItemDefContext,
+): InventoryItemWithDef[] => {
   const affixPoolCache = new Map<
     string,
     ReturnType<typeof loadAffixPoolForReroll>
   >();
 
-  const items: InventoryItemWithDef[] = result.items.map((item) => {
-    const def = staticDefMap.get(item.item_def_id) as
+  return sourceItems.map((item) => {
+    const def = context.staticDefMap.get(item.item_def_id) as
       | Record<string, unknown>
       | undefined;
     if (!def) return { ...item, def: undefined };
@@ -210,15 +264,15 @@ export const getInventoryItemsWithDefs = async (
       typeof normalizedDef.set_id === "string"
         ? (normalizedDef.set_id as string).trim()
         : "";
-    const setBonuses = setId ? (setBonusMap.get(setId) || []) : [];
+    const setBonuses = setId ? (context.setBonusMap.get(setId) || []) : [];
     const setEquippedCount = setId
-      ? (equippedSetCountMap.get(setId) || 0)
+      ? (context.equippedSetCountMap.get(setId) || 0)
       : 0;
     const baseDef = {
       ...normalizedDef,
       can_disassemble: resolveItemCanDisassemble(normalizedDef),
       set_id: setId || null,
-      set_name: setId ? (setNameMap.get(setId) ?? null) : null,
+      set_name: setId ? (context.setNameMap.get(setId) ?? null) : null,
       set_bonuses: setBonuses,
       set_equipped_count: setEquippedCount,
     };
@@ -287,6 +341,74 @@ export const getInventoryItemsWithDefs = async (
       def: mergedDef,
     };
   });
+};
+
+/**
+ * 带物品定义、套装聚合、装备属性计算、词条元数据注入的物品列表查询
+ */
+export const getInventoryItemsWithDefs = async (
+  characterId: number,
+  location: InventoryLocation,
+  page: number,
+  pageSize: number,
+): Promise<{ items: InventoryItemWithDef[]; total: number }> => {
+  const result = await getInventoryItems(characterId, location, page, pageSize);
+
+  if (result.items.length === 0) {
+    return { items: [], total: 0 };
+  }
+
+  const context = await buildInventoryItemDefContext(characterId, result.items);
+  const items = enrichInventoryItemsWithDefs(result.items, context);
 
   return { items, total: result.total };
+};
+
+/**
+ * 背包弹窗快照查询
+ *
+ * 作用：
+ * - 一次性返回背包弹窗首屏所需的容量信息、背包物品与已穿戴物品，收敛前端打开弹窗时的多次请求。
+ * - 共享同一套物品定义聚合上下文，避免背包物品与已穿戴物品分别富化造成重复计算。
+ *
+ * 输入/输出：
+ * - 输入：角色 ID。
+ * - 输出：`info`、`bagItems`、`equippedItems` 三段只读快照数据。
+ *
+ * 数据流/状态流：
+ * getInventoryInfo + getInventoryItems(bag/equipped) -> 共享上下文富化 -> 返回弹窗快照。
+ *
+ * 关键边界条件与坑点：
+ * 1. 背包和已穿戴需要共用一份上下文，否则套装件数、静态定义加载会被重复计算。
+ * 2. 空背包也必须返回容量信息，不能因为物品为空就跳过 `info`。
+ */
+export const getBagInventorySnapshot = async (
+  characterId: number,
+): Promise<{
+  info: InventoryInfo;
+  bagItems: InventoryItemWithDef[];
+  equippedItems: InventoryItemWithDef[];
+}> => {
+  const [info, bagResult, equippedResult] = await Promise.all([
+    getInventoryInfo(characterId),
+    getInventoryItems(characterId, "bag", 1, 200),
+    getInventoryItems(characterId, "equipped", 1, 200),
+  ]);
+
+  const sourceItems = [...bagResult.items, ...equippedResult.items];
+  if (sourceItems.length <= 0) {
+    return {
+      info,
+      bagItems: [],
+      equippedItems: [],
+    };
+  }
+
+  const context = await buildInventoryItemDefContext(characterId, sourceItems);
+
+  return {
+    info,
+    bagItems: enrichInventoryItemsWithDefs(bagResult.items, context),
+    equippedItems: enrichInventoryItemsWithDefs(equippedResult.items, context),
+  };
 };

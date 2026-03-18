@@ -85,8 +85,22 @@ export interface InventoryItemsResponse {
   };
 }
 
+export interface InventoryBagSnapshotResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    info: InventoryInfoData;
+    bagItems: InventoryItemDto[];
+    equippedItems: InventoryItemDto[];
+  };
+}
+
 export const getInventoryInfo = (): Promise<InventoryInfoResponse> => {
   return api.get('/inventory/info');
+};
+
+export const getBagInventorySnapshot = (): Promise<InventoryBagSnapshotResponse> => {
+  return api.get('/inventory/bag/snapshot');
 };
 
 export const getInventoryItems = (

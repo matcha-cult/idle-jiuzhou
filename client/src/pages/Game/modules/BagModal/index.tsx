@@ -11,8 +11,6 @@ import {
   disassembleInventoryEquipmentBatch,
   enhanceInventoryItem,
   equipInventoryItem,
-  getInventoryInfo,
-  getInventoryItems,
   refineInventoryItem,
   rerollInventoryAffixes,
   getRerollCostPreview,
@@ -24,11 +22,9 @@ import {
   inventoryUseItem,
 } from '../../../../services/api';
 import { getUnifiedApiErrorMessage } from '../../../../services/api';
-import type { InventoryInfoData } from '../../../../services/api';
 import {
   attrLabel,
   attrOrder,
-  buildBagItem,
   buildBatchDisassemblePayloadItems,
   buildEquipmentDetailLines,
   categoryLabels,
@@ -51,7 +47,7 @@ import {
   qualityLabels,
   qualityRank,
 } from './bagShared';
-import type { BagAction, BagCategory, BagItem, BagQuality, BagSort, BatchMode } from './bagShared';
+import type { BagAction, BagCategory, BagQuality, BagSort, BatchMode } from './bagShared';
 import DisassembleModal from './DisassembleModal';
 import CraftModal from './CraftModal';
 import GemSynthesisModal from './GemSynthesisModal';
@@ -72,6 +68,7 @@ import { useAutoRerollController } from './useAutoRerollController';
 import { collectEquipmentUnbindCandidates } from './equipmentUnbind';
 import { TechniqueSkillSection } from '../../shared/TechniqueSkillSection';
 import { useCharacterRenameCardFlow } from '../../shared/useCharacterRenameCardFlow';
+import { useBagInventorySnapshot } from './useBagInventorySnapshot';
 import './index.scss';
 
 interface BagModalProps {
@@ -120,9 +117,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
   const [batchExcludeKeywordsText, setBatchExcludeKeywordsText] = useState('');
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [autoRerollConfigOpen, setAutoRerollConfigOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [info, setInfo] = useState<InventoryInfoData | null>(null);
-  const [items, setItems] = useState<BagItem[]>([]);
+  const [actionLoading, setActionLoading] = useState(false);
   const [playerSilver, setPlayerSilver] = useState(0);
   const [playerSpiritStones, setPlayerSpiritStones] = useState(0);
   const [useQty, setUseQty] = useState(1);
@@ -134,41 +129,24 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     });
   }, []);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [infoRes, bagRes, equippedRes] = await Promise.all([
-        getInventoryInfo(),
-        getInventoryItems('bag', 1, 200),
-        getInventoryItems('equipped', 1, 200),
-      ]);
-      if (!infoRes.success || !infoRes.data) throw new Error(infoRes.message || '获取背包信息失败');
-      if (!bagRes.success || !bagRes.data) throw new Error(bagRes.message || '获取背包物品失败');
-      if (!equippedRes.success || !equippedRes.data) throw new Error(equippedRes.message || '获取已穿戴物品失败');
+  const handleSnapshotLoadFailed = useCallback(() => {
+    setActiveId(null);
+  }, []);
 
-      const nextBagItems = bagRes.data.items.map(buildBagItem).filter((v): v is BagItem => !!v);
-      const nextEquippedItems = equippedRes.data.items.map(buildBagItem).filter((v): v is BagItem => !!v);
-      const nextItems = [...nextBagItems, ...nextEquippedItems];
-      setInfo(infoRes.data);
-      setItems(nextItems);
-    } catch (error: unknown) {
-      void 0;
-      setInfo(null);
-      setItems([]);
-      setActiveId(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [message]);
+  const {
+    loading: snapshotLoading,
+    info,
+    items,
+    refresh,
+  } = useBagInventorySnapshot({
+    open,
+    onLoadFailed: handleSnapshotLoadFailed,
+  });
+  const loading = actionLoading || snapshotLoading;
 
   const { openCharacterRename, renameModalNode } = useCharacterRenameCardFlow({
     refresh,
   });
-
-  useEffect(() => {
-    if (!open) return;
-    refresh();
-  }, [open, refresh]);
 
   const totalSlots = info?.bag_capacity ?? 100;
 
@@ -433,7 +411,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     if (!activeItem) return;
     if (activeItem.category !== 'equipment') return;
 
-    setLoading(true);
+    setActionLoading(true);
     try {
       if (activeItem.location === 'equipped') {
         const res = await unequipInventoryItem(activeItem.id, 'bag');
@@ -448,7 +426,8 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
       window.dispatchEvent(new Event('inventory:changed'));
     } catch (error: unknown) {
       void 0;
-      setLoading(false);
+    } finally {
+      setActionLoading(false);
     }
   }, [activeItem, message, refresh]);
 
@@ -471,7 +450,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
     }
     const useCount = activeItem.category === 'consumable' ? clampUseQty(useQty) : 1;
 
-    setLoading(true);
+    setActionLoading(true);
     try {
       const beforeChar = gameSocket.getCharacter();
       const res = await inventoryUseItem({ itemInstanceId: activeItem.id, qty: useCount });
@@ -499,14 +478,15 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
           detail: { channel: 'system', content: `使用【${activeItem.name}】失败：${getUnifiedApiErrorMessage(error, '操作失败')}` },
         }),
       );
-      setLoading(false);
+    } finally {
+      setActionLoading(false);
     }
   }, [activeItem, clampUseQty, equipmentUnbindCandidates.length, message, openCharacterRename, refresh, useQty]);
 
   const handleToggleItemLock = useCallback(async () => {
     if (!activeItem) return;
 
-    setLoading(true);
+    setActionLoading(true);
     try {
       const nextLocked = !activeItem.locked;
       const res = await setInventoryItemLock({
@@ -520,7 +500,8 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
       window.dispatchEvent(new Event('inventory:changed'));
     } catch (error: unknown) {
       void 0;
-      setLoading(false);
+    } finally {
+      setActionLoading(false);
     }
   }, [activeItem, clampUseQty, equipmentUnbindCandidates.length, message, refresh, useQty]);
 
@@ -1025,7 +1006,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                 type="primary"
                 loading={loading}
                 onClick={async () => {
-                  setLoading(true);
+                  setActionLoading(true);
                   try {
                     const res = await sortInventory('bag');
                     if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '整理失败'));
@@ -1033,7 +1014,7 @@ const BagModal: React.FC<BagModalProps> = ({ open, onClose }) => {
                   } catch (error: unknown) {
                     void 0;
                   } finally {
-                    setLoading(false);
+                    setActionLoading(false);
                   }
                 }}
               >
