@@ -422,10 +422,82 @@ const buildPartnerRecruitBaseAttrsJsonSchema = (
   };
 };
 
+type PartnerRecruitPartnerRequiredKey = (typeof PARTNER_RECRUIT_PARTNER_REQUIRED_KEYS)[number];
+type PartnerRecruitInnateTechniqueRequiredKey = (typeof PARTNER_RECRUIT_INNATE_TECHNIQUE_REQUIRED_KEYS)[number];
+
+const buildPartnerRecruitPartnerJsonSchemaProperties = (
+  quality: PartnerRecruitQuality,
+): Record<PartnerRecruitPartnerRequiredKey, TechniqueTextModelJsonSchema> => ({
+  name: {
+    type: 'string',
+    minLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerName.min,
+    maxLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerName.max,
+  },
+  description: {
+    type: 'string',
+    minLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerDescription.min,
+    maxLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerDescription.max,
+  },
+  quality: {
+    type: 'string',
+    enum: [quality],
+  },
+  attributeElement: {
+    type: 'string',
+    enum: [...PARTNER_RECRUIT_ALLOWED_ELEMENTS],
+  },
+  role: {
+    type: 'string',
+    minLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerRole.min,
+    maxLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerRole.max,
+  },
+  combatStyle: {
+    type: 'string',
+    enum: [...PARTNER_RECRUIT_ALLOWED_COMBAT_STYLES],
+  },
+  baseAttrs: buildPartnerRecruitBaseAttrsJsonSchema({
+    attrSource: 'baseAttrs',
+    requirePositiveCoreAttrs: true,
+  }),
+  levelAttrGains: buildPartnerRecruitBaseAttrsJsonSchema({
+    attrSource: 'levelAttrGains',
+    requirePositiveCoreAttrs: false,
+  }),
+});
+
+const buildPartnerRecruitInnateTechniqueJsonSchemaProperties = (
+  passiveValueMaxTotalUpperBound: number,
+): Record<PartnerRecruitInnateTechniqueRequiredKey, TechniqueTextModelJsonSchema> => ({
+  name: {
+    type: 'string',
+    minLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueName.min,
+    maxLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueName.max,
+  },
+  description: {
+    type: 'string',
+    minLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueDescription.min,
+    maxLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueDescription.max,
+  },
+  kind: {
+    type: 'string',
+    enum: [...PARTNER_RECRUIT_ALLOWED_TECHNIQUE_KINDS],
+  },
+  passiveKey: {
+    type: 'string',
+    enum: [...PARTNER_RECRUIT_ALLOWED_PASSIVE_KEYS],
+  },
+  passiveValue: buildPartnerRecruitNumberSchema('number', {
+    exclusiveMinimum: 0,
+    maximum: passiveValueMaxTotalUpperBound,
+  }),
+});
+
 export const buildPartnerRecruitResponseFormat = (
   quality: PartnerRecruitQuality,
 ): TechniqueTextModelResponseFormat => {
   const passiveValueMaxTotalUpperBound = getPartnerRecruitPassiveValueMaxTotalUpperBound(quality);
+  const partnerProperties = buildPartnerRecruitPartnerJsonSchemaProperties(quality);
+  const innateTechniqueProperties = buildPartnerRecruitInnateTechniqueJsonSchemaProperties(passiveValueMaxTotalUpperBound);
   return buildTechniqueTextModelJsonSchemaResponseFormat({
     name: `partner_recruit_draft_${PARTNER_RECRUIT_QUALITY_SCHEMA_NAME_SEGMENT[quality]}`,
     schema: {
@@ -436,48 +508,8 @@ export const buildPartnerRecruitResponseFormat = (
         partner: {
           type: 'object',
           additionalProperties: false,
-          required: [...PARTNER_RECRUIT_PARTNER_REQUIRED_KEYS],
-          properties: {
-            name: {
-              type: 'string',
-              minLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerName.min,
-              maxLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerName.max,
-            },
-            description: {
-              type: 'string',
-              minLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerDescription.min,
-              maxLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerDescription.max,
-            },
-            quality: {
-              type: 'string',
-              enum: [quality],
-            },
-            attributeElement: {
-              type: 'string',
-              enum: [...PARTNER_RECRUIT_ALLOWED_ELEMENTS],
-            },
-            role: {
-              type: 'string',
-              minLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerRole.min,
-              maxLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.partnerRole.max,
-            },
-            combatStyle: {
-              type: 'string',
-              enum: [...PARTNER_RECRUIT_ALLOWED_COMBAT_STYLES],
-            },
-            maxTechniqueSlots: {
-              type: 'integer',
-              minimum: 1,
-            },
-            baseAttrs: buildPartnerRecruitBaseAttrsJsonSchema({
-              attrSource: 'baseAttrs',
-              requirePositiveCoreAttrs: true,
-            }),
-            levelAttrGains: buildPartnerRecruitBaseAttrsJsonSchema({
-              attrSource: 'levelAttrGains',
-              requirePositiveCoreAttrs: false,
-            }),
-          },
+          required: Object.keys(partnerProperties),
+          properties: partnerProperties,
         },
         innateTechniques: {
           type: 'array',
@@ -486,31 +518,8 @@ export const buildPartnerRecruitResponseFormat = (
           items: {
             type: 'object',
             additionalProperties: false,
-            required: [...PARTNER_RECRUIT_INNATE_TECHNIQUE_REQUIRED_KEYS],
-            properties: {
-              name: {
-                type: 'string',
-                minLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueName.min,
-                maxLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueName.max,
-              },
-              description: {
-                type: 'string',
-                minLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueDescription.min,
-                maxLength: PARTNER_RECRUIT_TEXT_LENGTH_LIMITS.techniqueDescription.max,
-              },
-              kind: {
-                type: 'string',
-                enum: [...PARTNER_RECRUIT_ALLOWED_TECHNIQUE_KINDS],
-              },
-              passiveKey: {
-                type: 'string',
-                enum: [...PARTNER_RECRUIT_ALLOWED_PASSIVE_KEYS],
-              },
-              passiveValue: buildPartnerRecruitNumberSchema('number', {
-                exclusiveMinimum: 0,
-                maximum: passiveValueMaxTotalUpperBound,
-              }),
-            },
+            required: Object.keys(innateTechniqueProperties),
+            properties: innateTechniqueProperties,
           },
         },
       },
@@ -733,13 +742,20 @@ export type PartnerRecruitCooldownState = {
   isCoolingDown: boolean;
 };
 
+export const PARTNER_RECRUIT_COOLDOWN_APPLY_JOB_STATUSES = [
+  'pending',
+  'generated_draft',
+  'accepted',
+  'discarded',
+] as const;
+
 export const shouldPartnerRecruitApplyCooldown = (
   latestJobStatus: string | null | undefined,
 ): boolean => {
-  return latestJobStatus === 'pending'
-    || latestJobStatus === 'generated_draft'
-    || latestJobStatus === 'accepted'
-    || latestJobStatus === 'discarded';
+  if (typeof latestJobStatus !== 'string') {
+    return false;
+  }
+  return PARTNER_RECRUIT_COOLDOWN_APPLY_JOB_STATUSES.some((status) => status === latestJobStatus);
 };
 
 type PartnerRecruitCooldownOptions = {

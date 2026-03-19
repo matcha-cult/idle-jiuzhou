@@ -23,6 +23,7 @@ import {
   type PartnerRecruitDraft,
   buildPartnerRecruitPromptNoiseHash,
   buildPartnerRecruitPromptInput,
+  buildPartnerRecruitResponseFormat,
   fillPartnerRecruitBaseAttrs,
   resolvePartnerRecruitTechniqueSlotCount,
   validatePartnerRecruitDraft,
@@ -243,6 +244,21 @@ test('buildPartnerRecruitPromptInput: 应支持注入随机扰动 hash 且禁止
     ),
     true,
   );
+});
+
+test('buildPartnerRecruitResponseFormat: 不应要求模型输出服务端自动补齐的功法槽位', () => {
+  const responseFormat = buildPartnerRecruitResponseFormat('天');
+  const schema = responseFormat.type === 'json_schema' ? responseFormat.json_schema.schema : null;
+  const partnerSchema = schema?.properties.partner;
+
+  assert.equal(partnerSchema?.type, 'object');
+  if (!partnerSchema || partnerSchema.type !== 'object') {
+    assert.fail('partner schema 缺失');
+  }
+
+  assert.equal('maxTechniqueSlots' in partnerSchema.properties, false);
+  assert.equal(partnerSchema.required.includes('maxTechniqueSlots'), false);
+  assert.deepEqual(partnerSchema.required.sort(), Object.keys(partnerSchema.properties).sort());
 });
 
 test('validatePartnerRecruitDraft: 合法预算内的天生功法应通过校验', () => {

@@ -184,6 +184,7 @@ export type PartnerRecruitStatusDto = {
   cooldownHours: number;
   cooldownUntil: string | null;
   cooldownRemainingSeconds: number;
+  customBaseModelBypassesCooldown: boolean;
   customBaseModelMaxLength: number;
   customBaseModelTokenCost: number;
   customBaseModelTokenItemName: string;

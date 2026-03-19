@@ -62,9 +62,9 @@ import {
   formatPartnerRecruitCooldownRemaining,
   getPartnerRecruitTechniqueMaxLayer,
   isPartnerRecruitPreviewExpired,
+  PARTNER_RECRUIT_COOLDOWN_APPLY_JOB_STATUSES,
   PARTNER_RECRUIT_SPIRIT_STONES_COST,
   resolvePartnerRecruitQualityByWeight,
-  shouldPartnerRecruitApplyCooldown,
   type PartnerRecruitCombatStyle,
   type PartnerRecruitDraft,
   type PartnerRecruitQuality,
@@ -75,11 +75,13 @@ import {
   PARTNER_RECRUIT_FORM_RULES,
 } from './shared/partnerRecruitCreativeDirection.js';
 import {
+  PARTNER_RECRUIT_CUSTOM_BASE_MODEL_BYPASSES_COOLDOWN,
   guardPartnerRecruitRequestedBaseModel,
   PARTNER_RECRUIT_CUSTOM_BASE_MODEL_MAX_LENGTH,
   PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_COST,
   PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_ITEM_DEF_ID,
   resolvePartnerRecruitBaseModel,
+  shouldPartnerRecruitBypassCooldownWithCustomBaseModel,
   validatePartnerRecruitRequestedBaseModelSelection,
 } from './shared/partnerRecruitBaseModel.js';
 import {
@@ -716,6 +718,29 @@ class PartnerRecruitService {
     };
   }
 
+  private async loadLatestRecruitCooldownStartedAt(
+    characterId: number,
+    forUpdate: boolean,
+  ): Promise<string | null> {
+    const lockSql = forUpdate ? 'FOR UPDATE' : '';
+    const result = await query(
+      `
+        SELECT cooldown_started_at
+        FROM partner_recruit_job
+        WHERE character_id = $1
+          AND status = ANY($2::text[])
+          AND requested_base_model IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+        ${lockSql}
+      `,
+      [characterId, [...PARTNER_RECRUIT_COOLDOWN_APPLY_JOB_STATUSES]],
+    );
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return toIsoString(row.cooldown_started_at);
+  }
+
   private async loadCharacterSpiritStones(characterId: number, forUpdate: boolean): Promise<number | null> {
     const lockSql = forUpdate ? 'FOR UPDATE' : '';
     const result = await query(
@@ -798,6 +823,7 @@ class PartnerRecruitService {
           cooldownHours: cooldownState.cooldownHours,
           cooldownUntil: cooldownState.cooldownUntil,
           cooldownRemainingSeconds: cooldownState.cooldownRemainingSeconds,
+          customBaseModelBypassesCooldown: PARTNER_RECRUIT_CUSTOM_BASE_MODEL_BYPASSES_COOLDOWN,
           customBaseModelMaxLength: PARTNER_RECRUIT_CUSTOM_BASE_MODEL_MAX_LENGTH,
           customBaseModelTokenCost: PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_COST,
           customBaseModelTokenItemName,
@@ -811,10 +837,8 @@ class PartnerRecruitService {
 
     await this.discardExpiredDraftJobsTx(characterId);
     const latestJob = await this.loadLatestJobRow(characterId, false);
+    const latestCooldownStartedAt = await this.loadLatestRecruitCooldownStartedAt(characterId, false);
     const cooldownReductionRate = await getActiveMonthCardCooldownReductionRate(characterId);
-    const latestCooldownStartedAt = latestJob && shouldPartnerRecruitApplyCooldown(latestJob.status)
-      ? latestJob.cooldownStartedAt
-      : null;
     const cooldownState = buildPartnerRecruitCooldownState(latestCooldownStartedAt, new Date(), {
       cooldownReductionRate,
     });
@@ -845,6 +869,7 @@ class PartnerRecruitService {
         cooldownHours: cooldownState.cooldownHours,
         cooldownUntil: cooldownState.cooldownUntil,
         cooldownRemainingSeconds: cooldownState.cooldownRemainingSeconds,
+        customBaseModelBypassesCooldown: PARTNER_RECRUIT_CUSTOM_BASE_MODEL_BYPASSES_COOLDOWN,
         customBaseModelMaxLength: PARTNER_RECRUIT_CUSTOM_BASE_MODEL_MAX_LENGTH,
         customBaseModelTokenCost: PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_COST,
         customBaseModelTokenItemName,
@@ -891,19 +916,20 @@ class PartnerRecruitService {
       };
     }
 
-    const cooldownReductionRate = await getActiveMonthCardCooldownReductionRate(characterId);
-    const latestCooldownStartedAt = latestJob && shouldPartnerRecruitApplyCooldown(latestJob.status)
-      ? latestJob.cooldownStartedAt
-      : null;
-    const cooldownState = buildPartnerRecruitCooldownState(latestCooldownStartedAt, new Date(), {
-      cooldownReductionRate,
-    });
-    if (cooldownState.isCoolingDown) {
-      return {
-        success: false,
-        message: `伙伴招募冷却中，还需等待${formatPartnerRecruitCooldownRemaining(cooldownState.cooldownRemainingSeconds)}`,
-        code: 'RECRUIT_COOLDOWN_ACTIVE',
-      };
+    const shouldBypassCooldown = shouldPartnerRecruitBypassCooldownWithCustomBaseModel(requestedBaseModelValidation.value);
+    if (!shouldBypassCooldown) {
+      const cooldownReductionRate = await getActiveMonthCardCooldownReductionRate(characterId);
+      const latestCooldownStartedAt = await this.loadLatestRecruitCooldownStartedAt(characterId, true);
+      const cooldownState = buildPartnerRecruitCooldownState(latestCooldownStartedAt, new Date(), {
+        cooldownReductionRate,
+      });
+      if (cooldownState.isCoolingDown) {
+        return {
+          success: false,
+          message: `伙伴招募冷却中，还需等待${formatPartnerRecruitCooldownRemaining(cooldownState.cooldownRemainingSeconds)}`,
+          code: 'RECRUIT_COOLDOWN_ACTIVE',
+        };
+      }
     }
 
     const spiritStones = await this.loadCharacterSpiritStones(characterId, true);

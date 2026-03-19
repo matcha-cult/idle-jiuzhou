@@ -20,10 +20,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  PARTNER_RECRUIT_CUSTOM_BASE_MODEL_BYPASSES_COOLDOWN,
   PARTNER_RECRUIT_CUSTOM_BASE_MODEL_ENABLE_REQUIRED_MESSAGE,
   PARTNER_RECRUIT_CUSTOM_BASE_MODEL_REQUIRED_MESSAGE,
   PARTNER_RECRUIT_CUSTOM_BASE_MODEL_SENSITIVE_MESSAGE,
   guardPartnerRecruitRequestedBaseModel,
+  shouldPartnerRecruitBypassCooldownWithCustomBaseModel,
   validatePartnerRecruitRequestedBaseModelSelection,
   validatePartnerRecruitRequestedBaseModel,
 } from '../shared/partnerRecruitBaseModel.js';
@@ -72,4 +74,10 @@ test('validatePartnerRecruitRequestedBaseModelSelection: 勾选后留空应提�
   assert.equal(result.success, false);
   if (result.success) return;
   assert.equal(result.message, PARTNER_RECRUIT_CUSTOM_BASE_MODEL_REQUIRED_MESSAGE);
+});
+
+test('shouldPartnerRecruitBypassCooldownWithCustomBaseModel: 自定义底模招募应复用高级招募令绕过冷却规则', () => {
+  assert.equal(PARTNER_RECRUIT_CUSTOM_BASE_MODEL_BYPASSES_COOLDOWN, true);
+  assert.equal(shouldPartnerRecruitBypassCooldownWithCustomBaseModel('雪狐'), true);
+  assert.equal(shouldPartnerRecruitBypassCooldownWithCustomBaseModel(null), false);
 });

@@ -45,6 +45,12 @@ export type PartnerRecruitActionState = {
   pendingGenerationId: string | null;
 };
 
+export type PartnerRecruitCooldownDisplay = {
+  statusText: string;
+  ruleText: string;
+  bypassedByCustomBaseModel: boolean;
+};
+
 export const buildPartnerRecruitIndicator = (
   status: PartnerRecruitStatusData | null,
 ): PartnerRecruitIndicatorView => {
@@ -114,8 +120,64 @@ export const formatPartnerRecruitCooldownRemaining = (
   cooldownRemainingSeconds: number,
 ): string => formatGameCooldownRemaining(cooldownRemainingSeconds);
 
+export const shouldPartnerRecruitBypassCooldown = (
+  status: PartnerRecruitStatusData | null,
+  customBaseModelEnabled: boolean,
+): boolean => {
+  return Boolean(status?.customBaseModelBypassesCooldown)
+    && customBaseModelEnabled
+    && (status?.cooldownHours ?? 0) > 0;
+};
+
+export const isPartnerRecruitCooldownBlocked = (
+  status: PartnerRecruitStatusData | null,
+  customBaseModelEnabled: boolean,
+): boolean => {
+  return isPartnerRecruitCoolingDown(status)
+    && !shouldPartnerRecruitBypassCooldown(status, customBaseModelEnabled);
+};
+
+export const resolvePartnerRecruitCooldownDisplay = (
+  status: PartnerRecruitStatusData | null,
+  customBaseModelEnabled: boolean,
+): PartnerRecruitCooldownDisplay => {
+  if (!status) {
+    return {
+      statusText: '--',
+      ruleText: '--',
+      bypassedByCustomBaseModel: false,
+    };
+  }
+  if (!status.unlocked) {
+    return {
+      statusText: '未开放',
+      ruleText: `需达到境界：${status.unlockRealm}`,
+      bypassedByCustomBaseModel: false,
+    };
+  }
+
+  const coolingDown = isPartnerRecruitCoolingDown(status);
+  const bypassedByCustomBaseModel = shouldPartnerRecruitBypassCooldown(status, customBaseModelEnabled);
+  const cooldownText = formatPartnerRecruitCooldownRemaining(status.cooldownRemainingSeconds);
+  const statusText = !coolingDown
+    ? (bypassedByCustomBaseModel ? '可招募（本次不触发冷却）' : '可招募')
+    : (bypassedByCustomBaseModel ? `冷却中（本次招募不受影响，剩余${cooldownText}）` : `剩余${cooldownText}`);
+  const ruleText = status.cooldownHours === 0
+    ? '当前环境已关闭伙伴招募冷却，可连续招募。'
+    : bypassedByCustomBaseModel
+      ? '已启用高级招募令，本次招募会无视当前冷却，且不会重置或新增招募冷却。'
+      : `每次开始招募后会进入冷却，当前冷却时长为 ${status.cooldownHours} 小时。`;
+
+  return {
+    statusText,
+    ruleText,
+    bypassedByCustomBaseModel,
+  };
+};
+
 export const resolvePartnerRecruitActionState = (
   status: PartnerRecruitStatusData | null,
+  customBaseModelEnabled: boolean,
 ): PartnerRecruitActionState => {
   const panelView = resolvePartnerRecruitPanelView(status);
   const canGenerate =
@@ -123,7 +185,7 @@ export const resolvePartnerRecruitActionState = (
     status.unlocked &&
     panelView.kind !== 'pending' &&
     panelView.kind !== 'draft' &&
-    !isPartnerRecruitCoolingDown(status);
+    !isPartnerRecruitCooldownBlocked(status, customBaseModelEnabled);
 
   return {
     canGenerate,

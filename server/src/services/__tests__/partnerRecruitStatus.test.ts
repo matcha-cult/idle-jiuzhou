@@ -32,6 +32,7 @@ test('buildPartnerRecruitStatusDto: 未开放时应返回锁定态 DTO 并清空
     cooldownHours: 12,
     cooldownUntil: '2026-03-11T10:00:00.000Z',
     cooldownRemainingSeconds: 1800,
+    customBaseModelBypassesCooldown: true,
     customBaseModelMaxLength: 12,
     customBaseModelTokenCost: 1,
     customBaseModelTokenItemName: '高级招募令',
@@ -57,6 +58,7 @@ test('buildPartnerRecruitStatusDto: 未开放时应返回锁定态 DTO 并清空
   assert.equal(status.cooldownHours, 12);
   assert.equal(status.cooldownUntil, null);
   assert.equal(status.cooldownRemainingSeconds, 0);
+  assert.equal(status.customBaseModelBypassesCooldown, true);
   assert.equal(status.customBaseModelMaxLength, 12);
   assert.equal(status.customBaseModelTokenCost, 1);
   assert.equal(status.customBaseModelTokenItemName, '高级招募令');
@@ -88,6 +90,7 @@ test('buildPartnerRecruitStatusDto: 已开放时应保留真实动态状态', ()
     cooldownHours: 12,
     cooldownUntil: '2026-03-11T10:00:00.000Z',
     cooldownRemainingSeconds: 1800,
+    customBaseModelBypassesCooldown: true,
     customBaseModelMaxLength: 12,
     customBaseModelTokenCost: 1,
     customBaseModelTokenItemName: '高级招募令',
@@ -101,6 +104,7 @@ test('buildPartnerRecruitStatusDto: 已开放时应保留真实动态状态', ()
   assert.equal(status.unlockRealm, '炼神返虚·养神期');
   assert.equal(status.cooldownUntil, '2026-03-11T10:00:00.000Z');
   assert.equal(status.cooldownRemainingSeconds, 1800);
+  assert.equal(status.customBaseModelBypassesCooldown, true);
   assert.equal(status.customBaseModelMaxLength, 12);
   assert.equal(status.customBaseModelTokenCost, 1);
   assert.equal(status.customBaseModelTokenItemName, '高级招募令');

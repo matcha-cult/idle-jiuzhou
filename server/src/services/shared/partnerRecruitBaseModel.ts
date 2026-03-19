@@ -43,6 +43,7 @@ export const PARTNER_RECRUIT_CUSTOM_BASE_MODEL_ENABLE_REQUIRED_MESSAGE = '请先
 export const PARTNER_RECRUIT_CUSTOM_BASE_MODEL_REQUIRED_MESSAGE = '请输入自定义底模';
 export const PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_ITEM_DEF_ID = 'token-004';
 export const PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_COST = 1;
+export const PARTNER_RECRUIT_CUSTOM_BASE_MODEL_BYPASSES_COOLDOWN = true;
 
 const PARTNER_RECRUIT_CUSTOM_BASE_MODEL_PATTERN = /^[\p{Script=Han}]+$/u;
 
@@ -58,6 +59,19 @@ export type PartnerRecruitResolvedBaseModel = {
 
 const getTextLength = (value: string): number => {
   return Array.from(value).length;
+};
+
+export const hasPartnerRecruitCustomBaseModel = (
+  requestedBaseModel: string | null | undefined,
+): boolean => {
+  return typeof requestedBaseModel === 'string' && requestedBaseModel.trim().length > 0;
+};
+
+export const shouldPartnerRecruitBypassCooldownWithCustomBaseModel = (
+  requestedBaseModel: string | null | undefined,
+): boolean => {
+  return PARTNER_RECRUIT_CUSTOM_BASE_MODEL_BYPASSES_COOLDOWN
+    && hasPartnerRecruitCustomBaseModel(requestedBaseModel);
 };
 
 const resolvePartnerRecruitBaseModelPath = (): string => {
@@ -170,7 +184,7 @@ export const validatePartnerRecruitRequestedBaseModelSelection = async (params: 
   enabled: boolean;
   requestedBaseModel?: string | null;
 }): Promise<PartnerRecruitRequestedBaseModelValidationResult> => {
-  const hasRequestedBaseModel = typeof params.requestedBaseModel === 'string' && params.requestedBaseModel.trim().length > 0;
+  const hasRequestedBaseModel = hasPartnerRecruitCustomBaseModel(params.requestedBaseModel);
   if (!params.enabled) {
     if (hasRequestedBaseModel) {
       return {

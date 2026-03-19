@@ -42,6 +42,7 @@ export interface PartnerRecruitStatusDto {
   cooldownHours: number;
   cooldownUntil: string | null;
   cooldownRemainingSeconds: number;
+  customBaseModelBypassesCooldown: boolean;
   customBaseModelMaxLength: typeof PARTNER_RECRUIT_CUSTOM_BASE_MODEL_MAX_LENGTH;
   customBaseModelTokenCost: number;
   customBaseModelTokenItemName: string;
@@ -58,6 +59,7 @@ type BuildPartnerRecruitStatusDtoParams = {
   cooldownHours: number;
   cooldownUntil: string | null;
   cooldownRemainingSeconds: number;
+  customBaseModelBypassesCooldown: boolean;
   customBaseModelMaxLength: typeof PARTNER_RECRUIT_CUSTOM_BASE_MODEL_MAX_LENGTH;
   customBaseModelTokenCost: number;
   customBaseModelTokenItemName: string;
@@ -77,6 +79,7 @@ export const buildPartnerRecruitStatusDto = (
     cooldownHours,
     cooldownUntil,
     cooldownRemainingSeconds,
+    customBaseModelBypassesCooldown,
     customBaseModelMaxLength,
     customBaseModelTokenCost,
     customBaseModelTokenItemName,
@@ -95,6 +98,7 @@ export const buildPartnerRecruitStatusDto = (
       cooldownHours,
       cooldownUntil: null,
       cooldownRemainingSeconds: 0,
+      customBaseModelBypassesCooldown,
       customBaseModelMaxLength,
       customBaseModelTokenCost,
       customBaseModelTokenItemName,
@@ -113,6 +117,7 @@ export const buildPartnerRecruitStatusDto = (
     cooldownHours,
     cooldownUntil,
     cooldownRemainingSeconds,
+    customBaseModelBypassesCooldown,
     customBaseModelMaxLength,
     customBaseModelTokenCost,
     customBaseModelTokenItemName,
