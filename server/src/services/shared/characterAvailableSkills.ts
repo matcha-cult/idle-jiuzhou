@@ -23,6 +23,7 @@ import { query } from '../../config/database.js';
 import {
   isManualSkillTriggerType,
   resolveSkillTriggerType,
+  type SkillTriggerType,
 } from '../../shared/skillTriggerType.js';
 import { getSkillDefinitions, getTechniqueDefinitions, type SkillDefConfig } from '../staticConfigLoader.js';
 import { createStaticDefinitionIndexGetter } from './staticDefinitionIndex.js';
@@ -52,6 +53,8 @@ export type CharacterAvailableSkillEntry = {
   skillId: string;
   techniqueId: string;
   techniqueName: string;
+  triggerType: SkillTriggerType;
+  upgradeLevel: number;
   skillName: string;
   skillIcon: string;
   description: string | null;
@@ -104,7 +107,7 @@ const loadEquippedTechniqueLite = async (characterId: number): Promise<EquippedT
     .filter((entry): entry is EquippedTechniqueLite => Boolean(entry));
 };
 
-export const loadCharacterAvailableSkillEntries = async (
+export const loadCharacterUnlockedSkillEntries = async (
   characterId: number,
 ): Promise<CharacterAvailableSkillEntry[]> => {
   const equipped = await loadEquippedTechniqueLite(characterId);
@@ -165,11 +168,12 @@ export const loadCharacterAvailableSkillEntries = async (
         triggerType: skillDef.trigger_type,
         effects: effectiveSkill.effects,
       });
-      if (!isManualSkillTriggerType(resolvedTriggerType)) continue;
       entries.push({
         skillId,
         techniqueId: equippedEntry.techniqueId,
         techniqueName,
+        triggerType: resolvedTriggerType,
+        upgradeLevel,
         skillName: String(skillDef.name || skillId),
         skillIcon: String(skillDef.icon || ''),
         description: typeof skillDef.description === 'string' ? skillDef.description : null,
@@ -190,6 +194,13 @@ export const loadCharacterAvailableSkillEntries = async (
   return entries.sort(
     (left, right) => left.techniqueName.localeCompare(right.techniqueName) || left.skillName.localeCompare(right.skillName),
   );
+};
+
+export const loadCharacterAvailableSkillEntries = async (
+  characterId: number,
+): Promise<CharacterAvailableSkillEntry[]> => {
+  const unlockedSkills = await loadCharacterUnlockedSkillEntries(characterId);
+  return unlockedSkills.filter((entry) => isManualSkillTriggerType(entry.triggerType));
 };
 
 export const listCharacterAvailableSkillIdSet = async (characterId: number): Promise<Set<string>> => {
