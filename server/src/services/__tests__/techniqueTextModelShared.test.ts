@@ -126,6 +126,10 @@ test('显式传入 response_format 时应原样写入 payload', () => {
   });
 
   assert.deepEqual(payload.response_format, responseFormat);
+  assert.equal(responseFormat.type, 'json_schema');
+  if (responseFormat.type !== 'json_schema') return;
+  assert.equal(responseFormat.json_schema.name, 'partner_recruit_draft');
+  assert.equal(responseFormat.json_schema.strict, true);
 });
 
 test('分段 content 应拼接为统一文本', () => {
@@ -140,6 +144,15 @@ test('分段 content 应拼接为统一文本', () => {
 test('模型文本中包裹的 JSON 对象应能被提取', () => {
   const result = parseTechniqueTextModelJsonObject(
     '下面是结果：\n```json\n{"technique":{"name":"太虚剑诀"}}\n```',
+  );
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.data.technique && typeof result.data.technique === 'object', true);
+});
+
+test('前置说明含有无效花括号时仍应提取后续合法 JSON 对象', () => {
+  const result = parseTechniqueTextModelJsonObject(
+    '请忽略这个占位 {not-json}\n最终结果如下：{"technique":{"name":"太虚剑诀","summary":"剑意如潮 {不入结构}"}}',
   );
   assert.equal(result.success, true);
   if (!result.success) return;

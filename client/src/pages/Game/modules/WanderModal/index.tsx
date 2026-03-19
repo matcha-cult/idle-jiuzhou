@@ -1,21 +1,19 @@
 import { App, Button, Modal, Spin, Tag } from 'antd';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   chooseWanderEpisodeOption,
   generateWanderEpisode,
   getWanderOverview,
-  type WanderGeneratedTitleDto,
   type WanderOverviewDto,
-  type WanderStoryDto,
 } from '../../../../services/api';
-import { formatTitleEffectsText } from '../../shared/titleEffectText';
+import { SILENT_API_REQUEST_CONFIG } from '../../../../services/api/requestConfig';
 import './index.scss';
 
 /**
  * 云游奇遇弹窗
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：承接百业入口的云游奇遇交互，负责展示今日剧情、提交选项、回顾故事与查看云游来源正式称号。
+ * 1. 做什么：承接百业入口的云游奇遇交互，负责展示今日剧情、提交选项与回顾故事。
  * 2. 做什么：把“概览读取 / 今日生成 / 选项确认”三条请求集中在单个弹窗里，避免 Game 页维护额外状态机。
  * 3. 不做什么：不重复实现后端每日限制，不接管正式称号装备逻辑，也不处理全局红点。
  *
@@ -36,16 +34,7 @@ interface WanderModalProps {
   onClose: () => void;
 }
 
-const resolveEndingTag = (story: WanderStoryDto | null): { color: string; text: string } | null => {
-  if (!story || story.status !== 'finished') return null;
-  const lastEpisode = story.episodes[story.episodes.length - 1] ?? null;
-  if (!lastEpisode || !lastEpisode.isEnding) return null;
-  if (lastEpisode.endingType === 'good') return { color: 'gold', text: '善缘结局' };
-  if (lastEpisode.endingType === 'neutral') return { color: 'blue', text: '平途结局' };
-  if (lastEpisode.endingType === 'tragic') return { color: 'red', text: '劫缘结局' };
-  if (lastEpisode.endingType === 'bizarre') return { color: 'purple', text: '异闻结局' };
-  return null;
-};
+type WanderOverviewRefreshMode = 'initial' | 'background';
 
 const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
   const { message } = App.useApp();
@@ -53,13 +42,21 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
   const [overview, setOverview] = useState<WanderOverviewDto | null>(null);
   const [actionKey, setActionKey] = useState('');
 
-  const refreshOverview = useCallback(async () => {
-    setLoading(true);
+  const refreshOverview = useCallback(async (mode: WanderOverviewRefreshMode = 'initial') => {
+    if (mode === 'initial') {
+      setLoading(true);
+    }
     try {
-      const response = await getWanderOverview();
+      const response = await getWanderOverview(mode === 'background' ? SILENT_API_REQUEST_CONFIG : undefined);
       setOverview(response.data ?? null);
+    } catch {
+      if (mode === 'initial') {
+        setOverview(null);
+      }
     } finally {
-      setLoading(false);
+      if (mode === 'initial') {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -71,15 +68,14 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
         if (!current || !response.data) return current;
         return {
           ...current,
-          hasPendingEpisode: true,
+          hasPendingEpisode: false,
           canGenerateToday: false,
           todayCompleted: false,
-          activeStory: response.data.story,
-          currentEpisode: response.data.episode,
+          currentGenerationJob: response.data.job,
         };
       });
-      message.success('今日云游已展开');
-      await refreshOverview();
+      message.success('今日云游已开始推演');
+      await refreshOverview('background');
     } finally {
       setActionKey('');
     }
@@ -102,10 +98,22 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
   }, [message, refreshOverview]);
 
   const currentEpisode = overview?.currentEpisode ?? null;
+  const currentGenerationJob = overview?.currentGenerationJob ?? null;
   const activeStory = overview?.activeStory ?? null;
   const latestFinishedStory = overview?.latestFinishedStory ?? null;
   const storyForHistory = activeStory ?? latestFinishedStory;
-  const endingTag = useMemo(() => resolveEndingTag(latestFinishedStory), [latestFinishedStory]);
+
+  useEffect(() => {
+    if (!open || currentGenerationJob?.status !== 'pending') {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshOverview('background');
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+  }, [currentGenerationJob?.generationId, currentGenerationJob?.status, open, refreshOverview]);
 
   return (
     <Modal
@@ -151,13 +159,46 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
                   {!overview.aiAvailable ? <Tag color="red">AI 未配置</Tag> : null}
                   {overview.todayCompleted ? <Tag color="green">今日已完成</Tag> : null}
                   {overview.hasPendingEpisode ? <Tag color="gold">等待抉择</Tag> : null}
+                  {currentGenerationJob?.status === 'pending' ? <Tag color="processing">生成中</Tag> : null}
+                  {currentGenerationJob?.status === 'failed' ? <Tag color="red">生成失败</Tag> : null}
                 </div>
 
                 {!overview.aiAvailable ? (
                   <div className="wander-empty">当前服务器未配置 AI 文本模型，暂时无法开启云游奇遇。</div>
                 ) : null}
 
-                {overview.aiAvailable && !currentEpisode && overview.canGenerateToday ? (
+                {overview.aiAvailable && !currentEpisode && currentGenerationJob?.status === 'pending' ? (
+                  <div className="wander-generate-card">
+                    <div className="wander-generate-main">
+                      <div className="wander-generate-title">今日云游推演中</div>
+                      <div className="wander-generate-desc">
+                        <Spin size="small" /> AI 正在整理你今日的缘法脉络，剧情生成完成后会自动出现在这里。
+                      </div>
+                    </div>
+                    <Tag color="processing">任务 #{currentGenerationJob.generationId}</Tag>
+                  </div>
+                ) : null}
+
+                {overview.aiAvailable && !currentEpisode && currentGenerationJob?.status === 'failed' ? (
+                  <div className="wander-generate-card">
+                    <div className="wander-generate-main">
+                      <div className="wander-generate-title">今日云游推演失败</div>
+                      <div className="wander-generate-desc">
+                        {currentGenerationJob.errorMessage || '本次奇遇未能顺利成形，你可以立即重新推演今日剧情。'}
+                      </div>
+                    </div>
+                    <Button
+                      type="primary"
+                      size="large"
+                      loading={actionKey === 'generate'}
+                      onClick={() => void generateToday()}
+                    >
+                      重新推演
+                    </Button>
+                  </div>
+                ) : null}
+
+                {overview.aiAvailable && !currentEpisode && overview.canGenerateToday && currentGenerationJob === null ? (
                   <div className="wander-generate-card">
                     <div className="wander-generate-main">
                       <div className="wander-generate-title">今日尚未云游</div>
@@ -214,79 +255,46 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
                   </div>
                 ) : null}
 
-                {overview.aiAvailable && !currentEpisode && !overview.canGenerateToday ? (
+                {overview.aiAvailable && !currentEpisode && !overview.canGenerateToday && currentGenerationJob === null ? (
                   <div className="wander-empty">今日云游已经结束，明日再来续写新的缘法。</div>
                 ) : null}
               </section>
 
-              <div className="wander-grid">
-                <section className="wander-panel">
-                  <div className="wander-panel-head">
-                    <div className="wander-panel-title">故事回顾</div>
-                    {storyForHistory ? <Tag color="default">{storyForHistory.theme}</Tag> : null}
-                  </div>
-                  {storyForHistory ? (
-                    <>
-                      <div className="wander-story-premise">{storyForHistory.premise}</div>
-                      <div className="wander-story-summary">{storyForHistory.summary}</div>
-                      <div className="wander-history-list">
-                        {storyForHistory.episodes.map((episode) => (
-                          <div key={episode.id} className="wander-history-card">
-                            <div className="wander-history-head">
-                              <span className="wander-history-title">第 {episode.dayIndex} 幕 · {episode.title}</span>
-                              {episode.isEnding ? <Tag color="magenta">终幕</Tag> : null}
-                            </div>
-                            <div className="wander-history-summary">{episode.summary}</div>
-                            {episode.chosenOptionText ? (
-                              <div className="wander-history-choice">选择：{episode.chosenOptionText}</div>
-                            ) : (
-                              <div className="wander-history-choice">尚未作出选择</div>
-                            )}
+              <section className="wander-panel">
+                <div className="wander-panel-head">
+                  <div className="wander-panel-title">故事回顾</div>
+                  {storyForHistory ? <Tag color="default">{storyForHistory.theme}</Tag> : null}
+                </div>
+                {storyForHistory ? (
+                  <>
+                    <div className="wander-story-premise">{storyForHistory.premise}</div>
+                    <div className="wander-story-summary">{storyForHistory.summary}</div>
+                    <div className="wander-history-list">
+                      {storyForHistory.episodes.map((episode) => (
+                        <div key={episode.id} className="wander-history-card">
+                          <div className="wander-history-head">
+                            <span className="wander-history-title">第 {episode.dayIndex} 幕 · {episode.title}</span>
+                            {episode.isEnding ? <Tag color="magenta">终幕</Tag> : null}
                           </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="wander-empty">尚未开启任何云游故事。</div>
-                  )}
-                </section>
-
-                <section className="wander-panel">
-                  <div className="wander-panel-head">
-                    <div className="wander-panel-title">云游正式称号</div>
-                    {endingTag ? <Tag color={endingTag.color}>{endingTag.text}</Tag> : null}
-                  </div>
-                  {(overview.generatedTitles ?? []).length > 0 ? (
-                    <div className="wander-title-list">
-                      {overview.generatedTitles.map((title) => (
-                        <WanderTitleCard key={title.id} title={title} />
+                          <div className="wander-history-summary">{episode.summary}</div>
+                          {episode.chosenOptionText ? (
+                            <div className="wander-history-choice">选择：{episode.chosenOptionText}</div>
+                          ) : (
+                            <div className="wander-history-choice">尚未作出选择</div>
+                          )}
+                        </div>
                       ))}
                     </div>
-                  ) : (
-                    <div className="wander-empty">尚未通过云游奇遇获得正式称号。</div>
-                  )}
-                </section>
-              </div>
+                  </>
+                ) : (
+                  <div className="wander-empty">尚未开启任何云游故事。</div>
+                )}
+              </section>
             </>
           ) : null}
         </div>
       </div>
     </Modal>
-  );
-};
-
-const WanderTitleCard: React.FC<{ title: WanderGeneratedTitleDto }> = ({ title }) => {
-  return (
-    <div className="wander-title-card">
-      <div className="wander-title-card-head">
-        <div className="wander-title-card-name" style={title.color ? { color: title.color } : undefined}>
-          {title.name}
-        </div>
-        {title.isEquipped ? <Tag color="green">已装备</Tag> : <Tag color="default">未装备</Tag>}
-      </div>
-      <div className="wander-title-card-desc">{title.description}</div>
-      <div className="wander-title-card-effects">{formatTitleEffectsText(title.effects)}</div>
-    </div>
   );
 };
 

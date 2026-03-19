@@ -25,10 +25,14 @@ import { getMapDefinitions } from '../staticConfigLoader.js';
 import { getMainQuestProgress } from '../mainQuest/index.js';
 import { grantPermanentTitleTx } from '../achievement/titleOwnership.js';
 import { generateWanderAiEpisodeDraft, isWanderAiAvailable, type WanderAiPreviousEpisodeContext } from './ai.js';
+import { buildDateKey, resolveWanderGenerationDayKey, shouldBypassWanderDailyLimit } from './rules.js';
 import type {
   WanderChooseResultDto,
   WanderEndingType,
   WanderEpisodeDto,
+  WanderGenerateQueueResultDto,
+  WanderGenerationJobDto,
+  WanderGenerationJobStatus,
   WanderGeneratedTitleDto,
   WanderOverviewDto,
   WanderStoryDto,
@@ -95,17 +99,21 @@ type WanderGeneratedTitleRow = {
   obtained_at: Date | string;
 };
 
+type WanderGenerationJobRow = {
+  id: string;
+  character_id: number;
+  day_key: Date | string;
+  status: string;
+  error_message: string | null;
+  generated_episode_id: string | null;
+  created_at: Date | string;
+  finished_at: Date | string | null;
+};
+
 const WANDER_MAX_CONTEXT_EPISODES = 5;
 const WANDER_MAX_EPISODE_INDEX = 7;
 const WANDER_MIN_ENDING_EPISODE_INDEX = 3;
 const WANDER_SOURCE_TYPE = 'wander_story';
-
-const buildDateKey = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 const toIsoString = (value: Date | string | null): string | null => {
   if (!value) return null;
@@ -124,6 +132,7 @@ const toRequiredIsoString = (value: Date | string): string => {
 const buildStoryId = (): string => `wander-story-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 const buildEpisodeId = (): string => `wander-episode-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 const buildGeneratedTitleId = (): string => `title-wander-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+const buildGenerationId = (): string => `wander-job-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 
 const normalizeEndingType = (value: string): WanderEndingType => {
   if (value === 'good' || value === 'neutral' || value === 'tragic' || value === 'bizarre') {
@@ -224,9 +233,20 @@ const normalizeGeneratedTitleRow = (row: WanderGeneratedTitleRow): WanderGenerat
   };
 };
 
+const buildGenerationJobDto = (row: WanderGenerationJobRow): WanderGenerationJobDto => {
+  return {
+    generationId: row.id,
+    status: (row.status === 'generated' || row.status === 'failed' ? row.status : 'pending') as WanderGenerationJobStatus,
+    startedAt: toRequiredIsoString(row.created_at),
+    finishedAt: toIsoString(row.finished_at),
+    errorMessage: row.error_message,
+  };
+};
+
 const buildOverview = (params: {
   today: string;
   aiAvailable: boolean;
+  currentGenerationJob: WanderGenerationJobDto | null;
   activeStory: WanderStoryDto | null;
   currentEpisode: WanderEpisodeDto | null;
   latestFinishedStory: WanderStoryDto | null;
@@ -238,8 +258,9 @@ const buildOverview = (params: {
     today: params.today,
     aiAvailable: params.aiAvailable,
     hasPendingEpisode,
-    canGenerateToday: params.aiAvailable && params.currentEpisode === null,
+    canGenerateToday: params.aiAvailable && params.currentEpisode === null && params.currentGenerationJob?.status !== 'pending',
     todayCompleted,
+    currentGenerationJob: params.currentGenerationJob,
     activeStory: params.activeStory,
     currentEpisode: params.currentEpisode,
     latestFinishedStory: params.latestFinishedStory,
@@ -274,6 +295,39 @@ class WanderService {
         LIMIT 1
       `,
       [characterId, today],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async loadLatestPendingEpisodeRow(characterId: number): Promise<WanderEpisodeRow | null> {
+    const result = await query<WanderEpisodeRow>(
+      `
+        SELECT id, story_id, character_id, day_key, day_index, episode_title, opening, option_texts,
+               chosen_option_index, chosen_option_text, episode_summary, is_ending, ending_type,
+               reward_title_name, reward_title_desc, created_at, chosen_at
+        FROM character_wander_story_episode
+        WHERE character_id = $1
+          AND chosen_option_index IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [characterId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async loadLatestEpisodeRow(characterId: number): Promise<WanderEpisodeRow | null> {
+    const result = await query<WanderEpisodeRow>(
+      `
+        SELECT id, story_id, character_id, day_key, day_index, episode_title, opening, option_texts,
+               chosen_option_index, chosen_option_text, episode_summary, is_ending, ending_type,
+               reward_title_name, reward_title_desc, created_at, chosen_at
+        FROM character_wander_story_episode
+        WHERE character_id = $1
+        ORDER BY day_key DESC, day_index DESC, created_at DESC
+        LIMIT 1
+      `,
+      [characterId],
     );
     return result.rows[0] ?? null;
   }
@@ -342,6 +396,78 @@ class WanderService {
     return result.rows.map(normalizeGeneratedTitleRow);
   }
 
+  private async loadLatestGenerationJobRow(characterId: number, today: string): Promise<WanderGenerationJobRow | null> {
+    const result = await query<WanderGenerationJobRow>(
+      `
+        SELECT id, character_id, day_key, status, error_message, generated_episode_id, created_at, finished_at
+        FROM character_wander_generation_job
+        WHERE character_id = $1
+          AND day_key = $2::date
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [characterId, today],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async loadLatestGenerationJobRowByCharacterId(characterId: number): Promise<WanderGenerationJobRow | null> {
+    const result = await query<WanderGenerationJobRow>(
+      `
+        SELECT id, character_id, day_key, status, error_message, generated_episode_id, created_at, finished_at
+        FROM character_wander_generation_job
+        WHERE character_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [characterId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async loadGenerationJobRowByIdForUpdate(generationId: string, characterId: number): Promise<WanderGenerationJobRow | null> {
+    const result = await query<WanderGenerationJobRow>(
+      `
+        SELECT id, character_id, day_key, status, error_message, generated_episode_id, created_at, finished_at
+        FROM character_wander_generation_job
+        WHERE id = $1
+          AND character_id = $2
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [generationId, characterId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async updateGenerationJobAsGenerated(generationId: string, episodeId: string): Promise<void> {
+    await query(
+      `
+        UPDATE character_wander_generation_job
+        SET status = 'generated',
+            generated_episode_id = $2,
+            error_message = NULL,
+            finished_at = NOW()
+        WHERE id = $1
+      `,
+      [generationId, episodeId],
+    );
+  }
+
+  private async updateGenerationJobAsFailed(generationId: string, errorMessage: string): Promise<void> {
+    await query(
+      `
+        UPDATE character_wander_generation_job
+        SET status = 'failed',
+            generated_episode_id = NULL,
+            error_message = $2,
+            finished_at = NOW()
+        WHERE id = $1
+      `,
+      [generationId, errorMessage],
+    );
+  }
+
   private async loadRecentEpisodeContext(storyId: string): Promise<WanderAiPreviousEpisodeContext[]> {
     const result = await query<WanderEpisodeRow>(
       `
@@ -376,12 +502,14 @@ class WanderService {
 
   async getOverview(characterId: number): Promise<ServiceResult<WanderOverviewDto>> {
     const today = buildDateKey(new Date());
+    const bypassDailyLimit = shouldBypassWanderDailyLimit();
     const aiAvailable = isWanderAiAvailable();
-    const [currentEpisodeRow, activeStoryRow, latestFinishedStoryRow, generatedTitles] = await Promise.all([
-      this.loadTodayEpisodeRow(characterId, today),
+    const [currentEpisodeRow, activeStoryRow, latestFinishedStoryRow, generatedTitles, latestGenerationJobRow] = await Promise.all([
+      bypassDailyLimit ? this.loadLatestPendingEpisodeRow(characterId) : this.loadTodayEpisodeRow(characterId, today),
       this.loadActiveStoryRow(characterId),
       this.loadLatestFinishedStoryRow(characterId),
       this.loadGeneratedTitleRows(characterId),
+      bypassDailyLimit ? this.loadLatestGenerationJobRowByCharacterId(characterId) : this.loadLatestGenerationJobRow(characterId, today),
     ]);
 
     const [activeStory, latestFinishedStory] = await Promise.all([
@@ -390,6 +518,10 @@ class WanderService {
     ]);
 
     const currentEpisode = currentEpisodeRow ? buildEpisodeDto(currentEpisodeRow) : null;
+    const currentGenerationJob = currentEpisode === null && latestGenerationJobRow
+      && (latestGenerationJobRow.status === 'pending' || latestGenerationJobRow.status === 'failed')
+      ? buildGenerationJobDto(latestGenerationJobRow)
+      : null;
 
     return {
       success: true,
@@ -397,6 +529,7 @@ class WanderService {
       data: buildOverview({
         today,
         aiAvailable,
+        currentGenerationJob,
         activeStory,
         currentEpisode,
         latestFinishedStory,
@@ -405,12 +538,10 @@ class WanderService {
     };
   }
 
-  async generateTodayEpisode(characterId: number): Promise<ServiceResult<{ story: WanderStoryDto; episode: WanderEpisodeDto }>> {
+  private async createTodayEpisode(characterId: number, today: string): Promise<ServiceResult<{ story: WanderStoryDto; episode: WanderEpisodeDto }>> {
     if (!isWanderAiAvailable()) {
       return { success: false, message: '未配置 AI 文本模型，无法生成云游奇遇' };
     }
-
-    const today = buildDateKey(new Date());
     const existingTodayEpisode = await this.loadTodayEpisodeRow(characterId, today);
     if (existingTodayEpisode) {
       if (existingTodayEpisode.chosen_option_index !== null) {
@@ -561,6 +692,154 @@ class WanderService {
     };
   }
 
+  async createGenerationJob(characterId: number): Promise<ServiceResult<WanderGenerateQueueResultDto>> {
+    if (!isWanderAiAvailable()) {
+      return { success: false, message: '未配置 AI 文本模型，无法生成云游奇遇' };
+    }
+
+    const today = buildDateKey(new Date());
+    const bypassDailyLimit = shouldBypassWanderDailyLimit();
+    const [blockingEpisode, latestGenerationJob, character, latestEpisode] = await Promise.all([
+      bypassDailyLimit ? this.loadLatestPendingEpisodeRow(characterId) : this.loadTodayEpisodeRow(characterId, today),
+      bypassDailyLimit ? this.loadLatestGenerationJobRowByCharacterId(characterId) : this.loadLatestGenerationJobRow(characterId, today),
+      this.loadCharacterContext(characterId),
+      this.loadLatestEpisodeRow(characterId),
+    ]);
+
+    if (!character) {
+      return { success: false, message: '角色不存在' };
+    }
+    if (blockingEpisode) {
+      return {
+        success: false,
+        message: blockingEpisode.chosen_option_index === null ? '当前奇遇已生成，等待抉择' : '今日奇遇已完成，明日再来',
+      };
+    }
+    if (latestGenerationJob?.status === 'pending') {
+      return {
+        success: true,
+        message: '今日云游正在生成中',
+        data: {
+          job: buildGenerationJobDto(latestGenerationJob),
+        },
+      };
+    }
+
+    const generationId = buildGenerationId();
+    const generationDayKey = resolveWanderGenerationDayKey(
+      latestEpisode ? buildDateKey(new Date(latestEpisode.day_key)) : null,
+      new Date(),
+      bypassDailyLimit,
+    );
+    await query(
+      `
+        INSERT INTO character_wander_generation_job (
+          id, character_id, day_key, status, error_message, generated_episode_id, created_at, finished_at
+        )
+        VALUES ($1, $2, $3::date, 'pending', NULL, NULL, NOW(), NULL)
+      `,
+      [generationId, characterId, generationDayKey],
+    );
+
+    return {
+      success: true,
+      message: '今日云游已进入推演',
+      data: {
+        job: {
+          generationId,
+          status: 'pending',
+          startedAt: new Date().toISOString(),
+          finishedAt: null,
+          errorMessage: null,
+        },
+      },
+    };
+  }
+
+  async markGenerationJobFailed(characterId: number, generationId: string, errorMessage: string): Promise<void> {
+    const job = await this.loadGenerationJobRowByIdForUpdate(generationId, characterId);
+    if (!job || job.status !== 'pending') {
+      return;
+    }
+    await this.updateGenerationJobAsFailed(generationId, errorMessage);
+  }
+
+  async processPendingGenerationJob(
+    characterId: number,
+    generationId: string,
+  ): Promise<ServiceResult<{ status: WanderGenerationJobStatus; episodeId: string | null; errorMessage: string | null }>> {
+    const job = await this.loadGenerationJobRowByIdForUpdate(generationId, characterId);
+    if (!job) {
+      return { success: false, message: '云游生成任务不存在' };
+    }
+    if (job.status !== 'pending') {
+      return {
+        success: true,
+        message: 'ok',
+        data: {
+          status: job.status === 'generated' ? 'generated' : 'failed',
+          episodeId: job.generated_episode_id,
+          errorMessage: job.error_message,
+        },
+      };
+    }
+
+    const today = buildDateKey(new Date(job.day_key));
+    const existingTodayEpisode = await this.loadTodayEpisodeRow(characterId, today);
+    if (existingTodayEpisode) {
+      await this.updateGenerationJobAsGenerated(generationId, existingTodayEpisode.id);
+      return {
+        success: true,
+        message: 'ok',
+        data: {
+          status: 'generated',
+          episodeId: existingTodayEpisode.id,
+          errorMessage: null,
+        },
+      };
+    }
+
+    try {
+      const generationResult = await this.createTodayEpisode(characterId, today);
+      if (!generationResult.success || !generationResult.data) {
+        const reason = generationResult.message || '云游奇遇生成失败';
+        await this.updateGenerationJobAsFailed(generationId, reason);
+        return {
+          success: true,
+          message: 'ok',
+          data: {
+            status: 'failed',
+            episodeId: null,
+            errorMessage: reason,
+          },
+        };
+      }
+
+      await this.updateGenerationJobAsGenerated(generationId, generationResult.data.episode.id);
+      return {
+        success: true,
+        message: 'ok',
+        data: {
+          status: 'generated',
+          episodeId: generationResult.data.episode.id,
+          errorMessage: null,
+        },
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : '云游奇遇生成失败';
+      await this.updateGenerationJobAsFailed(generationId, reason);
+      return {
+        success: true,
+        message: 'ok',
+        data: {
+          status: 'failed',
+          episodeId: null,
+          errorMessage: reason,
+        },
+      };
+    }
+  }
+
   @Transactional
   async chooseEpisode(
     characterId: number,
@@ -655,17 +934,19 @@ class WanderService {
       };
     }
 
+    const nextStoryStatus: WanderStoryStatus = episode.is_ending ? 'finished' : 'active';
+
     await query(
       `
         UPDATE character_wander_story
-        SET status = $2,
+        SET status = $2::varchar(16),
             story_summary = $3,
             reward_title_id = $4,
-            finished_at = CASE WHEN $2 = 'finished' THEN NOW() ELSE finished_at END,
+            finished_at = CASE WHEN $2::varchar(16) = 'finished' THEN NOW() ELSE finished_at END,
             updated_at = NOW()
         WHERE id = $1
       `,
-      [episode.story_id, episode.is_ending ? 'finished' : 'active', episode.episode_summary, rewardTitleId],
+      [episode.story_id, nextStoryStatus, episode.episode_summary, rewardTitleId],
     );
 
     const storyResult = await query<WanderStoryRow>(

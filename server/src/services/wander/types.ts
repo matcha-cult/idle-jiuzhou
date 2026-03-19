@@ -20,6 +20,15 @@
 
 export type WanderStoryStatus = 'active' | 'finished';
 export type WanderEndingType = 'none' | 'good' | 'neutral' | 'tragic' | 'bizarre';
+export type WanderGenerationJobStatus = 'pending' | 'generated' | 'failed';
+
+export interface WanderGenerationJobDto {
+  generationId: string;
+  status: WanderGenerationJobStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  errorMessage: string | null;
+}
 
 export interface WanderEpisodeOptionDto {
   index: number;
@@ -74,6 +83,7 @@ export interface WanderOverviewDto {
   hasPendingEpisode: boolean;
   canGenerateToday: boolean;
   todayCompleted: boolean;
+  currentGenerationJob: WanderGenerationJobDto | null;
   activeStory: WanderStoryDto | null;
   currentEpisode: WanderEpisodeDto | null;
   latestFinishedStory: WanderStoryDto | null;
@@ -83,6 +93,10 @@ export interface WanderOverviewDto {
 export interface WanderChooseResultDto {
   story: WanderStoryDto;
   awardedTitle: WanderGeneratedTitleDto | null;
+}
+
+export interface WanderGenerateQueueResultDto {
+  job: WanderGenerationJobDto;
 }
 
 export interface WanderAiEpisodeDraft {

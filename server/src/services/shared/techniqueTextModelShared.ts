@@ -37,7 +37,14 @@ export type TechniqueModelContentPart = {
 };
 
 type TechniqueTextModelJsonSchemaBase = {
+  allOf?: TechniqueTextModelJsonSchema[];
+  anyOf?: TechniqueTextModelJsonSchema[];
+  const?: TechniqueModelJsonPrimitive;
   description?: string;
+  else?: TechniqueTextModelJsonSchema;
+  if?: TechniqueTextModelJsonSchema;
+  oneOf?: TechniqueTextModelJsonSchema[];
+  then?: TechniqueTextModelJsonSchema;
 };
 
 type TechniqueTextModelJsonSchemaString = TechniqueTextModelJsonSchemaBase & {
@@ -67,6 +74,10 @@ type TechniqueTextModelJsonSchemaArray = TechniqueTextModelJsonSchemaBase & {
   minItems?: number;
 };
 
+type TechniqueTextModelJsonSchemaComposite = TechniqueTextModelJsonSchemaBase & {
+  type?: undefined;
+};
+
 export type TechniqueTextModelJsonSchemaProperties = Record<string, TechniqueTextModelJsonSchema>;
 
 export type TechniqueTextModelJsonSchemaObject = TechniqueTextModelJsonSchemaBase & {
@@ -79,6 +90,7 @@ export type TechniqueTextModelJsonSchemaObject = TechniqueTextModelJsonSchemaBas
 export type TechniqueTextModelJsonSchema =
   | TechniqueTextModelJsonSchemaArray
   | TechniqueTextModelJsonSchemaBoolean
+  | TechniqueTextModelJsonSchemaComposite
   | TechniqueTextModelJsonSchemaNumber
   | TechniqueTextModelJsonSchemaObject
   | TechniqueTextModelJsonSchemaString;
@@ -144,6 +156,63 @@ const tryParseJsonObject = (text: string): TechniqueModelJsonObject | null => {
   }
 };
 
+const extractEmbeddedJsonObject = (text: string): TechniqueModelJsonObject | null => {
+  let candidateStart = -1;
+  let depth = 0;
+  let inString = false;
+  let isEscaped = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inString) {
+      if (isEscaped) {
+        isEscaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        isEscaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{') {
+      if (depth === 0) {
+        candidateStart = index;
+      }
+      depth += 1;
+      continue;
+    }
+
+    if (char !== '}' || depth === 0 || candidateStart < 0) {
+      continue;
+    }
+
+    depth -= 1;
+    if (depth !== 0) {
+      continue;
+    }
+
+    const candidate = text.slice(candidateStart, index + 1);
+    const parsed = tryParseJsonObject(candidate);
+    if (parsed) {
+      return parsed;
+    }
+    candidateStart = -1;
+  }
+
+  return null;
+};
+
 export const resolveTechniqueTextModelEndpoint = (rawEndpoint: string): string => {
   const endpoint = trimTrailingSlash(rawEndpoint.trim());
   if (!endpoint) return '';
@@ -173,7 +242,12 @@ export const buildTechniqueTextModelJsonSchemaResponseFormat = (_params: {
   name: string;
   schema: TechniqueTextModelJsonSchemaObject;
 }): TechniqueTextModelResponseFormat => ({
-  type: 'json_object',
+  type: 'json_schema',
+  json_schema: {
+    name: _params.name,
+    schema: _params.schema,
+    strict: true,
+  },
 });
 
 export const buildTechniqueTextModelPayload = (params: {
@@ -226,12 +300,7 @@ export const parseTechniqueTextModelJsonObject = (
     };
   }
 
-  const matched = trimmed.match(/\{[\s\S]*\}/);
-  if (!matched) {
-    return { success: false, reason: 'invalid_json_object' };
-  }
-
-  const extractedObject = tryParseJsonObject(matched[0]);
+  const extractedObject = extractEmbeddedJsonObject(trimmed);
   if (!extractedObject) {
     return { success: false, reason: 'invalid_json_object' };
   }

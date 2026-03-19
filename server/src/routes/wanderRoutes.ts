@@ -1,7 +1,9 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireCharacter } from '../middleware/auth.js';
 import { sendResult } from '../middleware/response.js';
+import { enqueueWanderGenerationJob } from '../services/wanderJobRunner.js';
+import { isWanderFeatureEnabled, WANDER_FEATURE_DISABLED_MESSAGE } from '../services/wander/rules.js';
 import { wanderService } from '../services/wander/service.js';
 
 /**
@@ -21,24 +23,57 @@ import { wanderService } from '../services/wander/service.js';
  *
  * 关键边界条件与坑点：
  * 1. 所有接口都依赖 `requireCharacter`，因此游客态和未建角账号不会进入云游逻辑。
- * 2. 选项确认只接受显式 `optionIndex`，不做字符串别名兼容，避免接口语义继续发散。
+ * 2. 生产环境关闭时必须在路由入口统一拦截，避免概览、生成、抉择三个接口各自维护一份禁用分支。
  */
 
 const router = Router();
+const requireWanderFeatureEnabled: RequestHandler = (_req, res, next) => {
+  if (!isWanderFeatureEnabled()) {
+    sendResult(res, {
+      success: false,
+      message: WANDER_FEATURE_DISABLED_MESSAGE,
+    });
+    return;
+  }
 
-router.get('/overview', requireCharacter, asyncHandler(async (req, res) => {
+  next();
+};
+
+router.use(requireCharacter, requireWanderFeatureEnabled);
+
+router.get('/overview', asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
   const result = await wanderService.getOverview(characterId);
   sendResult(res, result);
 }));
 
-router.post('/generate', requireCharacter, asyncHandler(async (req, res) => {
+router.post('/generate', asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
-  const result = await wanderService.generateTodayEpisode(characterId);
+  const result = await wanderService.createGenerationJob(characterId);
+  if (!result.success || !result.data) {
+    sendResult(res, result);
+    return;
+  }
+
+  try {
+    await enqueueWanderGenerationJob({
+      characterId,
+      generationId: result.data.job.generationId,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : '未知异常';
+    await wanderService.markGenerationJobFailed(characterId, result.data.job.generationId, `云游任务投递失败：${reason}`);
+    sendResult(res, {
+      success: false,
+      message: '今日云游启动失败，请稍后重试',
+    });
+    return;
+  }
+
   sendResult(res, result);
 }));
 
-router.post('/choose', requireCharacter, asyncHandler(async (req, res) => {
+router.post('/choose', asyncHandler(async (req, res) => {
   const characterId = req.characterId!;
   const body = req.body as { episodeId?: string; optionIndex?: number | string };
   const episodeId = typeof body.episodeId === 'string' ? body.episodeId.trim() : '';

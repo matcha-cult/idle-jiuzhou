@@ -40,6 +40,10 @@ import {
   initializePartnerRecruitJobRunner,
   shutdownPartnerRecruitJobRunner,
 } from "../services/partnerRecruitJobRunner.js";
+import {
+  initializeWanderJobRunner,
+  shutdownWanderJobRunner,
+} from "../services/wanderJobRunner.js";
 import { getGameServer } from "../game/gameServer.js";
 import {
   initializeAfdianMessageRetryService,
@@ -94,6 +98,8 @@ export const startServerWithPipeline = async (
   console.log("✓ 洞府研修 worker 协调器已就绪\n");
   await initializePartnerRecruitJobRunner();
   console.log("✓ AI 伙伴招募 worker 协调器已就绪\n");
+  await initializeWanderJobRunner();
+  console.log("✓ 云游奇遇 worker 协调器已就绪\n");
   await initializeAfdianMessageRetryService();
   console.log("✓ 爱发电私信重试调度器已就绪\n");
 
@@ -166,6 +172,9 @@ export const registerGracefulShutdown = (httpServer: HttpServer): void => {
 
       await shutdownPartnerRecruitJobRunner();
       console.log("✓ AI 伙伴招募 worker 协调器已关闭");
+
+      await shutdownWanderJobRunner();
+      console.log("✓ 云游奇遇 worker 协调器已关闭");
 
       stopAfdianMessageRetryService();
       console.log("✓ 爱发电私信重试调度器已关闭");

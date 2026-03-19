@@ -1,4 +1,5 @@
 import api from './core';
+import type { AxiosRequestConfig } from 'axios';
 
 /**
  * 云游奇遇接口模块
@@ -21,6 +22,15 @@ import api from './core';
  */
 
 export type WanderEndingType = 'none' | 'good' | 'neutral' | 'tragic' | 'bizarre';
+export type WanderGenerationJobStatus = 'pending' | 'generated' | 'failed';
+
+export interface WanderGenerationJobDto {
+  generationId: string;
+  status: WanderGenerationJobStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  errorMessage: string | null;
+}
 
 export interface WanderEpisodeOptionDto {
   index: number;
@@ -75,6 +85,7 @@ export interface WanderOverviewDto {
   hasPendingEpisode: boolean;
   canGenerateToday: boolean;
   todayCompleted: boolean;
+  currentGenerationJob: WanderGenerationJobDto | null;
   activeStory: WanderStoryDto | null;
   currentEpisode: WanderEpisodeDto | null;
   latestFinishedStory: WanderStoryDto | null;
@@ -86,9 +97,8 @@ export interface WanderChooseResultDto {
   awardedTitle: WanderGeneratedTitleDto | null;
 }
 
-export interface WanderGenerateResultDto {
-  story: WanderStoryDto;
-  episode: WanderEpisodeDto;
+export interface WanderGenerateQueueResultDto {
+  job: WanderGenerationJobDto;
 }
 
 export interface WanderOverviewResponse {
@@ -100,7 +110,7 @@ export interface WanderOverviewResponse {
 export interface WanderGenerateResponse {
   success: boolean;
   message: string;
-  data?: WanderGenerateResultDto;
+  data?: WanderGenerateQueueResultDto;
 }
 
 export interface WanderChooseResponse {
@@ -109,12 +119,12 @@ export interface WanderChooseResponse {
   data?: WanderChooseResultDto;
 }
 
-export const getWanderOverview = (): Promise<WanderOverviewResponse> => {
-  return api.get('/wander/overview');
+export const getWanderOverview = (config?: AxiosRequestConfig): Promise<WanderOverviewResponse> => {
+  return api.get('/wander/overview', config);
 };
 
-export const generateWanderEpisode = (): Promise<WanderGenerateResponse> => {
-  return api.post('/wander/generate');
+export const generateWanderEpisode = (config?: AxiosRequestConfig): Promise<WanderGenerateResponse> => {
+  return api.post('/wander/generate', undefined, config);
 };
 
 export const chooseWanderEpisodeOption = (params: {
