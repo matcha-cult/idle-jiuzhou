@@ -315,3 +315,85 @@ test('validateTechniqueGenerationCandidate: 被动技能必须满足自目标且
     code: 'GENERATOR_INVALID',
   });
 });
+
+test('validateTechniqueGenerationCandidate: single_enemy 技能不应生成 targetCount 大于 1', () => {
+  const raw = {
+    technique: {
+      name: '离火玄罡诀',
+      required_realm: '凡人',
+      attribute_type: 'magic',
+      attribute_element: 'huo',
+      description: '测试目标类型与目标数量约束',
+      long_desc: '测试目标类型与目标数量约束长描述',
+      tags: ['测试', '目标'],
+    },
+    skills: [
+      {
+        id: 'skill-invalid-single-target-count',
+        name: '玄雷破',
+        description: '错误配置的单体技能',
+        cost_lingqi: 20,
+        cooldown: 1,
+        target_type: 'single_enemy',
+        target_count: 2,
+        damage_type: 'magic',
+        element: 'huo',
+        ai_priority: 60,
+        effects: [
+          {
+            type: 'damage',
+            valueType: 'scale',
+            scaleAttr: 'fagong',
+            scaleRate: 1.6,
+            damageType: 'magic',
+            element: 'huo',
+          },
+        ],
+      },
+    ],
+    layers: [
+      {
+        layer: 1,
+        cost_spirit_stones: 100,
+        cost_exp: 50,
+        passives: [{ key: 'fagong', value: 12 }],
+        unlock_skill_ids: ['skill-invalid-single-target-count'],
+        upgrade_skill_ids: [],
+        layer_desc: '入门',
+      },
+      {
+        layer: 2,
+        cost_spirit_stones: 200,
+        cost_exp: 100,
+        passives: [{ key: 'fagong', value: 18 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '精进',
+      },
+      {
+        layer: 3,
+        cost_spirit_stones: 300,
+        cost_exp: 150,
+        passives: [{ key: 'fagong', value: 24 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '圆满',
+      },
+    ],
+  };
+
+  const candidate = sanitizeTechniqueGenerationCandidateFromModel(raw, '武技', '黄', 3);
+  assert.ok(candidate);
+
+  const validation = validateTechniqueGenerationCandidate({
+    candidate,
+    expectedTechniqueType: '武技',
+    expectedQuality: '黄',
+    expectedMaxLayer: 3,
+  });
+  assert.deepEqual(validation, {
+    success: false,
+    message: 'AI结果技能目标配置非法：targetCount 仅允许 random_enemy/random_ally 在 > 1 时使用，当前 targetType=single_enemy',
+    code: 'GENERATOR_INVALID',
+  });
+});

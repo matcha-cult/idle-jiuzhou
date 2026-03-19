@@ -21,6 +21,7 @@ import test from 'node:test';
 import type { SkillEffect } from '../../battle/types.js';
 import {
   validateTechniqueSkillEffect,
+  validateTechniqueSkillTargetCount,
   validateTechniqueSkillUpgrade,
 } from '../shared/techniqueSkillGenerationSpec.js';
 
@@ -100,6 +101,7 @@ test('升级项应支持 addEffect 追加控制效果', () => {
       },
     },
     9,
+    'random_enemy',
   );
 
   assert.deepEqual(validation, { success: true });
@@ -119,9 +121,37 @@ test('升级项中的旧式 effectChanges 字段应被拒绝', () => {
       },
     },
     9,
+    'single_enemy',
   );
 
   assert.deepEqual(validation, { success: false, reason: 'upgrades 不支持字段 effectChanges' });
+});
+
+test('single_enemy 不应允许 targetCount 大于 1', () => {
+  const validation = validateTechniqueSkillTargetCount('single_enemy', 2, 'targetCount');
+
+  assert.deepEqual(validation, {
+    success: false,
+    reason: 'targetCount 仅允许 random_enemy/random_ally 在 > 1 时使用，当前 targetType=single_enemy',
+  });
+});
+
+test('single_enemy 升级项不应把 target_count 提升到 1 以上', () => {
+  const validation = validateTechniqueSkillUpgrade(
+    {
+      layer: 3,
+      changes: {
+        target_count: 2,
+      },
+    },
+    9,
+    'single_enemy',
+  );
+
+  assert.deepEqual(validation, {
+    success: false,
+    reason: 'upgrades.changes.target_count 仅允许 random_enemy/random_ally 在 > 1 时使用，当前 targetType=single_enemy',
+  });
 });
 
 test('delayed_burst 效果应支持延迟爆发机制', () => {

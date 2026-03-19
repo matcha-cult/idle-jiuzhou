@@ -49,6 +49,7 @@ import {
   TECHNIQUE_SKILL_UPGRADE_UNSUPPORTED_FIELDS,
   TECHNIQUE_SKILL_VALUE_TYPE_LIST,
   validateTechniqueSkillEffect,
+  validateTechniqueSkillTargetCount,
   validateTechniqueSkillUpgrade,
 } from './techniqueSkillGenerationSpec.js';
 import {
@@ -377,7 +378,7 @@ export const TECHNIQUE_PROMPT_UPGRADE_SCHEMA = {
     changes: '升级改动对象，只允许 upgradeAllowedChangeKeys；未出现的键表示不改动',
   },
   changes: {
-    target_count: '直接设置目标数（绝对值，不是增量，整数 >= 1）',
+    target_count: '直接设置目标数（绝对值，不是增量）；仅 random_enemy/random_ally 允许 > 1，其余 targetType 必须为 1',
     cooldown: '冷却增量（可正可负，建议范围见 numericRanges.upgradeDeltaSuggested.cooldown）',
     cost_lingqi: '灵气消耗增量（可正可负，建议范围见 numericRanges.upgradeDeltaSuggested.cost_lingqi）',
     cost_lingqi_rate: '灵气比例消耗增量（可正可负，0.1=10%，建议范围见 numericRanges.upgradeDeltaSuggested.cost_lingqi_rate）',
@@ -451,7 +452,7 @@ export const TECHNIQUE_PROMPT_FIELD_SEMANTICS = {
     costQixueRate: '释放气血比例消耗（按最大气血计算，0.1=10%，范围见 numericRanges.skill.costQixueRate，必须小于1）',
     cooldown: '冷却回合（整数，范围见 numericRanges.skill.cooldown）',
     targetType: '目标类型，必须在 targetTypeEnum',
-    targetCount: '目标数量（整数，范围见 numericRanges.skill.targetCount）',
+    targetCount: '目标数量（整数，范围见 numericRanges.skill.targetCount）；仅 random_enemy/random_ally 允许 > 1，其余 targetType 必须为 1',
     damageType: '伤害类型 physical/magic/true/null',
     element: '技能元素，必须在 elementEnum 中',
     effects: '技能效果数组，按 effectSchemaByType 生成',
@@ -823,6 +824,7 @@ export const TECHNIQUE_PROMPT_OUTPUT_CHECKLIST = [
   'skills[*].upgrades 只能使用 upgradeSchema，禁止 description/effectChanges/effectIndex',
   'upgrades[*].changes 只能包含 upgradeAllowedChangeKeys 中的字段',
   'chance 必须在 0~1 且使用浮点比例表达',
+  '仅 random_enemy/random_ally 允许 targetCount > 1；self/single_*/all_* 的 targetCount 必须为 1',
   'layers.passives[].key 必须来自 allowedPassiveKeys，且 value 必须满足 passiveValueGuideByKey 的单层/累计上限',
   'buffKind=aura 时必须提供 auraTarget 和 auraEffects，子效果不允许嵌套光环',
 ] as const;
@@ -894,6 +896,7 @@ export const buildTechniqueGeneratorPromptInput = (params: {
       qixueCostRange: [0, 120],
       qixueCostRateRange: [0, 0.95],
       targetCountRange: [1, 6],
+      targetCountRule: '仅 random_enemy/random_ally 允许 targetCount > 1；self/single_*/all_* 的 targetCount 必须为 1',
       upgradeAllowedChangeKeys: [...TECHNIQUE_PROMPT_UPGRADE_ALLOWED_CHANGE_KEYS],
       upgradeUnsupportedFields: [...TECHNIQUE_PROMPT_UPGRADE_UNSUPPORTED_FIELDS],
       upgradeSchema: TECHNIQUE_PROMPT_UPGRADE_SCHEMA,
@@ -905,7 +908,12 @@ export const buildTechniqueGeneratorPromptInput = (params: {
   };
 };
 
-export { validateTechniqueSkillEffect, validateTechniqueSkillUpgrade, validateTechniqueStructuredBuffEffect };
+export {
+  validateTechniqueSkillEffect,
+  validateTechniqueSkillTargetCount,
+  validateTechniqueSkillUpgrade,
+  validateTechniqueStructuredBuffEffect,
+};
 
 export const isSupportedTechniquePassiveKey = (raw: unknown): boolean => {
   if (typeof raw !== 'string') return false;

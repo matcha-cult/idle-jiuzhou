@@ -164,6 +164,7 @@ const FATE_SWAP_MODE_SET = new Set<string>(TECHNIQUE_SKILL_FATE_SWAP_MODE_LIST);
 const AURA_TARGET_SET = new Set<string>(TECHNIQUE_SKILL_AURA_TARGET_LIST);
 const AURA_SUB_EFFECT_TYPE_SET = new Set<string>(TECHNIQUE_SKILL_AURA_SUB_EFFECT_TYPE_LIST);
 const UPGRADE_ALLOWED_CHANGE_KEY_SET = new Set<string>(TECHNIQUE_SKILL_UPGRADE_ALLOWED_CHANGE_KEYS);
+const MULTI_TARGET_COUNT_ALLOWED_TARGET_TYPE_SET = new Set<string>(['random_enemy', 'random_ally']);
 
 const asString = (value: TechniqueJsonValue | undefined): string => {
   return typeof value === 'string' ? value.trim() : '';
@@ -537,9 +538,30 @@ const validateUpgradeDeltaNumber = (
   return { success: true };
 };
 
+export const validateTechniqueSkillTargetCount = (
+  targetType: string,
+  targetCount: number,
+  fieldName: string,
+): TechniqueSkillGenerationValidationResult => {
+  if (!Number.isInteger(targetCount) || targetCount < 1) {
+    return { success: false, reason: `${fieldName} 必须是 >= 1 的整数` };
+  }
+  if (targetCount === 1) {
+    return { success: true };
+  }
+  if (!MULTI_TARGET_COUNT_ALLOWED_TARGET_TYPE_SET.has(targetType)) {
+    return {
+      success: false,
+      reason: `${fieldName} 仅允许 random_enemy/random_ally 在 > 1 时使用，当前 targetType=${targetType}`,
+    };
+  }
+  return { success: true };
+};
+
 export const validateTechniqueSkillUpgrade = (
   upgrade: TechniqueSkillUpgradeEntry,
   maxLayer: number,
+  targetType: string,
 ): TechniqueSkillGenerationValidationResult => {
   for (const field of TECHNIQUE_SKILL_UPGRADE_UNSUPPORTED_FIELDS) {
     if (hasOwn(upgrade, field)) {
@@ -577,6 +599,18 @@ export const validateTechniqueSkillUpgrade = (
 
   const targetCountValidation = validateOptionalIntegerField('target_count', changes.target_count, 1);
   if (!targetCountValidation.success) return targetCountValidation;
+  if (changes.target_count !== undefined) {
+    const parsedTargetCount = asNumber(changes.target_count);
+    if (parsedTargetCount === null) {
+      return { success: false, reason: 'target_count 必须是 >= 1 的整数' };
+    }
+    const targetCountRuleValidation = validateTechniqueSkillTargetCount(
+      targetType,
+      parsedTargetCount,
+      'upgrades.changes.target_count',
+    );
+    if (!targetCountRuleValidation.success) return targetCountRuleValidation;
+  }
 
   const cooldownValidation = validateUpgradeDeltaNumber('cooldown', changes.cooldown);
   if (!cooldownValidation.success) return cooldownValidation;

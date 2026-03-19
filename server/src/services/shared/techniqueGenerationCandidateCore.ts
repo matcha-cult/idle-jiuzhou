@@ -35,6 +35,7 @@ import {
   TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY,
   isSupportedTechniquePassiveKey,
   validateTechniqueSkillEffect,
+  validateTechniqueSkillTargetCount,
   validateTechniqueSkillUpgrade,
   type GeneratedTechniqueType,
 } from './techniqueGenerationConstraints.js';
@@ -453,6 +454,18 @@ export const validateTechniqueGenerationCandidate = (params: {
     if (skill.targetCount < 1 || skill.targetCount > 6) {
       return { success: false, message: 'AI结果技能目标数量越界', code: 'GENERATOR_INVALID' };
     }
+    const targetCountRuleValidation = validateTechniqueSkillTargetCount(
+      skill.targetType,
+      skill.targetCount,
+      'targetCount',
+    );
+    if (!targetCountRuleValidation.success) {
+      return {
+        success: false,
+        message: `AI结果技能目标配置非法：${targetCountRuleValidation.reason}`,
+        code: 'GENERATOR_INVALID',
+      };
+    }
     if (!Array.isArray(skill.effects) || skill.effects.length === 0) {
       return { success: false, message: 'AI结果技能效果为空', code: 'GENERATOR_INVALID' };
     }
@@ -472,7 +485,7 @@ export const validateTechniqueGenerationCandidate = (params: {
     }
 
     for (const upgrade of skill.upgrades) {
-      const upgradeValidation = validateTechniqueSkillUpgrade(upgrade, expectedMaxLayer);
+      const upgradeValidation = validateTechniqueSkillUpgrade(upgrade, expectedMaxLayer, skill.targetType);
       if (!upgradeValidation.success) {
         return {
           success: false,
