@@ -1659,6 +1659,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         if (shouldRestoreBattleSessionFromRealtime({
           syncMode,
           hasSessionPayload: Boolean(data.session),
+          sessionType: data.session?.type ?? null,
         })) {
           void restoreBattleSessionContext(battleId);
         }
@@ -1687,6 +1688,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
         if (shouldRestoreBattleSessionFromRealtime({
           syncMode,
           hasSessionPayload: Boolean(data.session),
+          sessionType: data.session?.type ?? null,
         })) {
           void restoreBattleSessionContext(battleId);
         }

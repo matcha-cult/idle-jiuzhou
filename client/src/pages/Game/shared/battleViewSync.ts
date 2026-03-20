@@ -18,6 +18,8 @@
  * 2. 真正的重连场景仍要允许接管同样的 `battle-*` 战斗，因此只有“已在 battle 视图、已有本地怪物目标、且当前没有任何外部战斗上下文”时，才允许保留本地战斗。
  */
 
+import type { BattleSessionTypeDto } from '../../../services/api/battleSession';
+
 export type RealtimeBattleViewSyncMode =
   | 'keep_local_battle'
   | 'sync_team_battle'
@@ -26,6 +28,7 @@ export type RealtimeBattleViewSyncMode =
 type ShouldRestoreBattleSessionFromRealtimeParams = {
   syncMode: RealtimeBattleViewSyncMode;
   hasSessionPayload: boolean;
+  sessionType: BattleSessionTypeDto | null;
 };
 
 type BattleViewMode = 'map' | 'battle';
@@ -82,7 +85,7 @@ export const resolveRealtimeBattleViewSyncMode = (params: {
  *
  * 关键边界条件与坑点：
  * 1. `keep_local_battle` 必须严格跳过恢复，否则普通地图本地战斗会被误抢成外部 session。
- * 2. `sync_team_battle` 只有在服务端明确附带 session 时才恢复，避免普通组队战斗的高频 `battle_state` 误触发无意义请求。
+ * 2. `sync_team_battle` 只允许组队秘境恢复 session，普通组队战斗继续停留在 teamBattleId 回放链路，避免误改原有普通战斗行为。
  */
 export const shouldRestoreBattleSessionFromRealtime = (
   params: ShouldRestoreBattleSessionFromRealtimeParams,
@@ -93,5 +96,5 @@ export const shouldRestoreBattleSessionFromRealtime = (
   if (params.syncMode === 'sync_reconnect_battle') {
     return true;
   }
-  return params.hasSessionPayload;
+  return params.hasSessionPayload && params.sessionType === 'dungeon';
 };
