@@ -31,6 +31,7 @@ import {
   TECHNIQUE_SKILL_FATE_SWAP_MODE_LIST,
   TECHNIQUE_SKILL_AURA_TARGET_LIST,
   TECHNIQUE_SKILL_AURA_SUB_EFFECT_TYPE_LIST,
+  getTechniqueAuraAttackPercentMaxTotal,
   TECHNIQUE_SKILL_EFFECT_MAX_COUNT,
   TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE,
   TECHNIQUE_SKILL_TRIGGER_TYPE_LIST,
@@ -62,17 +63,17 @@ import {
   TECHNIQUE_PASSIVE_KEYS,
   TECHNIQUE_PASSIVE_MODE_BY_KEY,
 } from './characterAttrRegistry.js';
+import {
+  getTechniquePassiveValueConstraint,
+  type GeneratedTechniqueQuality,
+  type TechniquePassiveValueConstraint,
+} from './techniquePassiveValueBudget.js';
 
 export const GENERATED_TECHNIQUE_TYPE_LIST = ['武技', '心法', '法诀', '身法', '辅修'] as const;
 export type GeneratedTechniqueType = (typeof GENERATED_TECHNIQUE_TYPE_LIST)[number];
-export type GeneratedTechniqueQuality = '黄' | '玄' | '地' | '天';
 export type TechniquePassiveMode = 'percent' | 'flat';
 export type TechniquePassivePoolEntry = { key: string; mode: TechniquePassiveMode };
-export type TechniquePassiveValueConstraint = {
-  mode: TechniquePassiveMode;
-  maxPerLayer: number;
-  maxTotal: number;
-};
+export type { GeneratedTechniqueQuality, TechniquePassiveValueConstraint } from './techniquePassiveValueBudget.js';
 
 export const TECHNIQUE_PROMPT_SYSTEM_MESSAGE =
   '你是修仙RPG功法设计器。请严格输出JSON，不要输出额外文本。';
@@ -107,41 +108,6 @@ export { TECHNIQUE_PASSIVE_KEY_MEANING_MAP };
  * 1) `wugong/fagong/wufang/fafang/max_qixue` 会进入百分比乘区，累计上限必须明显低于旧的 100%+ 区间。
  * 2) 平铺到 7/9 层时，限制的是“同一个 key 的累计值”，不是所有被动简单相加；否则会误伤多样化搭配。
  */
-const TECHNIQUE_PASSIVE_DEFAULT_CONSTRAINTS_BY_MODE: Record<
-  TechniquePassiveMode,
-  Record<GeneratedTechniqueQuality, Omit<TechniquePassiveValueConstraint, 'mode'>>
-> = {
-  percent: {
-    黄: { maxPerLayer: 0.10, maxTotal: 0.20 },
-    玄: { maxPerLayer: 0.20, maxTotal: 0.30 },
-    地: { maxPerLayer: 0.30, maxTotal: 0.40 },
-    天: { maxPerLayer: 0.35, maxTotal: 0.50 },
-  },
-  flat: {
-    黄: { maxPerLayer: 10, maxTotal: 20 },
-    玄: { maxPerLayer: 20, maxTotal: 40 },
-    地: { maxPerLayer: 30, maxTotal: 60 },
-    天: { maxPerLayer: 40, maxTotal: 80 },
-  },
-};
-
-export const getTechniquePassiveValueConstraint = (
-  key: string,
-  quality: GeneratedTechniqueQuality,
-): TechniquePassiveValueConstraint | null => {
-  const mode = TECHNIQUE_PASSIVE_MODE_BY_KEY[key];
-  if (mode !== 'percent' && mode !== 'flat' && mode !== 'multiply') {
-    return null;
-  }
-  const normalizedMode: TechniquePassiveMode = mode === 'multiply' ? 'percent' : mode;
-  const baseConstraint = TECHNIQUE_PASSIVE_DEFAULT_CONSTRAINTS_BY_MODE[normalizedMode][quality];
-  return {
-    mode: normalizedMode,
-    maxPerLayer: baseConstraint.maxPerLayer,
-    maxTotal: baseConstraint.maxTotal,
-  };
-};
-
 export const buildTechniquePassiveValueGuideByKey = (
   quality: GeneratedTechniqueQuality,
 ): Record<string, TechniquePassiveValueConstraint> => {
@@ -227,6 +193,7 @@ export const TECHNIQUE_PROMPT_GENERAL_RULES = [
   '禁止输出 null/undefined 与空字符串占位；无意义的可选字段直接省略',
   '当 triggerType=passive 时，技能必须为自目标常驻被动：targetType=self、targetCount=1、cooldown=0、costLingqi=0、costLingqiRate=0、costQixue=0、costQixueRate=0',
   'buffKind=aura 时必须提供 auraTarget 和 auraEffects，auraEffects 中每个子效果遵循对应 type 的标准校验规则，子效果不允许嵌套光环',
+  'buffKind=aura 的 auraEffects 若包含进攻类百分比 attr 增益（如法攻/物攻/暴击/暴伤/增伤），这些 value 的合计不能超过 numericRanges.effect.auraAttackPercentTotalMax',
   'buffKind=aura 的光环效果只能用于 triggerType=passive 的被动技能，costLingqi/costQixue/cooldown 必须为 0，进场自动生效，永久存在',
 ] as const;
 
@@ -558,6 +525,7 @@ export const TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE = {
       'buffKind=aura 时必须提供 auraTarget（all_ally/all_enemy/self）和 auraEffects（子效果数组，长度 ≤ 4）',
       'buffKind=aura 时不需要 duration，光环永久存在直到施法者死亡',
       'auraEffects 子效果不需要 duration；光环每回合自动续上子效果',
+      'auraEffects 若同时给多个进攻类百分比 attr Buff（如法攻/物攻/暴击/暴伤/增伤），这些 value 总和不能超过 numericRanges.effect.auraAttackPercentTotalMax',
     ],
     defaultTemplate: {
       type: 'buff',
@@ -832,6 +800,7 @@ export const TECHNIQUE_PROMPT_OUTPUT_CHECKLIST = [
   '仅 random_enemy/random_ally 允许 targetCount > 1；self/single_*/all_* 的 targetCount 必须为 1',
   'layers.passives[].key 必须来自 allowedPassiveKeys，且 value 必须满足 passiveValueGuideByKey 的单层/累计上限',
   'buffKind=aura 时必须提供 auraTarget 和 auraEffects，子效果不允许嵌套光环',
+  'buffKind=aura 若包含多个进攻类百分比 attr Buff，它们的 value 总和不能超过 numericRanges.effect.auraAttackPercentTotalMax',
 ] as const;
 
 export const buildTechniqueGeneratorPromptInput = (params: {
@@ -849,6 +818,7 @@ export const buildTechniqueGeneratorPromptInput = (params: {
   const skillCountRange = TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY[quality];
   const promptBuffConfigRules = buildTechniquePromptBuffConfigRules();
   const passiveValueGuideByKey = buildTechniquePassiveValueGuideByKey(quality);
+  const auraAttackPercentTotalMax = getTechniqueAuraAttackPercentMaxTotal(quality);
   const promptNoiseHash = normalizeTextModelPromptNoiseHash(params.promptNoiseHash);
   return {
     task: '生成完整功法定义',
@@ -893,7 +863,13 @@ export const buildTechniqueGeneratorPromptInput = (params: {
       allowedBuffConfigRules: promptBuffConfigRules,
       attributeKeyEnum: [...TECHNIQUE_EFFECT_SCALE_ATTR_OPTIONS],
       damageForbiddenScaleAttrEnum: [...TECHNIQUE_DAMAGE_EFFECT_FORBIDDEN_SCALE_ATTR_OPTIONS],
-      numericRanges: TECHNIQUE_PROMPT_NUMERIC_RANGES,
+      numericRanges: {
+        ...TECHNIQUE_PROMPT_NUMERIC_RANGES,
+        effect: {
+          ...TECHNIQUE_PROMPT_NUMERIC_RANGES.effect,
+          auraAttackPercentTotalMax,
+        },
+      },
       effectCommonFields: TECHNIQUE_PROMPT_EFFECT_COMMON_FIELDS,
       effectGuideByType: TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE,
       effectUnsupportedFields: [...TECHNIQUE_EFFECT_UNSUPPORTED_FIELDS],

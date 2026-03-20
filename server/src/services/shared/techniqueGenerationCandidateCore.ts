@@ -36,7 +36,6 @@ import {
   TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
   TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY,
   isSupportedTechniquePassiveKey,
-  validateTechniqueSkillEffect,
   validateTechniqueSkillTargetCount,
   validateTechniqueSkillUpgrade,
   type GeneratedTechniqueType,
@@ -46,7 +45,10 @@ import {
   validatePassiveSkillConfig,
 } from '../../shared/skillTriggerType.js';
 import type { TechniqueSkillUpgradeEntry } from './techniqueSkillGenerationSpec.js';
-import { validateTechniqueSkillEffectList } from './techniqueSkillGenerationSpec.js';
+import {
+  TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE,
+  validateTechniqueSkillEffectList,
+} from './techniqueSkillGenerationSpec.js';
 import type {
   TechniqueGenerationCandidate,
   TechniqueQuality,
@@ -271,6 +273,7 @@ const normalizeTechniqueLayerSkillIds = (
 const DUPLICATE_EFFECT_FAILURE_TOKEN = '不允许包含重复 effect';
 const UPGRADE_UNSUPPORTED_FIELD_REASON_PATTERN = /upgrades\.changes 包含未支持字段：([A-Za-z0-9_]+)/;
 const UPGRADE_DAMAGE_TOTAL_SCALE_FAILURE_TOKEN = 'scaleRate × hit_count 不能大于';
+const AURA_ATTACK_PERCENT_BUDGET_FAILURE_TOKEN = 'auraEffects 进攻类百分比增益总和不能大于';
 
 const buildTechniqueGenerationRetryCorrectionRules = (reason: string): string[] => {
   const rules = [
@@ -288,7 +291,7 @@ const buildTechniqueGenerationRetryCorrectionRules = (reason: string): string[] 
   if (reason.includes(UPGRADE_DAMAGE_TOTAL_SCALE_FAILURE_TOKEN)) {
     rules.push(
       '只有升级链路需要限制总伤害倍率；基础技能 effects 不受这条规则约束。',
-      '若 upgrades.changes.effects 或 addEffect 中包含 damage，且同时填写 scaleRate 与 hit_count，则总倍率（scaleRate × hit_count）不能超过 2.5。',
+      `若 upgrades.changes.effects 或 addEffect 中包含 damage，且同时填写 scaleRate 与 hit_count，则总倍率（scaleRate × hit_count）不能超过 ${TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE}。`,
       '如果升级想做多段伤害，请同步下调每段 scaleRate，保证升级后的总倍率预算不过线。',
     );
   }
@@ -300,6 +303,14 @@ const buildTechniqueGenerationRetryCorrectionRules = (reason: string): string[] 
       `upgrades.changes 不能直接写 ${unsupportedField}；它属于单个 effect 的内部字段，不属于升级改动顶层键。`,
       `如果要修改已有效果中的 ${unsupportedField}，必须改写 changes.effects，提供完整 effects 数组；不要返回 changes.${unsupportedField}。`,
       '如果只是新增一个效果，请使用 changes.addEffect，并把该 effect 的全部字段写在 addEffect 对象内部。',
+    );
+  }
+
+  if (reason.includes(AURA_ATTACK_PERCENT_BUDGET_FAILURE_TOKEN)) {
+    rules.push(
+      '光环 auraEffects 里的进攻类百分比 attr 增益要共用同一份预算，不要把法攻、物攻、暴击、暴伤、增伤等一起堆满。',
+      '如果 auraEffects 同时包含多个进攻类百分比 Buff，它们的 value 总和不能超过当前品质允许的光环进攻总预算。',
+      '想保留多种进攻向加成时，请压低每项 value，让总和仍落在光环总预算内。',
     );
   }
 
@@ -740,7 +751,9 @@ export const validateTechniqueGenerationCandidate = (params: {
         code: 'GENERATOR_INVALID',
       };
     }
-    const effectListValidation = validateTechniqueSkillEffectList(skill.effects, 'skill.effects');
+    const effectListValidation = validateTechniqueSkillEffectList(skill.effects, 'skill.effects', {
+      quality: expectedQuality,
+    });
     if (!effectListValidation.success) {
       return {
         success: false,
@@ -750,7 +763,12 @@ export const validateTechniqueGenerationCandidate = (params: {
     }
 
     for (const upgrade of skill.upgrades) {
-      const upgradeValidation = validateTechniqueSkillUpgrade(upgrade, expectedMaxLayer, skill.targetType);
+      const upgradeValidation = validateTechniqueSkillUpgrade(
+        upgrade,
+        expectedMaxLayer,
+        skill.targetType,
+        { quality: expectedQuality },
+      );
       if (!upgradeValidation.success) {
         return {
           success: false,

@@ -20,6 +20,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { SkillEffect } from '../../battle/types.js';
 import {
+  getTechniqueAuraAttackPercentMaxTotal,
+  TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE,
   validateTechniqueSkillEffect,
   validateTechniqueSkillTargetCount,
   validateTechniqueSkillUpgrade,
@@ -145,7 +147,7 @@ test('升级项的 changes.effects 不应放行超预算总伤害倍率', () => 
 
   assert.deepEqual(validation, {
     success: false,
-    reason: 'upgrades.changes.effects.scaleRate × hit_count 不能大于 2.5',
+    reason: `upgrades.changes.effects.scaleRate × hit_count 不能大于 ${TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE}`,
   });
 });
 
@@ -170,8 +172,75 @@ test('升级项的 addEffect 不应放行超预算总伤害倍率', () => {
 
   assert.deepEqual(validation, {
     success: false,
-    reason: 'upgrades.changes.addEffect.scaleRate × hit_count 不能大于 2.5',
+    reason: `upgrades.changes.addEffect.scaleRate × hit_count 不能大于 ${TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE}`,
   });
+});
+
+test('光环中的进攻类百分比增益总和不应超过光环总预算', () => {
+  const validation = validateTechniqueSkillEffect(
+    {
+      type: 'buff',
+      buffKind: 'aura',
+      buffKey: 'buff-aura',
+      auraTarget: 'self',
+      auraEffects: [
+        {
+          type: 'buff',
+          buffKind: 'attr',
+          buffKey: 'buff-fagong-up',
+          attrKey: 'fagong',
+          applyType: 'percent',
+          value: 0.3,
+        },
+        {
+          type: 'buff',
+          buffKind: 'attr',
+          buffKey: 'buff-zengshang-up',
+          attrKey: 'zengshang',
+          applyType: 'percent',
+          value: 0.2,
+        },
+      ],
+    },
+    { quality: '玄' },
+  );
+
+  assert.deepEqual(validation, {
+    success: false,
+    reason: `auraEffects 进攻类百分比增益总和不能大于 ${getTechniqueAuraAttackPercentMaxTotal('玄')}`,
+  });
+});
+
+test('光环中的进攻类百分比增益总和在预算内时应允许通过', () => {
+  const validation = validateTechniqueSkillEffect(
+    {
+      type: 'buff',
+      buffKind: 'aura',
+      buffKey: 'buff-aura',
+      auraTarget: 'self',
+      auraEffects: [
+        {
+          type: 'buff',
+          buffKind: 'attr',
+          buffKey: 'buff-fagong-up',
+          attrKey: 'fagong',
+          applyType: 'percent',
+          value: 0.05,
+        },
+        {
+          type: 'buff',
+          buffKind: 'attr',
+          buffKey: 'buff-zengshang-up',
+          attrKey: 'zengshang',
+          applyType: 'percent',
+          value: 0.05,
+        },
+      ],
+    },
+    { quality: '玄' },
+  );
+
+  assert.deepEqual(validation, { success: true });
 });
 
 test('光环子效果不应再声明 duration', () => {

@@ -24,6 +24,10 @@ import {
   buildTechniqueGenerationTextModelRequest,
 } from '../shared/techniqueGenerationCandidateCore.js';
 import {
+  getTechniqueAuraAttackPercentMaxTotal,
+  TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE,
+} from '../shared/techniqueSkillGenerationSpec.js';
+import {
   buildTextModelPromptNoiseHash,
   TECHNIQUE_TEXT_MODEL_RETRY_TEMPERATURE,
 } from '../shared/techniqueTextModelShared.js';
@@ -103,7 +107,7 @@ test('buildTechniqueGenerationRetryPromptContext: 升级项把 scaleRate 写在 
 test('buildTechniqueGenerationRetryPromptContext: 升级项超预算总伤害倍率应注入定向纠偏约束', () => {
   const promptContext = buildTechniqueGenerationRetryPromptContext({
     promptContext: { source: 'unit-test' },
-    previousFailureReason: 'AI结果技能升级配置非法：upgrades.changes.effects.scaleRate × hit_count 不能大于 2.5',
+    previousFailureReason: `AI结果技能升级配置非法：upgrades.changes.effects.scaleRate × hit_count 不能大于 ${TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE}`,
   });
 
   type RetryPromptContext = {
@@ -120,7 +124,33 @@ test('buildTechniqueGenerationRetryPromptContext: 升级项超预算总伤害倍
   );
   assert.equal(
     retryGuidance?.correctionRules?.includes(
-      '若 upgrades.changes.effects 或 addEffect 中包含 damage，且同时填写 scaleRate 与 hit_count，则总倍率（scaleRate × hit_count）不能超过 2.5。',
+      `若 upgrades.changes.effects 或 addEffect 中包含 damage，且同时填写 scaleRate 与 hit_count，则总倍率（scaleRate × hit_count）不能超过 ${TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE}。`,
+    ),
+    true,
+  );
+});
+
+test('buildTechniqueGenerationRetryPromptContext: 光环进攻类百分比总和超预算时应注入定向纠偏约束', () => {
+  const promptContext = buildTechniqueGenerationRetryPromptContext({
+    promptContext: { source: 'unit-test' },
+    previousFailureReason: `AI结果技能效果非法：skill.effects 非法：auraEffects 进攻类百分比增益总和不能大于 ${getTechniqueAuraAttackPercentMaxTotal('玄')}`,
+  });
+
+  type RetryPromptContext = {
+    previousFailureReason?: string;
+    correctionRules?: string[];
+  };
+
+  const retryGuidance = promptContext?.techniqueRetryGuidance as RetryPromptContext | undefined;
+  assert.equal(
+    retryGuidance?.correctionRules?.includes(
+      '光环 auraEffects 里的进攻类百分比 attr 增益要共用同一份预算，不要把法攻、物攻、暴击、暴伤、增伤等一起堆满。',
+    ),
+    true,
+  );
+  assert.equal(
+    retryGuidance?.correctionRules?.includes(
+      '如果 auraEffects 同时包含多个进攻类百分比 Buff，它们的 value 总和不能超过当前品质允许的光环进攻总预算。',
     ),
     true,
   );
@@ -189,7 +219,7 @@ test('buildTechniqueGenerationTextModelRequest: 主提示应明确升级链路�
   );
   assert.equal(
     parsedUserMessage.constraints?.outputChecklist?.includes(
-      '若 upgrades.changes.effects 或 addEffect 中包含 damage，且同时填写 scaleRate 与 hit_count，则升级后的总倍率（scaleRate × hit_count）不能大于 2.5',
+      `若 upgrades.changes.effects 或 addEffect 中包含 damage，且同时填写 scaleRate 与 hit_count，则升级后的总倍率（scaleRate × hit_count）不能大于 ${TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE}`,
     ),
     true,
   );
@@ -199,12 +229,26 @@ test('buildTechniqueGenerationTextModelRequest: 主提示应明确升级链路�
   );
   assert.equal(
     parsedUserMessage.constraints?.generalRules?.includes(
-      '若 upgrades.changes.effects 或 addEffect 中包含 damage，且同时填写 scaleRate 与 hit_count，则升级后的总倍率（scaleRate × hit_count）不能大于 2.5',
+      `若 upgrades.changes.effects 或 addEffect 中包含 damage，且同时填写 scaleRate 与 hit_count，则升级后的总倍率（scaleRate × hit_count）不能大于 ${TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE}`,
     ),
     true,
   );
   assert.equal(
-    parsedUserMessage.constraints?.upgradeRule?.includes('升级后的总倍率（scaleRate × hit_count）不能大于 2.5。'),
+    parsedUserMessage.constraints?.upgradeRule?.includes(
+      `升级后的总倍率（scaleRate × hit_count）不能大于 ${TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE}。`,
+    ),
+    true,
+  );
+  assert.equal(
+    parsedUserMessage.constraints?.generalRules?.includes(
+      'buffKind=aura 的 auraEffects 若包含进攻类百分比 attr 增益（如法攻/物攻/暴击/暴伤/增伤），这些 value 的合计不能超过 numericRanges.effect.auraAttackPercentTotalMax',
+    ),
+    true,
+  );
+  assert.equal(
+    parsedUserMessage.constraints?.outputChecklist?.includes(
+      'buffKind=aura 若包含多个进攻类百分比 attr Buff，它们的 value 总和不能超过 numericRanges.effect.auraAttackPercentTotalMax',
+    ),
     true,
   );
 });

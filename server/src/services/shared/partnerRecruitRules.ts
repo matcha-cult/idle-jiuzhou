@@ -38,7 +38,7 @@ import {
 import {
   getTechniquePassiveValueConstraint,
   type TechniquePassiveValueConstraint,
-} from './techniqueGenerationConstraints.js';
+} from './techniquePassiveValueBudget.js';
 import {
   PARTNER_RECRUIT_FORM_RULES,
 } from './partnerRecruitCreativeDirection.js';

@@ -24,6 +24,10 @@ import { applySkillUpgradeChanges } from '../battle/shared/skills.js';
 import type { SkillEffect } from '../../battle/types.js';
 import { buildTechniqueGenerationResponseFormat } from '../shared/techniqueGenerationConstraints.js';
 import {
+  getTechniqueAuraAttackPercentMaxTotal,
+  TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE,
+} from '../shared/techniqueSkillGenerationSpec.js';
+import {
   sanitizeTechniqueGenerationCandidateFromModel,
   sanitizeTechniqueGenerationCandidateFromModelDetailed,
   validateTechniqueGenerationCandidate,
@@ -741,7 +745,110 @@ test('validateTechniqueGenerationCandidate: 升级项不应放行超预算总伤
   });
   assert.deepEqual(validation, {
     success: false,
-    message: 'AI结果技能升级配置非法：upgrades.changes.effects.scaleRate × hit_count 不能大于 2.5',
+    message: `AI结果技能升级配置非法：upgrades.changes.effects.scaleRate × hit_count 不能大于 ${TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE}`,
+    code: 'GENERATOR_INVALID',
+  });
+});
+
+test('validateTechniqueGenerationCandidate: 光环中的进攻类百分比增益总和不应超过光环总预算', () => {
+  const raw = {
+    technique: {
+      name: '焰轮辉界诀',
+      required_realm: '凡人',
+      attribute_type: 'magic',
+      attribute_element: 'huo',
+      description: '测试光环进攻预算约束',
+      long_desc: '测试光环进攻预算约束长描述',
+      tags: ['测试', '光环'],
+    },
+    skills: [
+      {
+        id: 'skill-aura-over-budget',
+        name: '焰轮辉界',
+        description: '错误配置的超预算光环技能',
+        trigger_type: 'passive',
+        cost_lingqi: 0,
+        cost_lingqi_rate: 0,
+        cost_qixue: 0,
+        cost_qixue_rate: 0,
+        cooldown: 0,
+        target_type: 'self',
+        target_count: 1,
+        damage_type: 'magic',
+        element: 'huo',
+        ai_priority: 40,
+        effects: [
+          {
+            type: 'buff',
+            buffKind: 'aura',
+            buffKey: 'buff-aura',
+            auraTarget: 'self',
+            auraEffects: [
+              {
+                type: 'buff',
+                buffKind: 'attr',
+                buffKey: 'buff-fagong-up',
+                attrKey: 'fagong',
+                applyType: 'percent',
+                value: 0.3,
+              },
+              {
+                type: 'buff',
+                buffKind: 'attr',
+                buffKey: 'buff-zengshang-up',
+                attrKey: 'zengshang',
+                applyType: 'percent',
+                value: 0.2,
+              },
+            ],
+          },
+        ],
+        upgrades: [],
+      },
+    ],
+    layers: [
+      {
+        layer: 1,
+        cost_spirit_stones: 100,
+        cost_exp: 50,
+        passives: [{ key: 'fagong', value: 0.08 }],
+        unlock_skill_ids: ['skill-aura-over-budget'],
+        upgrade_skill_ids: [],
+        layer_desc: '入门',
+      },
+      {
+        layer: 2,
+        cost_spirit_stones: 200,
+        cost_exp: 100,
+        passives: [{ key: 'fagong', value: 0.08 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '精进',
+      },
+      {
+        layer: 3,
+        cost_spirit_stones: 300,
+        cost_exp: 150,
+        passives: [{ key: 'fagong', value: 0.08 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '圆满',
+      },
+    ],
+  };
+
+  const candidate = sanitizeTechniqueGenerationCandidateFromModel(raw, '武技', '玄', 3);
+  assert.ok(candidate);
+
+  const validation = validateTechniqueGenerationCandidate({
+    candidate,
+    expectedTechniqueType: '武技',
+    expectedQuality: '玄',
+    expectedMaxLayer: 3,
+  });
+  assert.deepEqual(validation, {
+    success: false,
+    message: `AI结果技能效果非法：skill.effects 非法：auraEffects 进攻类百分比增益总和不能大于 ${getTechniqueAuraAttackPercentMaxTotal('玄')}`,
     code: 'GENERATOR_INVALID',
   });
 });
