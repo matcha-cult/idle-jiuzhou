@@ -25,6 +25,7 @@ import { applyHealing } from './healing.js';
 import { applySoulShackleRecoveryReduction } from './mark.js';
 import { appendBattleLog } from '../logStream.js';
 import { buildAuraSubEffectSummary } from '../utils/auraSummary.js';
+import { CHARACTER_RATIO_ATTR_KEY_SET } from '../../services/shared/characterAttrRegistry.js';
 
 /**
  * 添加Buff到单位
@@ -551,9 +552,10 @@ function recalculateUnitAttrs(unit: BattleUnit): void {
   for (const [attr, value] of Object.entries(percentMods) as [string, number][]) {
     const key = attr as keyof BattleAttrs;
     if (typeof unit.currentAttrs[key] === 'number') {
-      (unit.currentAttrs[key] as number) = Math.floor(
-        (unit.currentAttrs[key] as number) * (1 + value)
-      );
+      const nextValue = (unit.currentAttrs[key] as number) * (1 + value);
+      (unit.currentAttrs[key] as number) = CHARACTER_RATIO_ATTR_KEY_SET.has(attr)
+        ? Number(nextValue.toFixed(6))
+        : Math.floor(nextValue);
     }
   }
   
