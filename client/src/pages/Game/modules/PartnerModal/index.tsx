@@ -320,9 +320,15 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
     () => resolvePartnerFusionSelectedQuality(overview?.partners ?? [], selectedFusionMaterialIds),
     [overview?.partners, selectedFusionMaterialIds],
   );
+  const selectedFusionMaterials = useMemo(
+    () => selectedFusionMaterialIds
+      .map((partnerId) => overview?.partners?.find((partner) => partner.id === partnerId))
+      .filter((partner): partner is PartnerDetailDto => Boolean(partner)),
+    [overview?.partners, selectedFusionMaterialIds],
+  );
   const fusionRateLines = useMemo(
-    () => (fusionSelectedQuality ? resolvePartnerFusionRateLines(fusionSelectedQuality) : []),
-    [fusionSelectedQuality],
+    () => (fusionSelectedQuality ? resolvePartnerFusionRateLines(fusionSelectedQuality, selectedFusionMaterials) : []),
+    [fusionSelectedQuality, selectedFusionMaterials],
   );
 
   useEffect(() => {

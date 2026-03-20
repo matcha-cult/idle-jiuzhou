@@ -150,16 +150,48 @@ const createFusionStatus = (
 
 describe('partnerFusionShared', () => {
   it('黄品概率文案应展示边界并回后的结果', () => {
-    expect(resolvePartnerFusionRateLines('黄')).toEqual([
+    expect(resolvePartnerFusionRateLines('黄', [])).toEqual([
       '90% 获得黄品伙伴',
       '10% 获得玄品伙伴',
     ]);
   });
 
   it('天品概率文案应展示边界并回后的结果', () => {
-    expect(resolvePartnerFusionRateLines('天')).toEqual([
+    expect(resolvePartnerFusionRateLines('天', [])).toEqual([
       '5% 获得地品伙伴',
       '95% 获得天品伙伴',
+    ]);
+  });
+
+  it('选中 2 个同五行素材时应把升品概率展示为 15%', () => {
+    expect(resolvePartnerFusionRateLines('黄', [
+      createPartner({ id: 1, quality: '黄', element: 'shui' }),
+      createPartner({ id: 2, quality: '黄', element: 'shui' }),
+    ])).toEqual([
+      '85% 获得黄品伙伴',
+      '15% 获得玄品伙伴',
+    ]);
+  });
+
+  it('选中 3 个全同五行素材时应把升品概率展示为 20%', () => {
+    expect(resolvePartnerFusionRateLines('玄', [
+      createPartner({ id: 1, quality: '玄', element: 'shui' }),
+      createPartner({ id: 2, quality: '玄', element: 'shui' }),
+      createPartner({ id: 3, quality: '玄', element: 'shui' }),
+    ])).toEqual([
+      '5% 获得黄品伙伴',
+      '75% 获得玄品伙伴',
+      '20% 获得地品伙伴',
+    ]);
+  });
+
+  it('none 五行不应参与升品加成展示', () => {
+    expect(resolvePartnerFusionRateLines('黄', [
+      createPartner({ id: 1, quality: '黄', element: 'none' }),
+      createPartner({ id: 2, quality: '黄', element: 'none' }),
+    ])).toEqual([
+      '90% 获得黄品伙伴',
+      '10% 获得玄品伙伴',
     ]);
   });
 

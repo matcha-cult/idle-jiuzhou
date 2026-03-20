@@ -15,7 +15,8 @@
  *
  * 关键边界条件与坑点：
  * 1. 黄/天边界概率要与服务端同口径展示，否则玩家看到的概率与实际结果会不一致。
- * 2. 素材禁用原因必须只有一个最终文案，避免同一卡片同时出现多条冲突说明。
+ * 2. 同五行加成展示必须基于当前已选素材实时计算，否则“已选 2 个同五行”时前端会继续显示旧的 10% 升品概率。
+ * 3. 素材禁用原因必须只有一个最终文案，避免同一卡片同时出现多条冲突说明。
  */
 import type {
   PartnerDetailDto,
@@ -35,6 +36,11 @@ export type PartnerFusionPanelView =
   | { kind: 'failed'; job: PartnerFusionJobDto; errorMessage: string };
 
 const PARTNER_FUSION_QUALITY_ORDER = ['黄', '玄', '地', '天'] as const;
+const PARTNER_FUSION_DOWNGRADE_RATE = 5;
+const PARTNER_FUSION_SAME_RATE = 85;
+const PARTNER_FUSION_UPGRADE_RATE = 10;
+const PARTNER_FUSION_UPGRADE_BONUS_PER_EXTRA_MATCH = 5;
+const PARTNER_FUSION_EMPTY_ELEMENT = 'none';
 
 export const buildPartnerFusionIndicator = (
   status: PartnerFusionStatusDto | null,
@@ -62,20 +68,51 @@ export const resolvePartnerFusionPanelView = (
   };
 };
 
-export const resolvePartnerFusionRateLines = (sourceQuality: string): string[] => {
+const resolvePartnerFusionUpgradeBonusRate = (
+  selectedPartners: readonly Pick<PartnerDetailDto, 'element'>[],
+): number => {
+  const validElements = selectedPartners
+    .map((partner) => partner.element.trim())
+    .filter((element) => element.length > 0 && element !== PARTNER_FUSION_EMPTY_ELEMENT);
+  if (validElements.length <= 1) {
+    return 0;
+  }
+
+  const elementCountMap = new Map<string, number>();
+  for (const element of validElements) {
+    elementCountMap.set(element, (elementCountMap.get(element) ?? 0) + 1);
+  }
+
+  let maxSameElementCount = 0;
+  for (const count of elementCountMap.values()) {
+    if (count > maxSameElementCount) {
+      maxSameElementCount = count;
+    }
+  }
+
+  return Math.max(0, maxSameElementCount - 1) * PARTNER_FUSION_UPGRADE_BONUS_PER_EXTRA_MATCH;
+};
+
+export const resolvePartnerFusionRateLines = (
+  sourceQuality: string,
+  selectedPartners: readonly Pick<PartnerDetailDto, 'element'>[] = [],
+): string[] => {
   const qualityIndex = PARTNER_FUSION_QUALITY_ORDER.findIndex((entry) => entry === sourceQuality);
+  const upgradeBonusRate = resolvePartnerFusionUpgradeBonusRate(selectedPartners);
+  const sameQualityRate = PARTNER_FUSION_SAME_RATE - upgradeBonusRate;
+  const upgradeQualityRate = PARTNER_FUSION_UPGRADE_RATE + upgradeBonusRate;
   if (qualityIndex < 0) {
-    return ['85% 同品级', '5% -1 品级', '10% +1 品级'];
+    return [`${sameQualityRate}% 同品级`, `${PARTNER_FUSION_DOWNGRADE_RATE}% -1 品级`, `${upgradeQualityRate}% +1 品级`];
   }
   const lowerQuality = PARTNER_FUSION_QUALITY_ORDER[qualityIndex - 1];
   const higherQuality = PARTNER_FUSION_QUALITY_ORDER[qualityIndex + 1];
   const lines: string[] = [];
   if (lowerQuality) {
-    lines.push(`5% 获得${lowerQuality}品伙伴`);
+    lines.push(`${PARTNER_FUSION_DOWNGRADE_RATE}% 获得${lowerQuality}品伙伴`);
   }
-  lines.push(`${higherQuality ? (lowerQuality ? 85 : 90) : 95}% 获得${sourceQuality}品伙伴`);
+  lines.push(`${higherQuality ? (lowerQuality ? sameQualityRate : PARTNER_FUSION_DOWNGRADE_RATE + sameQualityRate) : sameQualityRate + upgradeQualityRate}% 获得${sourceQuality}品伙伴`);
   if (higherQuality) {
-    lines.push(`10% 获得${higherQuality}品伙伴`);
+    lines.push(`${upgradeQualityRate}% 获得${higherQuality}品伙伴`);
   }
   return lines;
 };
