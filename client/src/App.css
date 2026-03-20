@@ -184,6 +184,35 @@ body.theme-dark .ant-pagination .ant-pagination-jump-next .ant-pagination-item-e
   color: var(--text-secondary);
 }
 
+/* 深色主题下统一修复 InputNumber 步进按钮 hover 变黑、图标不可读的问题 */
+body.theme-dark .ant-input-number .ant-input-number-handler-wrap {
+  background: var(--panel-bg);
+  border-inline-start: 1px solid var(--border-color-soft);
+}
+
+body.theme-dark .ant-input-number .ant-input-number-handler {
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: var(--border-color-soft);
+}
+
+body.theme-dark .ant-input-number .ant-input-number-handler:hover,
+body.theme-dark .ant-input-number .ant-input-number-handler:focus-visible {
+  color: var(--text-color);
+  background: var(--hover-bg);
+}
+
+body.theme-dark .ant-input-number .ant-input-number-handler:active {
+  color: var(--text-color);
+  background: var(--active-bg);
+}
+
+body.theme-dark .ant-input-number .ant-input-number-handler-up-inner,
+body.theme-dark .ant-input-number .ant-input-number-handler-down-inner,
+body.theme-dark .ant-input-number .ant-input-number-handler .anticon {
+  color: inherit;
+}
+
 
 /* 全局统一修复 Select 文本与选中态颜色可读性 */
 body .ant-select .ant-select-selector .ant-select-selection-item {
