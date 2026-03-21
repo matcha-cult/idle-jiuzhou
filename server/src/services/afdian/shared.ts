@@ -23,10 +23,12 @@ import type {
   GrantedRewardPayload as RedeemCodeRewardPayload,
 } from '../shared/rewardPayload.js';
 import { PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_ITEM_DEF_ID } from '../shared/partnerRecruitBaseModel.js';
+import { TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID } from '../shared/techniqueResearchCooldownBypass.js';
 
 export const AFDIAN_MONTH_CARD_PLAN_ID = '04f7a35e210c11f182a752540025c377';
 export const AFDIAN_SPIRIT_STONE_PRODUCT_PLAN_ID = 'ac7064ea21ca11f1a2b15254001e7c00';
 export const AFDIAN_ADVANCED_RECRUIT_TOKEN_PRODUCT_PLAN_ID = '5ca895ba23ad11f1984552540025c377';
+export const AFDIAN_DUNWU_TOKEN_PRODUCT_PLAN_ID = 'f1a4b2d0250011f18c3b52540025c377';
 export const AFDIAN_REDEEM_SOURCE_TYPE = 'afdian_order';
 export const AFDIAN_MONTH_CARD_ITEM_DEF_ID = 'cons-monthcard-001';
 export const AFDIAN_OPEN_API_DEFAULT_BASE_URL = 'https://ifdian.net';
@@ -129,6 +131,14 @@ export const AFDIAN_PLAN_CONFIGS: Readonly<Record<string, AfdianPlanConfig>> = {
       kind: 'item',
       unit: 'sku_count',
       itemDefId: PARTNER_RECRUIT_CUSTOM_BASE_MODEL_TOKEN_ITEM_DEF_ID,
+      quantityPerUnit: 1,
+    },
+  },
+  [AFDIAN_DUNWU_TOKEN_PRODUCT_PLAN_ID]: {
+    reward: {
+      kind: 'item',
+      unit: 'sku_count',
+      itemDefId: TECHNIQUE_RESEARCH_COOLDOWN_BYPASS_TOKEN_ITEM_DEF_ID,
       quantityPerUnit: 1,
     },
   },
