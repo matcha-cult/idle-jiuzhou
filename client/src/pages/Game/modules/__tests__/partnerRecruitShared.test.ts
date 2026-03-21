@@ -4,6 +4,8 @@ import {
   resolvePartnerRecruitQualityRateItems,
   resolvePartnerRecruitActionState,
   resolvePartnerRecruitCooldownDisplay,
+  resolvePartnerRecruitLayoutState,
+  resolvePartnerRecruitPanelView,
   resolvePartnerRecruitSubmitState,
 } from '../PartnerModal/partnerRecruitShared';
 
@@ -92,5 +94,87 @@ describe('partnerRecruitShared', () => {
       { quality: '地', rateText: '20%' },
       { quality: '天', rateText: '10%' },
     ]);
+  });
+
+  it('生成结果预览态应隐藏顶部信息卡并压平预览卡片', () => {
+    const panelView = resolvePartnerRecruitPanelView(buildRecruitStatus({
+      currentJob: {
+        generationId: 'draft-job',
+        status: 'generated_draft',
+        requestedBaseModel: null,
+        previewExpireAt: null,
+        preview: {
+          partnerId: 'draft-partner',
+          name: '碧翎蛊',
+          avatar: '/uploads/partners/draft.webp',
+          quality: '地',
+          element: 'wood',
+          role: '蛊术使',
+          slotCount: 5,
+          description: '测试预览',
+          baseAttrs: {
+            hp: 300,
+            mp: 80,
+            atk: 60,
+            spellPower: 90,
+            defense: 40,
+            spellResist: 35,
+            hit: 0.9,
+            dodge: 0.1,
+            critRate: 0.12,
+            critDamage: 1.6,
+            speed: 120,
+          },
+          levelAttrGains: {
+            hp: 30,
+            mp: 8,
+            atk: 6,
+            spellPower: 9,
+            defense: 4,
+            spellResist: 3,
+            hit: 0.01,
+            dodge: 0.005,
+            critRate: 0.002,
+            critDamage: 0.01,
+            speed: 2,
+          },
+          innateTechniques: [],
+        },
+        errorMessage: null,
+        refundedAt: null,
+        createdAt: '2026-03-21T00:00:00.000Z',
+        updatedAt: '2026-03-21T00:00:00.000Z',
+      },
+      hasUnreadResult: true,
+      resultStatus: 'generated_draft',
+    }));
+
+    expect(resolvePartnerRecruitLayoutState(panelView)).toEqual({
+      showMetaCards: false,
+      flattenPreviewCard: true,
+    });
+  });
+
+  it('失败结果态仍应保留顶部信息卡且不压平结果卡片', () => {
+    const panelView = resolvePartnerRecruitPanelView(buildRecruitStatus({
+      currentJob: {
+        generationId: 'failed-job',
+        status: 'failed',
+        requestedBaseModel: null,
+        previewExpireAt: null,
+        preview: null,
+        errorMessage: '招募失败',
+        refundedAt: null,
+        createdAt: '2026-03-21T00:00:00.000Z',
+        updatedAt: '2026-03-21T00:00:00.000Z',
+      },
+      hasUnreadResult: true,
+      resultStatus: 'failed',
+    }));
+
+    expect(resolvePartnerRecruitLayoutState(panelView)).toEqual({
+      showMetaCards: true,
+      flattenPreviewCard: false,
+    });
   });
 });

@@ -64,6 +64,11 @@ export type PartnerRecruitQualityRateItem = {
   rateText: string;
 };
 
+export type PartnerRecruitLayoutState = {
+  showMetaCards: boolean;
+  flattenPreviewCard: boolean;
+};
+
 export const buildPartnerRecruitIndicator = (
   status: PartnerRecruitStatusData | null,
 ): PartnerRecruitIndicatorView => {
@@ -122,6 +127,13 @@ export const resolvePartnerRecruitPanelView = (
   }
   return { kind: 'empty' };
 };
+
+export const resolvePartnerRecruitLayoutState = (
+  panelView: PartnerRecruitPanelView,
+): PartnerRecruitLayoutState => ({
+  showMetaCards: panelView.kind !== 'draft',
+  flattenPreviewCard: panelView.kind === 'draft',
+});
 
 export const isPartnerRecruitCoolingDown = (
   status: PartnerRecruitStatusData | null,

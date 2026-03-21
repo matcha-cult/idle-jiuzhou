@@ -71,6 +71,7 @@ import {
   buildPartnerRecruitIndicator,
   hasPartnerRecruitCustomBaseModelToken,
   resolvePartnerRecruitCooldownDisplay,
+  resolvePartnerRecruitLayoutState,
   resolvePartnerRecruitActionState,
   resolvePartnerRecruitPanelView,
   resolvePartnerRecruitQualityRateItems,
@@ -1284,6 +1285,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
   const renderRecruitPanel = () => {
     const shouldShowSpiritStoneCost = Boolean(recruitStatus?.unlocked) && (recruitStatus?.spiritStoneCost ?? 0) > 0;
     const hasCustomBaseModelCapability = typeof recruitStatus?.customBaseModelMaxLength === 'number';
+    const recruitLayoutState = resolvePartnerRecruitLayoutState(recruitPanelView);
     return (
       <div className="partner-pane-card">
         <div className="partner-section-title">
@@ -1293,41 +1295,43 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
           ) : null}
         </div>
 
-        <div className="partner-recruit-meta-grid">
-          <div className="partner-recruit-meta-card partner-recruit-summary-card">
-            <div className="partner-section-title">招募说明</div>
-            <div className="partner-recruit-summary-list">
-              <div className="partner-recruit-summary-item">
-                <div className="partner-stat-label">招募规则</div>
-                <div className="partner-meta">每次招募会生成一名专属伙伴预览，确认后才会正式入队。</div>
-                {hasCustomBaseModelCapability ? (
-                  <div className="partner-meta">自定义底模默认关闭，勾选启用后需额外消耗高级招募令。</div>
-                ) : null}
-              </div>
-              <div className="partner-recruit-summary-item">
-                <div className="partner-stat-label">冷却状态</div>
-                <div className="partner-recruit-cooldown-status">{recruitCooldownDisplay.statusText}</div>
-                <div className="partner-meta">{recruitCooldownDisplay.ruleText}</div>
+        {recruitLayoutState.showMetaCards ? (
+          <div className="partner-recruit-meta-grid">
+            <div className="partner-recruit-meta-card partner-recruit-summary-card">
+              <div className="partner-section-title">招募说明</div>
+              <div className="partner-recruit-summary-list">
+                <div className="partner-recruit-summary-item">
+                  <div className="partner-stat-label">招募规则</div>
+                  <div className="partner-meta">每次招募会生成一名专属伙伴预览，确认后才会正式入队。</div>
+                  {hasCustomBaseModelCapability ? (
+                    <div className="partner-meta">自定义底模默认关闭，勾选启用后需额外消耗高级招募令。</div>
+                  ) : null}
+                </div>
+                <div className="partner-recruit-summary-item">
+                  <div className="partner-stat-label">冷却状态</div>
+                  <div className="partner-recruit-cooldown-status">{recruitCooldownDisplay.statusText}</div>
+                  <div className="partner-meta">{recruitCooldownDisplay.ruleText}</div>
+                </div>
               </div>
             </div>
+            <div className="partner-recruit-meta-card partner-recruit-rate-card">
+              <div className="partner-stat-label">品质概率</div>
+              {recruitQualityRateItems.length > 0 ? (
+                <div className="partner-recruit-quality-rate-list">
+                  {recruitQualityRateItems.map((entry) => (
+                    <div key={entry.quality} className="partner-recruit-quality-rate-item">
+                      <Tag className={getItemQualityTagClassName(entry.quality)}>{entry.quality}品</Tag>
+                      <span className="partner-recruit-quality-rate-text">{entry.rateText}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="partner-meta">--</div>
+              )}
+              <div className="partner-meta">当前展示的是本期基础招募权重。</div>
+            </div>
           </div>
-          <div className="partner-recruit-meta-card partner-recruit-rate-card">
-            <div className="partner-stat-label">品质概率</div>
-            {recruitQualityRateItems.length > 0 ? (
-              <div className="partner-recruit-quality-rate-list">
-                {recruitQualityRateItems.map((entry) => (
-                  <div key={entry.quality} className="partner-recruit-quality-rate-item">
-                    <Tag className={getItemQualityTagClassName(entry.quality)}>{entry.quality}品</Tag>
-                    <span className="partner-recruit-quality-rate-text">{entry.rateText}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="partner-meta">--</div>
-            )}
-            <div className="partner-meta">当前展示的是本期基础招募权重。</div>
-          </div>
-        </div>
+        ) : null}
 
         {recruitPanelView.kind === 'pending' ? (
           <div className="partner-recruit-state-card">
@@ -1358,7 +1362,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
               ) : null}
             </div>
             {renderRecruitRequestedBaseModel(recruitPanelView.job.requestedBaseModel)}
-            {renderRecruitPreview(recruitPanelView.preview)}
+            {renderRecruitPreview(recruitPanelView.preview, { flat: recruitLayoutState.flattenPreviewCard })}
             <div className="partner-action-row partner-recruit-action-row partner-recruit-result-action-row">
               <Button
                 danger
