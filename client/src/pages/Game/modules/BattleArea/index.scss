@@ -271,7 +271,7 @@
   width: fit-content;
   max-width: 100%;
   padding: calc(1px * var(--battle-card-scale-safe)) calc(5px * var(--battle-card-scale-safe));
-  border-radius: calc(8px * var(--battle-card-scale-safe));
+  border-radius: 4px;
   background: color-mix(in srgb, var(--panel-bg) 68%, transparent);
   border: 1px solid color-mix(in srgb, white 26%, transparent);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
@@ -672,6 +672,10 @@
     --battle-bar-label-size-raw: 7px;
     --battle-bar-value-size-raw: 7px;
     --battle-bar-height-raw: 8px;
+    height: 10vh;
+    height: 10svh;
+    height: 10dvh;
+
   }
 }
 
