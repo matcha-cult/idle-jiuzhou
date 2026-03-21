@@ -20,7 +20,7 @@
  * 2. 死亡单位仍需保留卡片占位，否则 2 行 5 列阵型会在战斗过程中不断跳动，影响目标选择和视觉稳定性。
  */
 
-import { type CSSProperties } from 'react';
+import { memo, type CSSProperties } from 'react';
 import PlayerName from '../../shared/PlayerName';
 import { resolveBattleUnitBackgroundImage } from './battleUnitBackground';
 import type { BattleFieldCardSize } from './battleFieldLayout';
@@ -38,7 +38,7 @@ interface BattleUnitCardProps {
   active?: boolean;
   floats?: BattleFloatText[];
   selected?: boolean;
-  onClick?: () => void;
+  onToggleUnit: (unitId: string) => void;
 }
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
@@ -66,7 +66,7 @@ const StatBar: React.FC<{
   );
 };
 
-export const BattleUnitCard: React.FC<BattleUnitCardProps> = ({
+export const BattleUnitCard: React.FC<BattleUnitCardProps> = memo(({
   unit,
   team,
   size,
@@ -75,25 +75,27 @@ export const BattleUnitCard: React.FC<BattleUnitCardProps> = ({
   active,
   floats,
   selected,
-  onClick,
+  onToggleUnit,
 }) => {
   const dead = (Number(unit.hp) || 0) <= 0;
   const statusTags = resolveBattleUnitStatusTags(unit.buffs, statusTagLimit);
   const backgroundImage = resolveBattleUnitBackgroundImage(unit);
+  const handleToggleUnit = () => {
+    onToggleUnit(unit.id);
+  };
 
   return (
     <div
       className={`battle-unit-card size-${size} ${backgroundImage ? 'has-avatar-background' : ''} ${active ? 'active' : ''} ${selected ? 'selected' : ''} ${dead ? 'dead' : ''}`}
       data-team={team}
       data-unit-type={unit.unitType}
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onClick={handleToggleUnit}
       onKeyDown={(event) => {
-        if (!onClick) return;
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
-        onClick();
+        handleToggleUnit();
       }}
     >
       {backgroundImage ? (
@@ -148,4 +150,4 @@ export const BattleUnitCard: React.FC<BattleUnitCardProps> = ({
       </div>
     </div>
   );
-};
+});

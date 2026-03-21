@@ -194,7 +194,7 @@
   background: var(--panel-bg-soft);
   box-shadow: none;
   overflow: hidden;
-  transition: border-color 0.18s ease, background-color 0.18s ease, opacity 0.18s ease, width 0.18s ease, max-width 0.18s ease;
+  transition: opacity 0.18s ease, width 0.18s ease, max-width 0.18s ease;
 }
 
 .battle-unit-card[role='button'] {

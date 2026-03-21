@@ -668,6 +668,13 @@ const Game: FC<GameProps> = ({ onLogout }) => {
   const { message } = App.useApp();
   const messageRef = useRef(message);
   const initialCharacterPosition = readCharacterWorldPosition(gameSocket.getCharacter());
+  const notifyBattleArea = useCallback((type: 'info' | 'error', content: string, durationSeconds?: number) => {
+    if (type === 'info') {
+      messageRef.current.info(content, durationSeconds);
+      return;
+    }
+    messageRef.current.error(content, durationSeconds);
+  }, []);
 
   const [character, setCharacter] = useState<CharacterData | null>(null);
   const [teamInfo, setTeamInfo] = useState<TeamInfo | null>(null);
@@ -2311,6 +2318,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                     <BattleArea
                       enemies={battleEnemies}
                       allies={battleAllies}
+                      onNotify={notifyBattleArea}
                       allowLocalStart={allowLocalBattleStart}
                       externalBattleId={externalBattleId}
                       allowAutoNext={allowAutoNextBattle}
@@ -2345,6 +2353,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                               <BattleArea
                                 enemies={battleEnemies}
                                 allies={battleAllies}
+                                onNotify={notifyBattleArea}
                                 allowLocalStart={allowLocalBattleStart}
                                 externalBattleId={externalBattleId}
                                 allowAutoNext={allowAutoNextBattle}
@@ -2410,6 +2419,7 @@ const Game: FC<GameProps> = ({ onLogout }) => {
                     <BattleArea
                       enemies={battleEnemies}
                       allies={battleAllies}
+                      onNotify={notifyBattleArea}
                       allowLocalStart={allowLocalBattleStart}
                       externalBattleId={externalBattleId}
                       allowAutoNext={allowAutoNextBattle}

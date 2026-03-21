@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { App, Button } from 'antd';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button } from 'antd';
 import {
   abandonBattle,
   battleAction,
@@ -54,6 +54,7 @@ interface BattleAreaProps {
   nextLabel?: string;
   advanceMode?: BattleAdvanceMode;
   onSessionChange?: (session: BattleSessionSnapshotDto | null) => void;
+  onNotify: (type: 'info' | 'error', content: string, durationSeconds?: number) => void;
 }
 
 const DEFAULT_BATTLE_START_COOLDOWN_MS = 3000;
@@ -235,7 +236,7 @@ const isBattleCooldownReadyForMeta = (
   return cooldownState.timestamp >= nextBattleAvailableAt;
 };
 
-const BattleArea: React.FC<BattleAreaProps> = ({
+const BattleAreaComponent: React.FC<BattleAreaProps> = ({
   enemies,
   allowLocalStart,
   onEscape,
@@ -248,8 +249,8 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   nextLabel,
   advanceMode,
   onSessionChange,
+  onNotify,
 }) => {
-  const { message } = App.useApp();
   const resolvedExternalBattleId = externalBattleId ?? null;
   const resolvedAllowAutoNext = allowAutoNext ?? true;
   const finishedBattleAdvanceMode = advanceMode ?? 'none';
@@ -387,7 +388,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     onSessionChange?.(null);
 
     if (shouldAutoRestartLocalBattle) {
-      message.info('当前战斗已失效，正在重新接敌');
+      onNotify('info', '当前战斗已失效，正在重新接敌');
       void startBattleRef.current(lastMonsterIdsRef.current, {
         retryOnCooldown: true,
         silentCooldown: true,
@@ -399,8 +400,8 @@ const BattleArea: React.FC<BattleAreaProps> = ({
   }, [
     allowLocalStart,
     finishedBattleAdvanceMode,
-    message,
     onEscape,
+    onNotify,
     onSessionChange,
     resetBattlePresentationState,
     resetBattleRuntimeState,
@@ -439,10 +440,10 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       setWaitingForCooldown(true);
       setStartupStatus('cooldown');
       if (!silent && delayMs >= MINIMUM_MEANINGFUL_COOLDOWN_DISPLAY_MS) {
-        message.info(messageText, Math.max(1, Math.ceil(delayMs / 1000)));
+        onNotify('info', messageText, Math.max(1, Math.ceil(delayMs / 1000)));
       }
     },
-    [message],
+    [onNotify],
   );
 
   const syncBattleCooldownMeta = useCallback((raw: BattleCooldownMetaLike | null | undefined) => {
@@ -737,7 +738,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           typeof session?.currentBattleId === 'string' ? session.currentBattleId : '';
         if (!res?.success || !session || !battleIdFromSession) {
           const failMessage = getUnifiedApiErrorMessage(res, '发起战斗失败');
-          message.error(failMessage);
+          onNotify('error', failMessage);
           setBattleId(null);
           setBattleState(null);
           setBattleLogs([]);
@@ -791,7 +792,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
         setBattleLogs([]);
         setResult('idle');
         setStartupStatus('none');
-        message.error(normalizedError.message);
+        onNotify('error', normalizedError.message);
         pushBattleLines([`【斗法落幕】${normalizedError.message}`]);
         onEscape?.();
       } finally {
@@ -801,7 +802,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
     [
       activateCooldownWait,
       adoptCachedBattleSnapshot,
-      message,
+      onNotify,
       onEscape,
       onSessionChange,
       pushBattleLines,
@@ -1179,7 +1180,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       .then((res) => {
         if (!res?.success) {
           if (!isBattleMissingError(res?.message)) {
-            message.error(res?.message || '逃跑失败');
+            onNotify('error', res?.message || '逃跑失败');
             return;
           }
         }
@@ -1189,12 +1190,20 @@ const BattleArea: React.FC<BattleAreaProps> = ({
       .catch((error) => {
         const errorText = getUnifiedApiErrorMessage(error, '逃跑失败');
         if (!isBattleMissingError(errorText)) {
-          message.error(errorText);
+          onNotify('error', errorText);
           return;
         }
         exitBattleLocally(id);
       });
-  }, [message, onEscape, pushBattleLines, resetBattlePresentationState, resetBattleRuntimeState, syncBattleCooldownMeta]);
+  }, [onEscape, onNotify, pushBattleLines, resetBattlePresentationState, resetBattleRuntimeState, syncBattleCooldownMeta]);
+
+  const handleEnemyUnitToggle = useCallback((unitId: string) => {
+    setSelectedEnemyId((prev) => (prev === unitId ? null : unitId));
+  }, []);
+
+  const handleAllyUnitToggle = useCallback((unitId: string) => {
+    setSelectedAllyId((prev) => (prev === unitId ? null : unitId));
+  }, []);
 
   const handleNext = useCallback(async () => {
     if (!onNext) return;
@@ -1329,7 +1338,7 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           activeUnitId={activeUnitId}
           selectedUnitId={selectedEnemyId}
           floatsByUnit={floatsByUnit}
-          onToggleUnit={(unitId) => setSelectedEnemyId((prev) => (prev === unitId ? null : unitId))}
+          onToggleUnit={handleEnemyUnitToggle}
         />
 
         <div className="battle-divider" />
@@ -1341,11 +1350,13 @@ const BattleArea: React.FC<BattleAreaProps> = ({
           activeUnitId={activeUnitId}
           selectedUnitId={selectedAllyId}
           floatsByUnit={floatsByUnit}
-          onToggleUnit={(unitId) => setSelectedAllyId((prev) => (prev === unitId ? null : unitId))}
+          onToggleUnit={handleAllyUnitToggle}
         />
       </div>
     </div>
   );
 };
+
+const BattleArea = memo(BattleAreaComponent);
 
 export default BattleArea;

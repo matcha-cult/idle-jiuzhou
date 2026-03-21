@@ -20,7 +20,7 @@
  * 2. 空面板也要保留同一个 section 结构，避免战斗切换时 DOM 层级抖动导致滚动位置和视觉过渡不稳定。
  */
 
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { memo, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { BattleUnitCard } from './BattleUnitCard';
 import { resolveBattleFieldFormation } from './battleFieldFormation';
 import { resolveBattleFieldLayout } from './battleFieldLayout';
@@ -38,7 +38,7 @@ interface BattleTeamPanelProps {
   onToggleUnit: (unitId: string) => void;
 }
 
-export const BattleTeamPanel: React.FC<BattleTeamPanelProps> = ({
+export const BattleTeamPanel: React.FC<BattleTeamPanelProps> = memo(({
   team,
   units,
   emptyText,
@@ -112,7 +112,7 @@ export const BattleTeamPanel: React.FC<BattleTeamPanelProps> = ({
                 active={activeUnitId === unit.id}
                 selected={selectedUnitId === unit.id}
                 floats={floatsByUnit[unit.id]}
-                onClick={() => onToggleUnit(unit.id)}
+                onToggleUnit={onToggleUnit}
               />
             ) : (
               <div key={`battle-slot-empty-${team}-${index}`} className="battle-unit-slot-empty" aria-hidden="true" />
@@ -123,4 +123,4 @@ export const BattleTeamPanel: React.FC<BattleTeamPanelProps> = ({
       </div>
     </section>
   );
-};
+});
