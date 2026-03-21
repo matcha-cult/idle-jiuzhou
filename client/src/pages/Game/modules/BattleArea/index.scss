@@ -223,11 +223,7 @@
 }
 
 .battle-unit-card[data-unit-type='partner'] .battle-unit-avatar-image {
-  object-fit: contain;
   object-position: center bottom;
-  opacity: 1;
-  transform: scale(1.18);
-  filter: saturate(1.08) contrast(1.03) brightness(1);
 }
 
 .battle-unit-card.has-avatar-background {
