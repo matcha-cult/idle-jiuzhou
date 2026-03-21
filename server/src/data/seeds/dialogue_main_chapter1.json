@@ -63,14 +63,15 @@
           "text": "你来了。青云村虽小，却也暗流涌动。\n若想在这世道立足，先练胆，再练心。\n村外的南林小道有些野兔出没，虽然弱小，但对你来说正好练手。\n老夫先传你一门入门武技，你拿去修炼。",
           "effects": [
             { "type": "give_technique", "params": { "technique_id": "tech-jichu-quanfa" } },
-            { "type": "give_item", "params": { "item_def_id": "equip-weapon-001", "quantity": 1 } }
+            { "type": "give_item", "params": { "item_def_id": "equip-weapon-001", "quantity": 1 } },
+            { "type": "give_item", "params": { "item_def_id": "equip-clothes-001", "quantity": 1 } }
           ],
           "next": "sys-1"
         },
         {
           "id": "sys-1",
           "type": "system",
-          "text": "获得功法：基础拳法\n获得装备：新手剑\n前往青云村外·南林小道，击败野兔（0/5）。"
+          "text": "获得功法：基础拳法\n获得装备：新手剑、布衣\n前往青云村外·南林小道，击败野兔（0/5）。"
         }
       ],
       "enabled": true
