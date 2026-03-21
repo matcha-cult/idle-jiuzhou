@@ -2,6 +2,16 @@
   margin-bottom: 16px;
 }
 
+.character-rename-avatar-upload {
+  display: block;
+  width: 100%;
+}
+
+.character-rename-avatar-upload.ant-upload-wrapper .ant-upload-select {
+  display: block;
+  width: 100%;
+}
+
 .character-rename-avatar-label {
   margin-bottom: 8px;
   color: var(--ant-color-text, rgba(255, 255, 255, 0.88));

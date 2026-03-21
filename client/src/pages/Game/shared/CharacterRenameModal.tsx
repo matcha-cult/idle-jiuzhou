@@ -72,6 +72,7 @@ const RenameAvatarField: React.FC<RenameAvatarFieldProps> = ({
         showUploadList={false}
         customRequest={customRequest}
         disabled={disabled || uploading}
+        className="character-rename-avatar-upload"
       >
         <button
           type="button"
