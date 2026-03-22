@@ -5,6 +5,7 @@ import { IMG_LINGSHI as lingshiIcon, IMG_TONGQIAN as tongqianIcon } from '../../
 import { getAttrLabel } from '../../shared/attrDisplay';
 import { gameSocket } from '../../../../services/gameSocket';
 import {
+  discardTechniqueResearchDraft,
   equipCharacterSkill,
   equipCharacterTechnique,
   generateTechniqueResearchDraft,
@@ -12,6 +13,7 @@ import {
   getCharacterTechniqueUpgradeCost,
   getTechniqueResearchStatus,
   getTechniqueDetail,
+  getUnifiedApiErrorMessage,
   markTechniqueResearchResultViewed,
   publishTechniqueResearchDraft,
   type SkillDefDto,
@@ -336,7 +338,7 @@ interface TechniqueModalProps {
 type ResearchStatusRefreshMode = 'initial' | 'manual' | 'background';
 
 const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResearchIndicatorChange }) => {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [characterId, setCharacterId] = useState<number | null>(() => gameSocket.getCharacter()?.id ?? null);
   const [panel, setPanel] = useState<TechniquePanel>('slots');
   const [activeSlot, setActiveSlot] = useState<SlotKey>('main');
@@ -370,6 +372,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchRefreshing, setResearchRefreshing] = useState(false);
   const [generateSubmitting, setGenerateSubmitting] = useState(false);
+  const [discardSubmitting, setDiscardSubmitting] = useState(false);
   const [researchCooldownBypassEnabled, setResearchCooldownBypassEnabled] = useState(false);
   const [publishSubmitting, setPublishSubmitting] = useState(false);
   const [publishDialogOpen, setPublishDialogOpen] = useState(false);
@@ -641,6 +644,31 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
     setPublishNameError(null);
     setPublishDialogOpen(true);
   }, [message]);
+
+  const handleDiscardResearchDraft = useCallback((generationId: string) => {
+    if (!characterId || discardSubmitting) return;
+
+    modal.confirm({
+      title: '确认放弃当前洞府研修？',
+      content: '放弃后这次研修草稿会立即作废，并按过期规则返还一半功法残页，同时继续保留本次研修冷却。',
+      okText: '确认放弃',
+      cancelText: '继续抄写',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setDiscardSubmitting(true);
+        try {
+          const res = await discardTechniqueResearchDraft(characterId, generationId);
+          if (!res.success) throw new Error(getUnifiedApiErrorMessage(res, '放弃失败'));
+          message.success(res.message || '已放弃本次研修草稿');
+          await Promise.all([refreshResearchStatus('background'), refreshStatus()]);
+        } catch {
+          void 0;
+        } finally {
+          setDiscardSubmitting(false);
+        }
+      },
+    });
+  }, [characterId, discardSubmitting, message, modal, refreshResearchStatus, refreshStatus]);
 
   const handleSubmitResearchPublish = useCallback(async () => {
     if (!characterId || publishSubmitting || !publishTargetGenerationId) return;
@@ -1219,12 +1247,14 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
         loading={researchLoading}
         refreshing={researchRefreshing}
         generateSubmitting={generateSubmitting}
+        discardSubmitting={discardSubmitting}
         publishSubmitting={publishSubmitting}
         cooldownBypassEnabled={researchCooldownBypassEnabled}
         submitState={researchSubmitState}
         onGenerateDraft={() => void handleGenerateResearchDraft()}
         onCooldownBypassEnabledChange={setResearchCooldownBypassEnabled}
         onRefresh={() => void refreshResearchStatus('manual')}
+        onDiscardDraft={(generationId) => handleDiscardResearchDraft(generationId)}
         onCopyResearchBook={(generationId, suggestedName) => openResearchPublishDialog(generationId, suggestedName)}
       />
     );

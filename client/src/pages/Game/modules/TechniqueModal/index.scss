@@ -449,6 +449,15 @@
   background: transparent;
 }
 
+.tech-research-actions--draft-result {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
 .tech-research-primary-action {
   min-width: 0;
   display: flex;
@@ -463,6 +472,10 @@
 }
 
 .tech-research-copy-button {
+  width: 100%;
+}
+
+.tech-research-discard-button.ant-btn {
   width: 100%;
 }
 
@@ -864,6 +877,12 @@
   .tech-research-actions--single {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
+    padding: 0;
+  }
+
+  .tech-research-actions--draft-result {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
     padding: 0;
   }
 

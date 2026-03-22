@@ -2,12 +2,12 @@
  * 洞府研修面板
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：承载洞府研修统计、生成中提示、草稿详情、失败结果与抄写入口。
+ * 1. 做什么：承载洞府研修统计、生成中提示、草稿详情、失败结果、放弃与抄写入口。
  * 2. 做什么：复用 `researchShared` 的单一状态映射与冷却格式化，避免组件内散落 `pending/generated_draft/failed/cooldown` 判断。
  * 3. 不做什么：不直接发请求、不持有 socket 订阅，也不管理主界面红点状态。
  *
  * 输入/输出：
- * - 输入：研修状态数据、加载态、按钮提交态，以及生成/刷新/抄写回调。
+ * - 输入：研修状态数据、加载态、按钮提交态，以及生成/刷新/放弃/抄写回调。
  * - 输出：纯渲染组件，通过回调把用户操作交给上层协调。
  *
  * 数据流/状态流：
@@ -38,12 +38,14 @@ type ResearchPanelProps = {
   loading: boolean;
   refreshing: boolean;
   generateSubmitting: boolean;
+  discardSubmitting: boolean;
   publishSubmitting: boolean;
   cooldownBypassEnabled: boolean;
   submitState: TechniqueResearchSubmitState;
   onGenerateDraft: () => void;
   onCooldownBypassEnabledChange: (nextEnabled: boolean) => void;
   onRefresh: () => void;
+  onDiscardDraft: (generationId: string) => void;
   onCopyResearchBook: (generationId: string, suggestedName: string) => void;
 };
 
@@ -52,12 +54,14 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
   loading,
   refreshing,
   generateSubmitting,
+  discardSubmitting,
   publishSubmitting,
   cooldownBypassEnabled,
   submitState,
   onGenerateDraft,
   onCooldownBypassEnabledChange,
   onRefresh,
+  onDiscardDraft,
   onCopyResearchBook,
 }) => {
   const panelView = resolveTechniqueResearchPanelView(status);
@@ -176,7 +180,15 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
                 );
               })}
             </div>
-            <div className="tech-research-actions tech-research-actions--single">
+            <div className="tech-research-actions tech-research-actions--draft-result">
+              <Button
+                danger
+                className="tech-research-discard-button"
+                loading={discardSubmitting}
+                onClick={() => onDiscardDraft(panelView.job.generationId)}
+              >
+                放弃
+              </Button>
               <Button
                 className="tech-research-copy-button"
                 type="primary"

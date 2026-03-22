@@ -2,7 +2,7 @@
  * AI 生成功法服务
  *
  * 作用（做什么 / 不做什么）：
- * 1) 做什么：提供 AI 生成功法草稿、自定义命名发布、状态查询。
+ * 1) 做什么：提供 AI 生成功法草稿、自定义命名发布、主动放弃与状态查询。
  * 2) 不做什么：不负责 HTTP 参数解析与鉴权（由路由层处理），不负责前端交互流程。
  *
  * 输入/输出：
@@ -11,7 +11,8 @@
  *
  * 数据流/状态流：
  * 1) 生成：校验周限与功法残页余额 -> 扣除残页建任务(pending) -> AI 生成 -> 落草稿(generated_draft) 或失败退款。
- * 2) 发布：校验草稿状态与命名规则 -> 全服唯一检查 -> 发布功法 -> 发放可交易功法书(published)。
+ * 2) 放弃：校验草稿仍处于 generated_draft -> 复用“草稿过期”退款规则 -> 置为 refunded，继续保留冷却。
+ * 3) 发布：校验草稿状态与命名规则 -> 全服唯一检查 -> 发布功法 -> 发放可交易功法书(published)。
  *
  * 关键边界条件与坑点：
  * 1) 草稿默认 24h 过期，过期后自动退款并置为 refunded。
@@ -1211,6 +1212,53 @@ class TechniqueGenerationService {
 
   async failPendingGenerationJob(characterId: number, generationId: string, reason: string): Promise<void> {
     await this.refundGenerationJobTx(characterId, generationId, reason, 'failed', 'GENERATION_FAILED');
+  }
+
+  @Transactional
+  async discardGeneratedTechniqueDraft(
+    characterId: number,
+    generationId: string,
+  ): Promise<ServiceResult<{ generationId: string }>> {
+    await this.refundExpiredDraftJobsTx(characterId);
+
+    const jobRes = await query(
+      `
+        SELECT status, error_code
+        FROM technique_generation_job
+        WHERE id = $1 AND character_id = $2
+        FOR UPDATE
+      `,
+      [generationId, characterId],
+    );
+    if (jobRes.rows.length === 0) {
+      return { success: false, message: '研修任务不存在', code: 'GENERATION_NOT_FOUND' };
+    }
+
+    const row = jobRes.rows[0] as Record<string, unknown>;
+    const status = asString(row.status);
+    const errorCode = asString(row.error_code);
+
+    if (status !== 'generated_draft') {
+      if (status === 'refunded' && errorCode === 'GENERATION_EXPIRED') {
+        return { success: false, message: '草稿已过期，请重新领悟', code: 'GENERATION_EXPIRED' };
+      }
+      return { success: false, message: '当前草稿不可放弃', code: 'GENERATION_STATE_INVALID' };
+    }
+
+    await this.refundGenerationJobTx(
+      characterId,
+      generationId,
+      TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE,
+      'refunded',
+      'GENERATION_EXPIRED',
+      TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE,
+    );
+
+    return {
+      success: true,
+      message: '已放弃本次研修草稿，并按过期规则结算',
+      data: { generationId },
+    };
   }
 
   @Transactional

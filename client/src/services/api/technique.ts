@@ -332,6 +332,22 @@ export const publishTechniqueResearchDraft = (
   return api.post(`/character/${characterId}/technique/research/generate/${generationId}/publish`, { customName });
 };
 
+export interface TechniqueResearchDiscardResponse {
+  success: boolean;
+  message: string;
+  code?: string;
+  data?: {
+    generationId: string;
+  };
+}
+
+export const discardTechniqueResearchDraft = (
+  characterId: number,
+  generationId: string,
+): Promise<TechniqueResearchDiscardResponse> => {
+  return api.post(`/character/${characterId}/technique/research/generate/${generationId}/discard`);
+};
+
 export const markTechniqueResearchResultViewed = (
   characterId: number,
 ): Promise<{ success: boolean; message: string; data?: { marked: boolean } }> => {

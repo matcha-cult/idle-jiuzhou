@@ -141,6 +141,33 @@ router.post('/:characterId/technique/research/generate', asyncHandler(async (req
 }));
 
 // ============================================
+// 放弃研修草稿（按过期规则结算）
+// POST /api/character/:characterId/technique/research/generate/:generationId/discard
+// ============================================
+router.post('/:characterId/technique/research/generate/:generationId/discard', asyncHandler(async (req, res) => {
+  const characterId = parseCharacterIdParam(req);
+  if (characterId === null) {
+    throw new BusinessError('无效的角色ID');
+  }
+  const userId = req.userId!;
+  if (!userId) {
+    throw new BusinessError('登录状态无效，请重新登录', 401);
+  }
+
+  const generationId = getSingleParam((req.params as Record<string, string | string[] | undefined>).generationId);
+  if (!generationId) {
+    throw new BusinessError('缺少生成任务ID');
+  }
+
+  const result = await techniqueGenerationService.discardGeneratedTechniqueDraft(characterId, generationId);
+  if (result.success) {
+    await safePushCharacterUpdate(userId);
+    await notifyTechniqueResearchStatus(characterId, userId);
+  }
+  sendResult(res, result);
+}));
+
+// ============================================
 // 标记最新研修结果已查看
 // POST /api/character/:characterId/technique/research/mark-result-viewed
 // ============================================
