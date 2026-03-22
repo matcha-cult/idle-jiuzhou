@@ -4276,7 +4276,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-xuying/01-weapon-set-xuying-weapon.webp",
+      "icon": "/assets/set-zhaogu/01-weapon-set-zhaogu-weapon.webp",
       "equip_slot": "weapon",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4304,7 +4304,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-xuying/02-head-set-xuying-head.webp",
+      "icon": "/assets/set-zhaogu/02-head-set-zhaogu-head.webp",
       "equip_slot": "head",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4333,7 +4333,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-xuying/03-clothes-set-xuying-clothes.webp",
+      "icon": "/assets/set-zhaogu/03-clothes-set-zhaogu-clothes.webp",
       "equip_slot": "clothes",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4361,7 +4361,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-xuying/04-gloves-set-xuying-gloves.webp",
+      "icon": "/assets/set-zhaogu/04-gloves-set-zhaogu-gloves.webp",
       "equip_slot": "gloves",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4388,7 +4388,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-xuying/05-pants-set-xuying-pants.webp",
+      "icon": "/assets/set-zhaogu/05-pants-set-zhaogu-pants.webp",
       "equip_slot": "pants",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4416,7 +4416,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-xuying/06-necklace-set-xuying-necklace.webp",
+      "icon": "/assets/set-zhaogu/06-necklace-set-zhaogu-necklace.webp",
       "equip_slot": "necklace",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4444,7 +4444,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-xuying/07-accessory-set-xuying-accessory.webp",
+      "icon": "/assets/set-zhaogu/07-accessory-set-zhaogu-accessory.webp",
       "equip_slot": "accessory",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4472,7 +4472,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-xuying/08-artifact-set-xuying-artifact.webp",
+      "icon": "/assets/set-zhaogu/08-artifact-set-zhaogu-artifact.webp",
       "equip_slot": "artifact",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4502,7 +4502,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-ningshen/01-weapon-set-ningshen-weapon.webp",
+      "icon": "/assets/set-xuanlv/01-weapon-set-xuanlv-weapon.webp",
       "equip_slot": "weapon",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4529,7 +4529,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-ningshen/02-head-set-ningshen-head.webp",
+      "icon": "/assets/set-xuanlv/02-head-set-xuanlv-head.webp",
       "equip_slot": "head",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4556,7 +4556,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-ningshen/03-clothes-set-ningshen-clothes.webp",
+      "icon": "/assets/set-xuanlv/03-clothes-set-xuanlv-clothes.webp",
       "equip_slot": "clothes",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4583,7 +4583,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-ningshen/04-gloves-set-ningshen-gloves.webp",
+      "icon": "/assets/set-xuanlv/04-gloves-set-xuanlv-gloves.webp",
       "equip_slot": "gloves",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4609,7 +4609,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-ningshen/05-pants-set-ningshen-pants.webp",
+      "icon": "/assets/set-xuanlv/05-pants-set-xuanlv-pants.webp",
       "equip_slot": "pants",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4635,7 +4635,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-ningshen/06-necklace-set-ningshen-necklace.webp",
+      "icon": "/assets/set-xuanlv/06-necklace-set-xuanlv-necklace.webp",
       "equip_slot": "necklace",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4661,7 +4661,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-ningshen/07-accessory-set-ningshen-accessory.webp",
+      "icon": "/assets/set-xuanlv/07-accessory-set-xuanlv-accessory.webp",
       "equip_slot": "accessory",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {
@@ -4687,7 +4687,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/images/set-ningshen/08-artifact-set-ningshen-artifact.webp",
+      "icon": "/assets/set-xuanlv/08-artifact-set-xuanlv-artifact.webp",
       "equip_slot": "artifact",
       "equip_req_realm": "炼神返虚·合道期",
       "base_attrs": {

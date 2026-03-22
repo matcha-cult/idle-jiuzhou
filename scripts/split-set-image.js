@@ -6,7 +6,7 @@
  * 作用：
  * - 从整张套装图中自动识别 2x4 装备格边框，并裁切出 8 张装备图。
  * - 支持边框为任意颜色（不再限定橙色）。
- * - 输出到 `client/public/assets/images/set-{setName}/`。
+ * - 输出到 `client/public/assets/set-{setName}/`。
  *
  * 不做什么：
  * - 不提供均等切分、透明度切分模式。
@@ -393,8 +393,8 @@ function extractConnectedComponents(mask, width, height) {
 
   const neighbors = [
     [-1, -1], [0, -1], [1, -1],
-    [-1, 0],            [1, 0],
-    [-1, 1],  [0, 1],  [1, 1],
+    [-1, 0], [1, 0],
+    [-1, 1], [0, 1], [1, 1],
   ];
 
   for (let y = 0; y < height; y += 1) {
@@ -790,8 +790,8 @@ function isolateInnerContentBounds(pixelData, imageWidth, channels, region) {
 
   const neighbors = [
     [-1, -1], [0, -1], [1, -1],
-    [-1, 0],           [1, 0],
-    [-1, 1],  [0, 1],  [1, 1],
+    [-1, 0], [1, 0],
+    [-1, 1], [0, 1], [1, 1],
   ];
 
   /** @type {Array<{
@@ -1096,7 +1096,7 @@ async function saveMaskDebugImage(mask, width, height, outputPath) {
 
 function resolveOutputDir(setName) {
   const projectRoot = resolve(__dirname, '..');
-  const outputDir = join(projectRoot, 'client', 'public', 'assets', 'images', `set-${setName}`);
+  const outputDir = join(projectRoot, 'client', 'public', 'assets', `set-${setName}`);
 
   if (!existsSync(outputDir)) {
     mkdirSync(outputDir, { recursive: true });
