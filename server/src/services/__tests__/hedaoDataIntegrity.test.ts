@@ -149,6 +149,35 @@ test('第七章主线目标应只引用已存在地图/NPC/怪物/物品/秘境'
   }
 });
 
+test('第七章主线对白的目标提示应与当前任务节一致', () => {
+  const dialogueSeed = loadSeed('dialogue_main_chapter7.json');
+  const dialogueById = buildObjectMap(asArray(dialogueSeed.dialogues), 'id');
+  const expectedSystemTextByDialogueId = new Map<string, string>([
+    ['dlg-main-7-001', '目标更新：抵达镜墟渡口，并与引镜使交谈。'],
+    ['dlg-main-7-002', '目标更新：击败镜甲卫侍6只、折光灵官6只。'],
+    ['dlg-main-7-003', '目标更新：通关玄鉴司天宫（普通）1次。'],
+    ['dlg-main-7-004', '目标更新：收集道镜玄砂16个，并向铸印道人复命。'],
+    ['dlg-main-7-005', '目标更新：通关玄鉴司天宫（困难）2次，并击败玄鉴真君1次。'],
+    ['dlg-main-7-006', '目标更新：收集合道契印4个，并向问律师复命。'],
+  ]);
+
+  for (const [dialogueId, expectedSystemText] of expectedSystemTextByDialogueId) {
+    const dialogue = asObject(dialogueById.get(dialogueId));
+    assert.ok(dialogue, `缺少第七章对白定义: ${dialogueId}`);
+
+    const systemNode = asArray(dialogue?.nodes)
+      .map((node) => asObject(node))
+      .find((node) => asText(node?.type) === 'system');
+
+    assert.ok(systemNode, `${dialogueId} 缺少 system 节点`);
+    assert.equal(
+      asText(systemNode?.text),
+      expectedSystemText,
+      `${dialogueId} 的目标提示必须和当前任务节保持一致`,
+    );
+  }
+});
+
 test('合道一期秘境应只引用已存在怪物定义且可被静态加载器读到', () => {
   const dungeonSeed = loadSeed(HEDAO_DUNGEON_FILE);
   const monsterSeed = loadSeed('monster_def.json');
