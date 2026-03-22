@@ -38,6 +38,13 @@ import {
 import { resolveNpcTalkGreetingLines } from './shared/npcTalkGreeting.js';
 import { buildTaskRecurringUnlockState } from './shared/taskRecurringUnlock.js';
 import { notifyTaskOverviewUpdate } from './taskOverviewPush.js';
+import {
+  collectMatchedRecurringTaskIds,
+  objectiveMatchesTaskEvent,
+  type CharacterTaskRealmState,
+  type TaskEvent,
+  type TaskObjectiveLike,
+} from './shared/taskRecurringEventMatcher.js';
 
 export type TaskCategory = 'main' | 'side' | 'daily' | 'event';
 
@@ -107,18 +114,7 @@ type RawReward = {
   amount?: unknown;
 };
 
-type RawObjective = {
-  id?: unknown;
-  type?: unknown;
-  text?: unknown;
-  target?: unknown;
-  params?: unknown;
-};
-
-type CharacterTaskRealmState = {
-  realm: string;
-  subRealm: string | null;
-};
+type RawObjective = TaskObjectiveLike;
 
 type RecurringTaskResetPlan = {
   autoAcceptTaskIds: string[];
@@ -507,6 +503,40 @@ const buildCharacterTaskRealmStateKey = (
 
 const recurringTaskResetInflight = new Map<number, RecurringTaskResetInflightEntry>();
 
+const insertMissingTaskProgressRows = async (
+  runner: Pick<PoolClient, 'query'>,
+  characterId: number,
+  taskIds: readonly string[],
+  tracked: boolean,
+): Promise<boolean> => {
+  const cid = Number(characterId);
+  if (!Number.isFinite(cid) || cid <= 0) return false;
+  const normalizedTaskIds = Array.from(new Set(taskIds.map((taskId) => taskId.trim()).filter(Boolean)));
+  if (normalizedTaskIds.length === 0) return false;
+
+  const insertResult = await runner.query(
+    `
+      INSERT INTO character_task_progress
+        (character_id, task_id, status, progress, tracked, accepted_at, completed_at, claimed_at, updated_at)
+      SELECT
+        $1,
+        recurring_task.task_id,
+        'ongoing',
+        '{}'::jsonb,
+        $3,
+        NOW(),
+        NULL,
+        NULL,
+        NOW()
+      FROM unnest($2::varchar[]) AS recurring_task(task_id)
+      ON CONFLICT (character_id, task_id) DO NOTHING
+    `,
+    [cid, normalizedTaskIds, tracked],
+  );
+
+  return (insertResult.rowCount ?? 0) > 0;
+};
+
 const runRecurringTaskProgressReset = async (
   characterId: number,
   dbClient?: PoolClient,
@@ -522,25 +552,7 @@ const runRecurringTaskProgressReset = async (
 
   if (resetPlan.autoAcceptTaskIds.length > 0) {
     // 日常/周常任务为自动接取：缺失进度行时自动补齐，避免首次必须手动“接取”。
-    await runner.query(
-      `
-        INSERT INTO character_task_progress
-          (character_id, task_id, status, progress, tracked, accepted_at, completed_at, claimed_at, updated_at)
-        SELECT
-          $1,
-          recurring_task.task_id,
-          'ongoing',
-          '{}'::jsonb,
-          false,
-          NOW(),
-          NULL,
-          NULL,
-          NOW()
-        FROM unnest($2::varchar[]) AS recurring_task(task_id)
-        ON CONFLICT (character_id, task_id) DO NOTHING
-      `,
-      [cid, resetPlan.autoAcceptTaskIds],
-    );
+    await insertMissingTaskProgressRows(runner, cid, resetPlan.autoAcceptTaskIds, false);
   }
 
   if (resetPlan.dailyTaskIds.length === 0 && resetPlan.eventTaskIds.length === 0) return;
@@ -1008,64 +1020,6 @@ const parseProgressRecord = (progress: unknown): Record<string, number> => {
   return out;
 };
 
-type TaskEvent =
-  | { type: 'talk_npc'; npcId: string }
-  | { type: 'kill_monster'; monsterId: string; count: number }
-  | { type: 'gather_resource'; resourceId: string; count: number }
-  | { type: 'dungeon_clear'; dungeonId: string; difficultyId?: string; count: number }
-  | { type: 'craft_item'; recipeId?: string; recipeType?: string; craftKind?: string; itemId?: string; count: number };
-
-const objectiveMatchesEvent = (
-  objective: RawObjective,
-  event: TaskEvent,
-): { matched: boolean; delta: number } => {
-  const type = String(objective?.type ?? '').trim();
-  const params = objective?.params && typeof objective.params === 'object' ? (objective.params as Record<string, unknown>) : {};
-  if (event.type === 'talk_npc') {
-    if (type !== 'talk_npc') return { matched: false, delta: 0 };
-    const npcId = asNonEmptyString(params?.npc_id);
-    if (!npcId || npcId !== event.npcId) return { matched: false, delta: 0 };
-    return { matched: true, delta: 1 };
-  }
-  if (event.type === 'kill_monster') {
-    if (type !== 'kill_monster') return { matched: false, delta: 0 };
-    const monsterId = asNonEmptyString(params?.monster_id);
-    if (!monsterId || monsterId !== event.monsterId) return { matched: false, delta: 0 };
-    return { matched: true, delta: Math.max(1, Math.floor(event.count)) };
-  }
-  if (event.type === 'gather_resource') {
-    if (type !== 'gather_resource') return { matched: false, delta: 0 };
-    const resourceId = asNonEmptyString(params?.resource_id);
-    if (!resourceId || resourceId !== event.resourceId) return { matched: false, delta: 0 };
-    return { matched: true, delta: Math.max(1, Math.floor(event.count)) };
-  }
-  if (event.type === 'dungeon_clear') {
-    if (type !== 'dungeon_clear') return { matched: false, delta: 0 };
-    const dungeonId = asNonEmptyString(params?.dungeon_id);
-    if (dungeonId && dungeonId !== event.dungeonId) return { matched: false, delta: 0 };
-
-    const difficultyId = asNonEmptyString(params?.difficulty_id);
-    if (difficultyId && (!event.difficultyId || difficultyId !== event.difficultyId)) {
-      return { matched: false, delta: 0 };
-    }
-
-    return { matched: true, delta: Math.max(1, Math.floor(event.count)) };
-  }
-  if (event.type === 'craft_item') {
-    if (type !== 'craft_item') return { matched: false, delta: 0 };
-    const recipeId = asNonEmptyString(params?.recipe_id);
-    if (recipeId && recipeId !== asNonEmptyString(event.recipeId)) return { matched: false, delta: 0 };
-    const recipeType = asNonEmptyString(params?.recipe_type);
-    if (recipeType && recipeType !== asNonEmptyString(event.recipeType)) return { matched: false, delta: 0 };
-    const craftKind = asNonEmptyString(params?.craft_kind);
-    if (craftKind && craftKind !== asNonEmptyString(event.craftKind)) return { matched: false, delta: 0 };
-    const itemId = asNonEmptyString(params?.item_id);
-    if (itemId && itemId !== asNonEmptyString(event.itemId)) return { matched: false, delta: 0 };
-    return { matched: true, delta: Math.max(1, Math.floor(event.count)) };
-  }
-  return { matched: false, delta: 0 };
-};
-
 const computeAllObjectivesDone = (objectives: RawObjective[], progressRecord: Record<string, number>): boolean => {
   const list = objectives.filter((o) => asNonEmptyString(o?.id));
   if (list.length === 0) return false;
@@ -1225,25 +1179,15 @@ const applyTaskEvent = async (
   const characterRealmState = await loadCharacterTaskRealmState(cid);
   if (!characterRealmState) return false;
 
-  const eventTaskDefs = getStaticTaskDefinitions().filter((def) => (
-    def.enabled
-    && def.category === 'event'
-    && isTaskDefinitionUnlockedForCharacter(def, characterRealmState)
-  ));
-  let insertedEventTask = false;
-  for (const eventTaskDef of eventTaskDefs) {
-    const insertResult = await query(
-      `
-        INSERT INTO character_task_progress (character_id, task_id, status, progress, tracked, accepted_at, completed_at, claimed_at, updated_at)
-        VALUES ($1, $2, 'ongoing', '{}'::jsonb, true, NOW(), NULL, NULL, NOW())
-        ON CONFLICT (character_id, task_id) DO NOTHING
-      `,
-      [cid, eventTaskDef.id],
-    );
-    if ((insertResult.rowCount ?? 0) > 0) {
-      insertedEventTask = true;
-    }
-  }
+  const recurringTaskDefs = getStaticTaskDefinitions().map((def) => ({
+    id: def.id,
+    category: def.category,
+    realm: def.realm,
+    enabled: def.enabled,
+    objectives: parseObjectives(def.objectives),
+  }));
+  const matchedRecurringTaskIds = collectMatchedRecurringTaskIds(recurringTaskDefs, characterRealmState, event);
+  const insertedRecurringTask = await insertMissingTaskProgressRows({ query }, cid, matchedRecurringTaskIds, false);
 
   const res = await query(
     `
@@ -1264,7 +1208,7 @@ const applyTaskEvent = async (
       .filter((taskId): taskId is string => Boolean(taskId)),
   );
 
-  let changedAnyTask = insertedEventTask;
+  let changedAnyTask = insertedRecurringTask;
   for (const row of res.rows ?? []) {
     const taskId = asNonEmptyString(row?.task_id);
     if (!taskId) continue;
@@ -1282,7 +1226,7 @@ const applyTaskEvent = async (
     for (const o of objectives) {
       const oid = asNonEmptyString(o?.id);
       if (!oid) continue;
-      const match = objectiveMatchesEvent(o, event);
+      const match = objectiveMatchesTaskEvent(o, event);
       if (!match.matched) continue;
       const target = Math.max(1, asFiniteNonNegativeInt(o?.target, 1));
       const cur = asFiniteNonNegativeInt(progressRecord[oid], 0);
