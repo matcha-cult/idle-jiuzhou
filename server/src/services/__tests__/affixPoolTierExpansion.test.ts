@@ -33,7 +33,20 @@ const COMMON_POOL_IDS = [
   'ap-artifact-common',
 ] as const;
 
-const EXPECTED_TOTAL_TIER_ROWS = 1094;
+const ALL_POOL_IDS = [
+  'ap-weapon-common',
+  'ap-weapon-uncommon',
+  'ap-weapon-rare',
+  'ap-armor-common',
+  'ap-armor-uncommon',
+  'ap-armor-rare',
+  'ap-accessory-common',
+  'ap-accessory-uncommon',
+  'ap-artifact-common',
+  'ap-artifact-uncommon',
+] as const;
+
+const EXPECTED_TOTAL_TIER_ROWS = 1432;
 
 const trimNumber = (value: number, maxDp = 6): string => {
   return Number(value)
@@ -96,7 +109,7 @@ const loadSeed = (): AffixPoolSeedFile => {
   return JSON.parse(readFileSync(seedPath, 'utf-8')) as AffixPoolSeedFile;
 };
 
-test('词缀池应全量扩展到T8且tier门槛一致', () => {
+test('词缀池应全量扩展到T10且tier门槛一致', () => {
   const seed = loadSeed();
   let tierRowCount = 0;
 
@@ -106,8 +119,8 @@ test('词缀池应全量扩展到T8且tier门槛一致', () => {
       assert.ok(tiers.length > 0, `${pool.id}:${affix.key} tiers 不能为空`);
       assert.equal(
         tiers[tiers.length - 1]?.tier,
-        8,
-        `${pool.id}:${affix.key} maxTier 应为 T8`
+        10,
+        `${pool.id}:${affix.key} maxTier 应为 T10`
       );
 
       for (const tier of tiers) {
@@ -124,7 +137,7 @@ test('词缀池应全量扩展到T8且tier门槛一致', () => {
   assert.equal(tierRowCount, EXPECTED_TOTAL_TIER_ROWS, 'tier 总行数不符合预期');
 });
 
-test('common池词缀应连续到T8且区间单调', () => {
+test('common池词缀应保留原起始档位并连续补到T10，且区间单调', () => {
   const seed = loadSeed();
 
   for (const poolId of COMMON_POOL_IDS) {
@@ -134,10 +147,12 @@ test('common池词缀应连续到T8且区间单调', () => {
     for (const affix of pool.affixes) {
       const tiers = [...affix.tiers].sort((a, b) => a.tier - b.tier);
       const tierValues = tiers.map((tier) => tier.tier);
+      const firstTier = tierValues[0] ?? 1;
+      const expectedTiers = Array.from({ length: 10 - firstTier + 1 }, (_, idx) => firstTier + idx);
       assert.deepEqual(
         tierValues,
-        [1, 2, 3, 4, 5, 6, 7, 8],
-        `${poolId}:${affix.key} 档位应连续为 T1..T8`
+        expectedTiers,
+        `${poolId}:${affix.key} 档位应从现有起始档连续补到 T10`
       );
 
       let prevMin = Number.NEGATIVE_INFINITY;
@@ -176,6 +191,31 @@ test('special词缀关键档位描述应与数值一致', () => {
           `${pool.id}:${affix.key}:T${targetTier} 描述应与数值一致`
         );
       }
+    }
+  }
+});
+
+test('所有词缀池都应为所有词缀补齐T10，且special描述正确', () => {
+  const seed = loadSeed();
+
+  for (const poolId of ALL_POOL_IDS) {
+    const pool = seed.pools.find((row) => row.id === poolId);
+    assert.ok(pool, `缺少词缀池: ${poolId}`);
+
+    for (const affix of pool.affixes) {
+      const tier10 = affix.tiers.find((row) => row.tier === 10);
+      assert.ok(tier10, `${poolId}:${affix.key} 缺少 T10`);
+      assert.equal(tier10?.realm_rank_min, 10, `${poolId}:${affix.key}:T10 realm_rank_min 应为 10`);
+
+      if (affix.apply_type !== 'special') continue;
+      const descriptionRule = specialDescriptionRules[affix.key];
+      assert.ok(descriptionRule, `${poolId}:${affix.key} 缺少描述模板`);
+      const expected = descriptionRule.buildDescription(Number(tier10?.min), Number(tier10?.max));
+      assert.equal(
+        (tier10?.description ?? '').trim(),
+        expected,
+        `${poolId}:${affix.key}:T10 描述应与数值一致`,
+      );
     }
   }
 });
