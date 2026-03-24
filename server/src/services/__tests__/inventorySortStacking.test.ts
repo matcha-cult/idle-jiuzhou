@@ -69,6 +69,14 @@ const createInventoryQueryMock = (
           stack_max: 99,
         });
       }
+      if (itemDefId === 'mat-9999') {
+        map.set(itemDefId, {
+          category: 'material',
+          sub_category: 'ore',
+          quality: 'common',
+          stack_max: 9999,
+        });
+      }
     }
     return map;
   });
@@ -257,6 +265,49 @@ test('整理背包时不应合并带 metadata 或品质信息的特殊实例', a
       { id: 23, qty: 2, location_slot: 0 },
       { id: 21, qty: 7, location_slot: 1 },
       { id: 22, qty: 5, location_slot: 2 },
+    ],
+  );
+});
+
+test('整理背包时应把空语义字段的 9999 堆上限实例继续视为普通可堆叠物品', async (t) => {
+  const itemRows: MockInventoryRow[] = [
+    {
+      id: 31,
+      item_def_id: 'mat-9999',
+      qty: 9900,
+      quality: '',
+      quality_rank: 0,
+      bind_type: 'none',
+      metadata_text: 'null',
+      location: 'bag',
+      location_slot: 7,
+    },
+    {
+      id: 32,
+      item_def_id: 'mat-9999',
+      qty: 9099,
+      quality: null,
+      quality_rank: null,
+      bind_type: 'none',
+      metadata_text: null,
+      location: 'bag',
+      location_slot: 2,
+    },
+  ];
+  createInventoryQueryMock(t, itemRows);
+
+  const result = await sortInventory(1003, 'bag');
+
+  assert.equal(result.success, true);
+  assert.equal(result.message, '整理完成');
+  assert.deepEqual(
+    itemRows
+      .slice()
+      .sort((left, right) => (left.location_slot ?? 999) - (right.location_slot ?? 999))
+      .map(({ id, qty, location_slot }) => ({ id, qty, location_slot })),
+    [
+      { id: 31, qty: 9999, location_slot: 0 },
+      { id: 32, qty: 9000, location_slot: 1 },
     ],
   );
 });

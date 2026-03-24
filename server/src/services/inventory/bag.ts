@@ -52,6 +52,7 @@ import {
   createDefaultInventoryInfo,
   getSlottedCapacity,
 } from "./shared/helpers.js";
+import { isPlainStackingState } from "./shared/stacking.js";
 
 // ============================================
 // 获取背包信息（容量与使用情况）
@@ -1183,9 +1184,11 @@ const compactRowsForSortStacking = (
     const stackMax = stackMaxByItemDefId.get(String(row.item_def_id || "").trim()) ?? 1;
     const canAutoStack =
       stackMax > 1 &&
-      row.metadata_text === null &&
-      row.quality === null &&
-      row.quality_rank === null;
+      isPlainStackingState({
+        metadataText: row.metadata_text,
+        quality: row.quality,
+        qualityRank: row.quality_rank,
+      });
     if (!canAutoStack) {
       compactedRows.push(row);
       continue;
