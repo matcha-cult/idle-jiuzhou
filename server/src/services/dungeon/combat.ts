@@ -50,6 +50,7 @@ import {
   selectDungeonRewardEligibleParticipants,
 } from './shared/rewardEligibility.js';
 import { loadDungeonBenefitPolicyMap } from './shared/benefitPolicy.js';
+import { validateDungeonParticipantRealmAccess } from './shared/realmAccess.js';
 import { buildMonsterDefIdsFromWave, getStageAndWave } from './shared/stageData.js';
 import { rollDungeonRewardBundle, mergeDungeonRewardBundle } from './shared/rewards.js';
 import { asObject, asNumber, asString, countPlayerDeaths } from './shared/typeUtils.js';
@@ -109,6 +110,20 @@ export const startDungeonInstance = async (
     }
     if (participants.length > maxPlayers) {
       return { success: false, message: `人数超限，最多${maxPlayers}人` };
+    }
+
+    const difficultyDef = getDungeonDifficultyById(inst.difficulty_id);
+    if (!difficultyDef) {
+      return { success: false, message: '秘境难度不存在' };
+    }
+
+    const realmAccess = await validateDungeonParticipantRealmAccess({
+      participants,
+      dungeonMinRealm: dungeonDef.min_realm,
+      difficultyMinRealm: difficultyDef.min_realm ?? null,
+    });
+    if (!realmAccess.success) {
+      return realmAccess;
     }
 
     const participantCharacterIds = [...new Set(

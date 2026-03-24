@@ -72,6 +72,31 @@ export const getParticipantNicknameMap = async (participants: DungeonInstancePar
   return nicknameMap;
 };
 
+/** 批量加载参与者完整境界映射（characterId -> 完整境界） */
+export const getParticipantRealmMap = async (
+  participants: DungeonInstanceParticipant[],
+): Promise<Map<number, string>> => {
+  const characterIds = Array.from(
+    new Set(
+      participants
+        .map((participant) => participant.characterId)
+        .filter((characterId) => Number.isFinite(characterId) && characterId > 0),
+    ),
+  );
+  if (characterIds.length === 0) return new Map<number, string>();
+
+  const rows = await query('SELECT id, realm, sub_realm FROM characters WHERE id = ANY($1::int[])', [characterIds]);
+  const realmMap = new Map<number, string>();
+  for (const row of rows.rows as Array<Record<string, unknown>>) {
+    const characterId = Number(row.id);
+    if (!Number.isFinite(characterId) || characterId <= 0) continue;
+    const realm = asString(row.realm, '凡人').trim() || '凡人';
+    const subRealm = asString(row.sub_realm, '').trim();
+    realmMap.set(characterId, getFullRealm(realm, subRealm || null));
+  }
+  return realmMap;
+};
+
 /** 拼接主副境界为完整境界名（如"炼精化炁·养气期"） */
 export const getFullRealm = (realm: string, subRealm: string | null): string => {
   if (!subRealm || realm === '凡人') return realm;

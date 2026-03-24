@@ -23,6 +23,7 @@ import {
   getUserAndCharacter,
   getTeamParticipants,
 } from './shared/participants.js';
+import { validateDungeonParticipantRealmAccess } from './shared/realmAccess.js';
 import { asObject, asNumber } from './shared/typeUtils.js';
 import type {
   DungeonInstanceStatus,
@@ -129,6 +130,15 @@ export const createDungeonInstance = async (
       return { success: false, message: `人数超限，最多${dd.dungeon.max_players}人` };
     }
 
+    const realmAccess = await validateDungeonParticipantRealmAccess({
+      participants,
+      dungeonMinRealm: dd.dungeon.min_realm,
+      difficultyMinRealm: dd.difficulty.min_realm,
+    });
+    if (!realmAccess.success) {
+      return realmAccess;
+    }
+
     const instanceId = crypto.randomUUID();
     await query(
       `
@@ -169,12 +179,27 @@ export const joinDungeonInstance = async (
       return { success: true, data: { instanceId, status: inst.status, participants: curParticipants } };
     }
 
-    const dd = await getDungeonAndDifficulty(inst.dungeon_id, 1);
+    const difficultyDef = getDungeonDifficultyById(inst.difficulty_id);
+    const difficultyRank = Number(difficultyDef?.difficulty_rank);
+    if (!Number.isFinite(difficultyRank)) {
+      return { success: false, message: '秘境难度不存在' };
+    }
+
+    const dd = await getDungeonAndDifficulty(inst.dungeon_id, Math.floor(difficultyRank));
     if (!dd.ok) return { success: false, message: dd.message };
 
     const nextParticipants = [...curParticipants, { userId, characterId: user.characterId, role: 'member' as const }];
     if (nextParticipants.length > dd.dungeon.max_players) {
       return { success: false, message: `人数超限，最多${dd.dungeon.max_players}人` };
+    }
+
+    const realmAccess = await validateDungeonParticipantRealmAccess({
+      participants: nextParticipants,
+      dungeonMinRealm: dd.dungeon.min_realm,
+      difficultyMinRealm: dd.difficulty.min_realm,
+    });
+    if (!realmAccess.success) {
+      return realmAccess;
     }
 
     const updateRes = await query(
