@@ -3,7 +3,7 @@
  *
  * 作用（做什么 / 不做什么）：
  * 1. 做什么：验证 `getCharacterIdByUserId` 命中后会复用内存缓存，避免重复查询数据库。
- * 2. 做什么：验证 `primeCharacterIdByUserIdCache` 可直接预热结果，`getCharacterIdByUserIdForUpdate` 仍保持直查。
+ * 2. 做什么：验证 `primeCharacterIdByUserIdCache` 可直接预热结果，`loadCharacterIdByUserIdDirect` 与 `getCharacterIdByUserIdForUpdate` 仍保持直查。
  * 3. 不做什么：不连接真实数据库，不验证 Redis 网络连通性，只锁定服务层缓存读写协议。
  *
  * 输入/输出：
@@ -14,6 +14,7 @@
  * - 测试先清空指定 userId 的缓存；
  * - 首次读走 loader，第二次读命中内存缓存；
  * - 预热缓存后直接读返回预设角色 ID；
+ * - 非缓存直查入口仍直接访问数据库，避免事务内“只为拿角色ID”误命中过期缓存；
  * - `FOR UPDATE` 入口仍单独访问数据库。
  *
  * 关键边界条件与坑点：
@@ -29,10 +30,11 @@ import {
   getCharacterIdByUserId,
   getCharacterIdByUserIdForUpdate,
   invalidateCharacterIdByUserIdCache,
+  loadCharacterIdByUserIdDirect,
   primeCharacterIdByUserIdCache,
 } from '../shared/characterId.js';
 
-test('角色 ID 映射应复用缓存且 FOR UPDATE 保持直查', async (t) => {
+test('角色 ID 映射应复用缓存且直查入口保持绕过缓存', async (t) => {
   const userId = 101;
   const primedUserId = 202;
 
@@ -72,10 +74,15 @@ test('角色 ID 映射应复用缓存且 FOR UPDATE 保持直查', async (t) => 
   assert.equal(primed, 2002);
   assert.equal(queryMock.mock.callCount(), 1);
 
+  const direct = await loadCharacterIdByUserIdDirect(userId);
+  assert.equal(direct, 1001);
+  assert.equal(queryMock.mock.callCount(), 2);
+  assert.doesNotMatch(String(queryMock.mock.calls[1]?.arguments[0] ?? ''), /FOR UPDATE/);
+
   const locked = await getCharacterIdByUserIdForUpdate(userId);
   assert.equal(locked, 1002);
-  assert.equal(queryMock.mock.callCount(), 2);
-  assert.match(String(queryMock.mock.calls[1]?.arguments[0] ?? ''), /FOR UPDATE/);
+  assert.equal(queryMock.mock.callCount(), 3);
+  assert.match(String(queryMock.mock.calls[2]?.arguments[0] ?? ''), /FOR UPDATE/);
 
   await invalidateCharacterIdByUserIdCache(userId);
   await invalidateCharacterIdByUserIdCache(primedUserId);

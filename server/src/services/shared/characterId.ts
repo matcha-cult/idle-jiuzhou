@@ -1,6 +1,7 @@
 /**
  * 角色ID公共查询工具。
  * - `getCharacterIdByUserId`：普通查询（双层缓存）。
+ * - `loadCharacterIdByUserIdDirect`：直查数据库，不走缓存也不加锁，适合事务里只需要最新角色ID但不需要锁住 `characters` 行的场景。
  * - `getCharacterIdByUserIdForUpdate`：事务内加锁查询（FOR UPDATE）。
  * - `primeCharacterIdByUserIdCache` / `invalidateCharacterIdByUserIdCache`：缓存维护。
  * 返回：有效角色ID或 `null`。
@@ -39,6 +40,16 @@ export const getCharacterIdByUserId = async (userId: number): Promise<number | n
   if (!uid) return null;
 
   return characterIdByUserIdCache.get(uid);
+};
+
+export const loadCharacterIdByUserIdDirect = async (
+  userId: number,
+): Promise<number | null> => {
+  const uid = normalizeUserId(userId);
+  if (!uid) return null;
+
+  const result = await query('SELECT id FROM characters WHERE user_id = $1 LIMIT 1', [uid]);
+  return normalizeCharacterId(result.rows?.[0]?.id);
 };
 
 export const getCharacterIdByUserIdForUpdate = async (

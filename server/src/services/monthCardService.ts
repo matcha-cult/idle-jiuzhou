@@ -9,6 +9,7 @@ import {
   getMonthCardDefinitionById,
   type MonthCardBenefitValues,
 } from './shared/monthCardBenefits.js';
+import { loadCharacterIdByUserIdDirect } from './shared/characterId.js';
 
 export type MonthCardStatusResult = {
   success: boolean;
@@ -146,11 +147,10 @@ class MonthCardService {
 
     const durationDays = asNumber(monthCardDef.duration_days, 30);
 
-    const charRes = await query(`SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE`, [userId]);
-    if (charRes.rows.length === 0) {
+    const characterId = await loadCharacterIdByUserIdDirect(userId);
+    if (!characterId) {
       return { success: false, message: '角色不存在' };
     }
-    const characterId = Number(charRes.rows[0].id);
 
     const itemDefId = options?.itemDefId || DEFAULT_MONTH_CARD_ITEM_DEF_ID;
 
@@ -268,12 +268,15 @@ class MonthCardService {
     const durationDays = asNumber(monthCardDef.duration_days, 30);
     const priceSpiritStones = BigInt(monthCardDef.price_spirit_stones ?? 0);
 
-    const charRes = await query(`SELECT id, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE`, [userId]);
-    if (charRes.rows.length === 0) {
+    const characterRes = await query(
+      `SELECT id, spirit_stones FROM characters WHERE user_id = $1 LIMIT 1`,
+      [userId],
+    );
+    if (characterRes.rows.length === 0) {
       return { success: false, message: '角色不存在' };
     }
-    const characterId = Number(charRes.rows[0].id);
-    const curStones = BigInt(charRes.rows[0]?.spirit_stones ?? 0);
+    const characterId = Number(characterRes.rows[0].id);
+    const curStones = BigInt(characterRes.rows[0]?.spirit_stones ?? 0);
     if (priceSpiritStones > 0n && curStones < priceSpiritStones) {
       return { success: false, message: `灵石不足，需要${priceSpiritStones.toString()}` };
     }
@@ -281,9 +284,18 @@ class MonthCardService {
     let nextStones = curStones;
     if (priceSpiritStones > 0n) {
       const updated = await query(
-        `UPDATE characters SET spirit_stones = spirit_stones - $1, updated_at = NOW() WHERE id = $2 RETURNING spirit_stones`,
+        `
+          UPDATE characters
+          SET spirit_stones = spirit_stones - $1, updated_at = NOW()
+          WHERE id = $2
+            AND spirit_stones >= $1
+          RETURNING spirit_stones
+        `,
         [priceSpiritStones.toString(), characterId],
       );
+      if (updated.rows.length === 0) {
+        return { success: false, message: `灵石不足，需要${priceSpiritStones.toString()}` };
+      }
       nextStones = BigInt(updated.rows[0]?.spirit_stones ?? nextStones);
     }
 
@@ -340,11 +352,10 @@ class MonthCardService {
       return { success: false, message: '月卡不存在或未启用' };
     }
 
-    const charRes = await query(`SELECT id FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE`, [userId]);
-    if (charRes.rows.length === 0) {
+    const characterId = await loadCharacterIdByUserIdDirect(userId);
+    if (!characterId) {
       return { success: false, message: '角色不存在' };
     }
-    const characterId = Number(charRes.rows[0].id);
 
     const reward = asNumber(monthCardDef.daily_spirit_stones, defaultDailySpiritStones);
 

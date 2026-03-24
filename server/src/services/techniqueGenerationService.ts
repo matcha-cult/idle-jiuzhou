@@ -61,6 +61,8 @@ import {
   buildTechniqueResearchUnlockState,
   type TechniqueResearchUnlockState,
 } from './shared/techniqueResearchUnlock.js';
+import { lockTechniqueResearchCreationMutex } from './shared/characterOperationMutex.js';
+import { loadCharacterRealmSnapshot } from './shared/characterRealm.js';
 import {
   resolveTechniqueResearchRefundFragments,
   TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE,
@@ -180,6 +182,8 @@ type GeneratedDraftRow = {
 };
 
 export type TechniqueResearchResultStatus = 'generated_draft' | 'failed';
+
+const TECHNIQUE_RESEARCH_FAILURE_RESULT_STATUSES = ['failed', 'refunded'] as const;
 
 export type TechniqueResearchJobView = {
   generationId: string;
@@ -450,32 +454,18 @@ class TechniqueGenerationService {
 
   private async getTechniqueResearchUnlockStateTx(
     characterId: number,
-    lockRow: boolean,
   ): Promise<ServiceResult<TechniqueResearchUnlockState>> {
-    const queryText = lockRow
-      ? `
-        SELECT realm, sub_realm
-        FROM characters
-        WHERE id = $1
-        FOR UPDATE
-      `
-      : `
-        SELECT realm, sub_realm
-        FROM characters
-        WHERE id = $1
-      `;
-    const charRes = await query(queryText, [characterId]);
-    if (charRes.rows.length === 0) {
+    const realmSnapshot = await loadCharacterRealmSnapshot(characterId);
+    if (!realmSnapshot) {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
 
-    const row = charRes.rows[0] as { realm?: string | null; sub_realm?: string | null };
     return {
       success: true,
       message: '获取研修解锁态成功',
       data: buildTechniqueResearchUnlockState(
-        typeof row.realm === 'string' ? row.realm.trim() : '',
-        typeof row.sub_realm === 'string' && row.sub_realm.trim() ? row.sub_realm.trim() : null,
+        realmSnapshot.realm,
+        realmSnapshot.subRealm,
       ),
     };
   }
@@ -641,7 +631,7 @@ class TechniqueGenerationService {
       cooldownBypassTokenAvailableQty,
       cooldownStartedAt,
     ] = await Promise.all([
-      this.getTechniqueResearchUnlockStateTx(characterId, false),
+      this.getTechniqueResearchUnlockStateTx(characterId),
       this.getResearchFragmentBalanceTx(characterId),
       query(
         `
@@ -811,6 +801,7 @@ class TechniqueGenerationService {
     costPoints: number;
     weekKey: string;
   }>> {
+    await lockTechniqueResearchCreationMutex(characterId);
     await this.refundExpiredDraftJobsTx(characterId);
     const burningWordPromptValidation = await guardTechniqueBurningWordPrompt(burningWordPrompt);
     if (!burningWordPromptValidation.success) {
@@ -821,7 +812,7 @@ class TechniqueGenerationService {
       };
     }
 
-    const unlockRes = await this.getTechniqueResearchUnlockStateTx(characterId, true);
+    const unlockRes = await this.getTechniqueResearchUnlockStateTx(characterId);
     if (!unlockRes.success) {
       return { success: false, message: unlockRes.message, code: unlockRes.code };
     }
@@ -867,7 +858,7 @@ class TechniqueGenerationService {
     const shouldBypassCooldown = shouldTechniqueResearchBypassCooldownWithToken(cooldownBypassEnabled);
     const latestStartedAt = shouldBypassCooldown
       ? null
-      : await this.loadLatestResearchCooldownStartedAt(characterId, true);
+      : await this.loadLatestResearchCooldownStartedAt(characterId, false);
     const cooldownState = buildTechniqueResearchCooldownState(latestStartedAt, new Date(), {
       cooldownReductionRate,
     });
@@ -1324,52 +1315,9 @@ class TechniqueGenerationService {
 
   @Transactional
   async markLatestResultViewed(characterId: number): Promise<ServiceResult<{ marked: boolean }>> {
-    const jobRes = await query(
-      `
-        SELECT id, status
-        FROM technique_generation_job
-        WHERE character_id = $1
-          AND (
-            (status = 'generated_draft' AND viewed_at IS NULL)
-            OR (status IN ('failed', 'refunded') AND failed_viewed_at IS NULL)
-          )
-        ORDER BY created_at DESC
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [characterId],
-    );
+    const jobRes = await this.markLatestTechniqueResultViewedTx(characterId);
     if (jobRes.rows.length === 0) {
       return { success: true, message: '无未查看结果', data: { marked: false } };
-    }
-
-    const row = jobRes.rows[0] as Record<string, unknown>;
-    const generationId = asString(row.id);
-    const status = asString(row.status);
-    if (!generationId || !status) {
-      return { success: false, message: '未找到可标记结果', code: 'GENERATION_NOT_FOUND' };
-    }
-
-    if (status === 'generated_draft') {
-      await query(
-        `
-          UPDATE technique_generation_job
-          SET viewed_at = COALESCE(viewed_at, NOW()),
-              updated_at = NOW()
-          WHERE id = $1
-        `,
-        [generationId],
-      );
-    } else {
-      await query(
-        `
-          UPDATE technique_generation_job
-          SET failed_viewed_at = COALESCE(failed_viewed_at, NOW()),
-              updated_at = NOW()
-          WHERE id = $1
-        `,
-        [generationId],
-      );
     }
 
     return {
@@ -1377,6 +1325,56 @@ class TechniqueGenerationService {
       message: '已标记查看',
       data: { marked: true },
     };
+  }
+
+  /**
+   * 标记洞府研修最新结果已查看
+   *
+   * 作用（做什么 / 不做什么）：
+   * 1) 做什么：把“查找最新未查看结果 + 按状态补 viewed 时间”收敛成单条原子更新。
+   * 2) 不做什么：不负责对外返回业务文案，不负责校验角色是否解锁洞府研修。
+   *
+   * 输入/输出：
+   * - 输入：characterId。
+   * - 输出：数据库 UPDATE 返回结果；有返回行表示本次成功标记了最新未查看结果。
+   *
+   * 数据流/状态流：
+   * 角色 ID -> CTE 选出最新未查看结果 -> 按状态一次性更新 viewed_at / failed_viewed_at -> 返回是否命中。
+   *
+   * 关键边界条件与坑点：
+   * 1) `generated_draft` 与 `failed/refunded` 走的是两套查看时间字段，必须在同一条 SQL 里按状态分支更新，避免再拆成两段。
+   * 2) 这里故意不先 `FOR UPDATE` 预读任务行，减少“只为标记已查看却长时间占着结果行锁”的等待链。
+   */
+  private async markLatestTechniqueResultViewedTx(characterId: number) {
+    return query(
+      `
+        WITH latest_unviewed_job AS (
+          SELECT id, status
+          FROM technique_generation_job
+          WHERE character_id = $1
+            AND (
+              (status = 'generated_draft' AND viewed_at IS NULL)
+              OR (status = ANY($2::text[]) AND failed_viewed_at IS NULL)
+            )
+          ORDER BY created_at DESC
+          LIMIT 1
+        )
+        UPDATE technique_generation_job AS job
+        SET viewed_at = CASE
+              WHEN latest_unviewed_job.status = 'generated_draft' THEN COALESCE(job.viewed_at, NOW())
+              ELSE job.viewed_at
+            END,
+            failed_viewed_at = CASE
+              WHEN latest_unviewed_job.status = ANY($2::text[]) THEN COALESCE(job.failed_viewed_at, NOW())
+              ELSE job.failed_viewed_at
+            END,
+            updated_at = NOW()
+        FROM latest_unviewed_job
+        WHERE job.id = latest_unviewed_job.id
+        RETURNING job.id
+      `,
+      [characterId, [...TECHNIQUE_RESEARCH_FAILURE_RESULT_STATUSES]],
+    );
   }
 
   @Transactional

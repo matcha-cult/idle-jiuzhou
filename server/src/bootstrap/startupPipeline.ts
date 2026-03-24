@@ -53,6 +53,7 @@ import {
   initializeAfdianMessageRetryService,
   stopAfdianMessageRetryService,
 } from "../services/afdianMessageRetryService.js";
+import { ensurePerformanceIndexes } from "../services/shared/performanceIndexes.js";
 
 export interface StartServerOptions {
   httpServer: HttpServer;
@@ -79,6 +80,7 @@ export const startServerWithPipeline = async (
   }
 
   await initTables();
+  await ensurePerformanceIndexes();
   await refreshGeneratedTechniqueSnapshots();
   await refreshGeneratedPartnerSnapshots();
   await clearAllAvatarsOnce();

@@ -120,6 +120,7 @@ const MAIL_ACTIVE_SCOPE_SQL = `COALESCE(expire_at, 'infinity'::timestamptz) > NO
 const MAIL_UNREAD_CACHE_REDIS_TTL_SEC = 30;
 const MAIL_UNREAD_CACHE_MEMORY_TTL_MS = 5_000;
 const MAIL_EXPIRE_CLEANUP_THROTTLE_MS = 60_000;
+const MAIL_UNREAD_PUSH_COALESCE_MS = 500;
 
 type MailScopedUnionSqlOptions = {
   selectSql: string;
@@ -149,7 +150,14 @@ type MailExpireCleanupState = {
   runningPromise: Promise<void> | null;
 };
 
+type MailUnreadPushState = {
+  timer: NodeJS.Timeout | null;
+  runningPromise: Promise<void> | null;
+  pending: boolean;
+};
+
 const mailExpireCleanupState = new Map<string, MailExpireCleanupState>();
+const mailUnreadPushState = new Map<number, MailUnreadPushState>();
 
 const buildLegacyMailRewardPayload = (input: {
   attachSilver: number;
@@ -539,6 +547,74 @@ class MailService {
   }
 
   /**
+   * 合并短时间内重复的邮件红点刷新请求。
+   *
+   * 作用：
+   * - 把同一用户在连续邮件写操作后的多次“立即重算”压缩成一次，避免 burst 场景下反复执行同一条计数 SQL。
+   * - 保留 `pushUnreadCounterUpdateToUser` 作为立即推送入口，给登录补发等首屏场景继续直接使用。
+   *
+   * 输入/输出：
+   * - 输入：recipientUserId
+   * - 输出：无；内部通过定时器和进行中的 Promise 串行化同一用户的推送
+   *
+   * 数据流/状态流：
+   * 邮件写操作提交后 -> scheduleUnreadCounterUpdateToUser -> 定时合并
+   * -> pushUnreadCounterUpdateToUser -> socket `mail:update`
+   *
+   * 关键边界条件与坑点：
+   * 1) 这里只合并同进程内、同 userId 的短时间刷新，不负责跨进程协调；跨进程仍依赖缓存层减压。
+   * 2) 若上一轮推送尚未完成，新的刷新只会把 `pending` 置回 true，待当前轮次结束后再补一次，避免并发重算。
+   */
+  private scheduleUnreadCounterUpdateToUser(recipientUserId: number): void {
+    const currentState = mailUnreadPushState.get(recipientUserId) ?? {
+      timer: null,
+      runningPromise: null,
+      pending: false,
+    };
+    currentState.pending = true;
+    mailUnreadPushState.set(recipientUserId, currentState);
+
+    if (currentState.timer || currentState.runningPromise) {
+      return;
+    }
+
+    currentState.timer = setTimeout(() => {
+      const scheduledState = mailUnreadPushState.get(recipientUserId);
+      if (!scheduledState) {
+        return;
+      }
+      scheduledState.timer = null;
+
+      const runningPromise = (async (): Promise<void> => {
+        if (!scheduledState.pending) {
+          return;
+        }
+        scheduledState.pending = false;
+        await this.pushUnreadCounterUpdateToUser(recipientUserId);
+      })()
+        .catch((error) => {
+          console.error(`[mail] 合并推送未读计数失败: userId=${recipientUserId}`, error);
+        })
+        .finally(() => {
+          const latestState = mailUnreadPushState.get(recipientUserId);
+          if (!latestState || latestState.runningPromise !== runningPromise) {
+            return;
+          }
+          latestState.runningPromise = null;
+          if (latestState.pending) {
+            this.scheduleUnreadCounterUpdateToUser(recipientUserId);
+            return;
+          }
+          if (!latestState.timer) {
+            mailUnreadPushState.delete(recipientUserId);
+          }
+        });
+
+      scheduledState.runningPromise = runningPromise;
+    }, MAIL_UNREAD_PUSH_COALESCE_MS);
+  }
+
+  /**
    * 统一调度“邮件未读缓存失效 + 首页红点推送”。
    *
    * 作用：
@@ -560,7 +636,7 @@ class MailService {
   ): Promise<void> {
     await afterTransactionCommit(async () => {
       await this.invalidateUnreadCounterCacheForRecipient(recipientUserId, recipientCharacterId);
-      await this.pushUnreadCounterUpdateToUser(recipientUserId);
+      this.scheduleUnreadCounterUpdateToUser(recipientUserId);
     });
   }
 

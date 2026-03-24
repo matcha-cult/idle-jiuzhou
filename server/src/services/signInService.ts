@@ -1,6 +1,7 @@
 import { HolidayUtil } from 'lunar-typescript';
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
+import { loadCharacterIdByUserIdDirect } from './shared/characterId.js';
 
 export interface SignInRecordDto {
   date: string;
@@ -228,17 +229,9 @@ class SignInService {
     const todayKey = buildDateKey(today);
     const holidayInfo = getHolidayInfo(today);
 
-    const characterCheck = await query('SELECT id FROM characters WHERE user_id = $1 FOR UPDATE', [userId]);
-    if (characterCheck.rows.length === 0) {
+    const characterId = await loadCharacterIdByUserIdDirect(userId);
+    if (!characterId) {
       return { success: false, message: '角色不存在，无法签到' };
-    }
-
-    const exist = await query(
-      'SELECT id FROM sign_in_records WHERE user_id = $1 AND sign_date = $2::date LIMIT 1',
-      [userId, todayKey]
-    );
-    if (exist.rows.length > 0) {
-      return { success: false, message: '今日已签到' };
     }
 
     const historyRows = await query(
@@ -259,17 +252,22 @@ class SignInService {
     );
     const reward = calculateSignInReward(previousStreakDays + 1);
 
-    await query(
+    const inserted = await query(
       `
         INSERT INTO sign_in_records (user_id, sign_date, reward, is_holiday, holiday_name)
         VALUES ($1, $2::date, $3, $4, $5)
+        ON CONFLICT (user_id, sign_date) DO NOTHING
+        RETURNING id
       `,
       [userId, todayKey, reward, holidayInfo.isHoliday, holidayInfo.holidayName]
     );
+    if (inserted.rows.length === 0) {
+      return { success: false, message: '今日已签到' };
+    }
 
     const updated = await query(
-      'UPDATE characters SET spirit_stones = spirit_stones + $1 WHERE user_id = $2 RETURNING spirit_stones',
-      [reward, userId]
+      'UPDATE characters SET spirit_stones = spirit_stones + $1 WHERE id = $2 RETURNING spirit_stones',
+      [reward, characterId]
     );
 
     return {

@@ -298,7 +298,7 @@ const loadPartnerTechniqueLearnContext = async (params: {
     return { success: false, message: unlockState.message };
   }
 
-  const character = await loadCharacterPartnerContext(params.characterId, params.forUpdate);
+  const character = await loadCharacterPartnerContext(params.characterId, false);
   if (!character) {
     return { success: false, message: '角色不存在' };
   }
@@ -556,6 +556,8 @@ const loadCharacterPartnerContext = async (
   characterId: number,
   forUpdate: boolean,
 ): Promise<CharacterPartnerContextRow | null> => {
+  // 这里只在“后续会直接写 characters 行本身”时才需要 FOR UPDATE。
+  // 伙伴链路多数场景只读取角色境界/余额快照，继续锁 characters 会把角色行放大成总串行点。
   const lockSql = forUpdate ? 'FOR UPDATE' : '';
   const result = await query(
     `
@@ -946,7 +948,7 @@ class PartnerService {
         return { success: false, message: unlockState.message };
       }
 
-      const character = await loadCharacterPartnerContext(characterId, true);
+      const character = await loadCharacterPartnerContext(characterId, false);
       if (!character) {
         return { success: false, message: '角色不存在' };
       }
@@ -1035,7 +1037,7 @@ class PartnerService {
         return { success: false, message: unlockState.message };
       }
 
-      const character = await loadCharacterPartnerContext(characterId, true);
+      const character = await loadCharacterPartnerContext(characterId, false);
       if (!character) {
         return { success: false, message: '角色不存在' };
       }
@@ -1100,7 +1102,7 @@ class PartnerService {
         return { success: false, message: unlockState.message };
       }
 
-      const character = await loadCharacterPartnerContext(characterId, true);
+      const character = await loadCharacterPartnerContext(characterId, false);
       if (!character) return { success: false, message: '角色不存在' };
 
       await setCharacterPartnerActivation({
@@ -1140,7 +1142,7 @@ class PartnerService {
         return { success: false, message: unlockState.message };
       }
 
-      const character = await loadCharacterPartnerContext(characterId, true);
+      const character = await loadCharacterPartnerContext(characterId, false);
       if (!character) return { success: false, message: '角色不存在' };
 
       const partnerRow = await loadSinglePartnerRow(characterId, partnerId, true);
@@ -1248,7 +1250,7 @@ class PartnerService {
         return { success: false, message: unlockState.message };
       }
 
-      const character = await loadCharacterPartnerContext(characterId, true);
+      const character = await loadCharacterPartnerContext(characterId, false);
       if (!character) return { success: false, message: '角色不存在' };
 
       const partnerRow = await loadSinglePartnerRow(characterId, partnerId, true);
@@ -1386,7 +1388,7 @@ class PartnerService {
         return { success: false, message: unlockState.message };
       }
 
-      const character = await loadCharacterPartnerContext(characterId, true);
+      const character = await loadCharacterPartnerContext(characterId, false);
       if (!character) return { success: false, message: '角色不存在' };
 
       const partnerRow = await loadSinglePartnerRow(characterId, partnerId, true);
@@ -1458,16 +1460,22 @@ class PartnerService {
         }
       }
 
-      await query(
+      const characterResourceUpdate = await query(
         `
           UPDATE characters
           SET spirit_stones = spirit_stones - $2,
               exp = exp - $3,
               updated_at = NOW()
           WHERE id = $1
+            AND spirit_stones >= $2
+            AND exp >= $3
+          RETURNING spirit_stones, exp
         `,
         [characterId, cost.spiritStones, cost.exp],
       );
+      if (characterResourceUpdate.rows.length === 0) {
+        return { success: false, message: '角色资源已变化，请重试' };
+      }
 
       for (const material of cost.materials) {
         let remainingQty = material.qty;

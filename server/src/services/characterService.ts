@@ -14,7 +14,7 @@ import {
 } from './characterComputedService.js';
 import { withUnlockedFeatures } from './featureUnlockService.js';
 import { createInventoryForCharacter } from './shared/inventoryPersistence.js';
-import { primeCharacterIdByUserIdCache } from './shared/characterId.js';
+import { loadCharacterIdByUserIdDirect, primeCharacterIdByUserIdCache } from './shared/characterId.js';
 import {
   normalizeCharacterNicknameInput,
   validateCharacterNickname,
@@ -142,18 +142,19 @@ export const renameCharacterWithCard = async (
     message: string;
     broadcastContent: string | null;
   }> => {
+    const characterId = await loadCharacterIdByUserIdDirect(userId);
+    if (!characterId) {
+      return { success: false, message: '角色不存在', broadcastContent: null };
+    }
+
     const characterResult = await query(
-      'SELECT id, nickname FROM characters WHERE user_id = $1 LIMIT 1 FOR UPDATE',
-      [userId],
+      'SELECT nickname FROM characters WHERE id = $1 LIMIT 1',
+      [characterId],
     );
     if (characterResult.rows.length === 0) {
       return { success: false, message: '角色不存在', broadcastContent: null };
     }
-    const characterRow = characterResult.rows[0] as { id?: number; nickname?: string | null };
-    const characterId = Number(characterRow.id);
-    if (!Number.isInteger(characterId) || characterId <= 0) {
-      return { success: false, message: '角色不存在', broadcastContent: null };
-    }
+    const characterRow = characterResult.rows[0] as { nickname?: string | null };
     const previousNickname = String(characterRow.nickname || '').trim();
 
     const nicknameValidation = await validateCharacterNickname(nickname, {

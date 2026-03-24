@@ -29,7 +29,7 @@ import {
   getPartnerDefinitionById,
 } from './staticConfigLoader.js';
 import { addItemToInventory } from './inventory/index.js';
-import { consumeMaterialByDefId } from './inventory/shared/consume.js';
+import { addCharacterCurrencies, consumeCharacterCurrencies, consumeMaterialByDefId } from './inventory/shared/consume.js';
 import { partnerService } from './partnerService.js';
 import {
   buildPartnerRecruitJobState,
@@ -57,7 +57,6 @@ import {
   isPartnerRecruitPreviewExpired,
   PARTNER_RECRUIT_COOLDOWN_APPLY_JOB_STATUSES,
   PARTNER_RECRUIT_SPIRIT_STONES_COST,
-  resolvePartnerRecruitGeneratedNonHeavenCountAfterSuccess,
   resolvePartnerRecruitHeavenGuaranteeState,
   resolvePartnerRecruitQualityForGeneratedPreviewSuccess,
   resolvePartnerRecruitQualityRateEntries,
@@ -78,6 +77,8 @@ import {
   buildPartnerRecruitUnlockState,
   type PartnerRecruitUnlockState,
 } from './shared/partnerRecruitUnlock.js';
+import { lockPartnerRecruitCreationMutex } from './shared/characterOperationMutex.js';
+import { loadCharacterRealmSnapshot } from './shared/characterRealm.js';
 import { broadcastHeavenPartnerAcquired } from './shared/partnerWorldBroadcast.js';
 
 export type ServiceResult<T = undefined> = {
@@ -163,46 +164,31 @@ class PartnerRecruitService {
 
   private async getPartnerRecruitUnlockStateTx(
     characterId: number,
-    lockRow: boolean,
   ): Promise<ServiceResult<PartnerRecruitUnlockState>> {
-    const queryText = lockRow
-      ? `
-        SELECT realm, sub_realm
-        FROM characters
-        WHERE id = $1
-        FOR UPDATE
-      `
-      : `
-        SELECT realm, sub_realm
-        FROM characters
-        WHERE id = $1
-      `;
-    const characterRes = await query(queryText, [characterId]);
-    if (characterRes.rows.length === 0) {
+    const realmSnapshot = await loadCharacterRealmSnapshot(characterId);
+    if (!realmSnapshot) {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
 
-    const row = characterRes.rows[0] as { realm?: string | null; sub_realm?: string | null };
     return {
       success: true,
       message: '获取伙伴招募开放态成功',
       data: buildPartnerRecruitUnlockState(
-        typeof row.realm === 'string' ? row.realm.trim() : '',
-        typeof row.sub_realm === 'string' && row.sub_realm.trim() ? row.sub_realm.trim() : null,
+        realmSnapshot.realm,
+        realmSnapshot.subRealm,
       ),
     };
   }
 
   private async assertPartnerRecruitUnlocked(
     characterId: number,
-    lockRow: boolean,
   ): Promise<ServiceResult<{ featureCode: string }>> {
     const featureUnlocked = await isFeatureUnlocked(characterId, PARTNER_SYSTEM_FEATURE_CODE);
     if (!featureUnlocked) {
       return { success: false, message: '伙伴系统尚未解锁', code: 'PARTNER_SYSTEM_LOCKED' };
     }
 
-    const unlockState = await this.getPartnerRecruitUnlockStateTx(characterId, lockRow);
+    const unlockState = await this.getPartnerRecruitUnlockStateTx(characterId);
     if (!unlockState.success || !unlockState.data) {
       return { success: false, message: unlockState.message, code: unlockState.code };
     }
@@ -320,15 +306,13 @@ class PartnerRecruitService {
     return toIsoString(row.cooldown_started_at);
   }
 
-  private async loadCharacterSpiritStones(characterId: number, forUpdate: boolean): Promise<number | null> {
-    const lockSql = forUpdate ? 'FOR UPDATE' : '';
+  private async loadCharacterSpiritStones(characterId: number): Promise<number | null> {
     const result = await query(
       `
         SELECT spirit_stones
         FROM characters
         WHERE id = $1
         LIMIT 1
-        ${lockSql}
       `,
       [characterId],
     );
@@ -358,15 +342,13 @@ class PartnerRecruitService {
     )));
   }
 
-  private async loadCharacterUserId(characterId: number, forUpdate: boolean): Promise<number | null> {
-    const lockSql = forUpdate ? 'FOR UPDATE' : '';
+  private async loadCharacterUserId(characterId: number): Promise<number | null> {
     const result = await query(
       `
         SELECT user_id
         FROM characters
         WHERE id = $1
         LIMIT 1
-        ${lockSql}
       `,
       [characterId],
     );
@@ -411,7 +393,7 @@ class PartnerRecruitService {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
 
-    const unlockState = await this.getPartnerRecruitUnlockStateTx(characterId, false);
+    const unlockState = await this.getPartnerRecruitUnlockStateTx(characterId);
     if (!unlockState.success || !unlockState.data) {
       return { success: false, message: unlockState.message, code: unlockState.code };
     }
@@ -500,6 +482,7 @@ class PartnerRecruitService {
     customBaseModelEnabled: boolean,
     requestedBaseModel: string | null,
   ): Promise<ServiceResult<{ generationId: string; quality: PartnerRecruitQuality }>> {
+    await lockPartnerRecruitCreationMutex(characterId);
     await this.discardExpiredDraftJobsTx(characterId);
 
     const requestedBaseModelValidation = await validatePartnerRecruitRequestedBaseModelSelection({
@@ -514,12 +497,12 @@ class PartnerRecruitService {
       };
     }
 
-    const unlockState = await this.assertPartnerRecruitUnlocked(characterId, true);
+    const unlockState = await this.assertPartnerRecruitUnlocked(characterId);
     if (!unlockState.success) {
       return { success: false, message: unlockState.message, code: unlockState.code };
     }
 
-    const latestJob = await this.loadLatestJobRow(characterId, true);
+    const latestJob = await this.loadLatestJobRow(characterId, false);
     if (latestJob && (latestJob.status === 'pending' || latestJob.status === 'generated_draft')) {
       return {
         success: false,
@@ -532,7 +515,7 @@ class PartnerRecruitService {
     const shouldBypassCooldown = shouldPartnerRecruitBypassCooldownWithCustomBaseModel(customBaseModelEnabled);
     if (!shouldBypassCooldown) {
       const cooldownReductionRate = await getActiveMonthCardCooldownReductionRate(characterId);
-      const latestCooldownStartedAt = await this.loadLatestRecruitCooldownStartedAt(characterId, true);
+      const latestCooldownStartedAt = await this.loadLatestRecruitCooldownStartedAt(characterId, false);
       const cooldownState = buildPartnerRecruitCooldownState(latestCooldownStartedAt, new Date(), {
         cooldownReductionRate,
       });
@@ -545,11 +528,11 @@ class PartnerRecruitService {
       }
     }
 
-    const spiritStones = await this.loadCharacterSpiritStones(characterId, true);
+    const spiritStones = await this.loadCharacterSpiritStones(characterId);
     if (spiritStones === null) {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
-    const generatedNonHeavenCount = await this.loadPartnerRecruitGeneratedNonHeavenCount(characterId, true);
+    const generatedNonHeavenCount = await this.loadPartnerRecruitGeneratedNonHeavenCount(characterId, false);
     if (generatedNonHeavenCount === null) {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
@@ -575,15 +558,20 @@ class PartnerRecruitService {
 
     const generationId = buildPartnerRecruitGenerationId();
     const quality = resolvePartnerRecruitQualityForGeneratedPreviewSuccess(generatedNonHeavenCount);
-    await query(
-      `
-        UPDATE characters
-        SET spirit_stones = spirit_stones - $2,
-            updated_at = NOW()
-        WHERE id = $1
-      `,
-      [characterId, PARTNER_RECRUIT_SPIRIT_STONES_COST],
-    );
+    const consumeCurrencyResult = await consumeCharacterCurrencies(characterId, {
+      spiritStones: PARTNER_RECRUIT_SPIRIT_STONES_COST,
+    });
+    if (!consumeCurrencyResult.success) {
+      return {
+        success: false,
+        message: consumeCurrencyResult.message,
+        code: consumeCurrencyResult.message === '角色不存在'
+          ? 'CHARACTER_NOT_FOUND'
+          : consumeCurrencyResult.message.startsWith('灵石不足')
+            ? 'SPIRIT_STONES_NOT_ENOUGH'
+            : 'SPIRIT_STONES_STATE_CHANGED',
+      };
+    }
 
     if (shouldUseCustomBaseModelToken) {
       const consumeTokenResult = await consumeMaterialByDefId(
@@ -668,17 +656,14 @@ class PartnerRecruitService {
     const usedCustomBaseModelToken = asBoolean(row.used_custom_base_model_token);
     if (status === 'accepted' || status === 'discarded' || status === 'failed' || status === 'refunded') return;
 
-    await query(
-      `
-        UPDATE characters
-        SET spirit_stones = spirit_stones + $2,
-            updated_at = NOW()
-        WHERE id = $1
-      `,
-      [characterId, spiritStonesCost],
-    );
+    const addCurrencyResult = await addCharacterCurrencies(characterId, {
+      spiritStones: spiritStonesCost,
+    });
+    if (!addCurrencyResult.success) {
+      throw new Error(addCurrencyResult.message);
+    }
     if (usedCustomBaseModelToken) {
-      const userId = await this.loadCharacterUserId(characterId, true);
+      const userId = await this.loadCharacterUserId(characterId);
       if (userId) {
         await addItemToInventory(
           characterId,
@@ -750,24 +735,22 @@ class PartnerRecruitService {
       techniques,
     });
 
-    const currentGeneratedNonHeavenCount = await this.loadPartnerRecruitGeneratedNonHeavenCount(characterId, true);
-    if (currentGeneratedNonHeavenCount === null) {
-      throw new Error('角色不存在');
-    }
-    const nextGeneratedNonHeavenCount = resolvePartnerRecruitGeneratedNonHeavenCountAfterSuccess(
-      currentGeneratedNonHeavenCount,
-      qualityRolled,
-    );
-
-    await query(
+    const counterUpdateResult = await query(
       `
         UPDATE characters
-        SET partner_recruit_generated_non_heaven_count = $2,
+        SET partner_recruit_generated_non_heaven_count = CASE
+              WHEN $2 = '天' THEN 0
+              ELSE partner_recruit_generated_non_heaven_count + 1
+            END,
             updated_at = NOW()
         WHERE id = $1
+        RETURNING partner_recruit_generated_non_heaven_count
       `,
-      [characterId, nextGeneratedNonHeavenCount],
+      [characterId, qualityRolled],
     );
+    if (counterUpdateResult.rows.length === 0) {
+      throw new Error('角色不存在');
+    }
 
     await query(
       `
@@ -915,7 +898,7 @@ class PartnerRecruitService {
 
   @Transactional
   private async confirmRecruitDraftTx(characterId: number, generationId: string): Promise<ServiceResult<PartnerRecruitConfirmResponse>> {
-    const unlockState = await this.assertPartnerRecruitUnlocked(characterId, true);
+    const unlockState = await this.assertPartnerRecruitUnlocked(characterId);
     if (!unlockState.success) {
       return { success: false, message: unlockState.message, code: unlockState.code };
     }

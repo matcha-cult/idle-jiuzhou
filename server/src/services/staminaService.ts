@@ -20,6 +20,7 @@
 
 import { query } from '../config/database.js';
 import { getCachedStamina, setCachedStamina, toRecoveryState } from './staminaCacheService.js';
+import { getCharacterIdByUserId } from './shared/characterId.js';
 import {
   DEFAULT_MONTH_CARD_ID,
   getMonthCardStaminaRecoveryRate,
@@ -71,6 +72,23 @@ export type StaminaRecoveryState = {
 };
 
 type QueryRunner = (text: string, params?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
+const staminaRecoveryInFlight = new Map<number, Promise<StaminaRecoveryState | null>>();
+
+const runStaminaRecoverySingleFlight = async (
+  characterId: number,
+  loader: () => Promise<StaminaRecoveryState | null>,
+): Promise<StaminaRecoveryState | null> => {
+  const existing = staminaRecoveryInFlight.get(characterId);
+  if (existing) {
+    return existing;
+  }
+
+  const pending = loader().finally(() => {
+    staminaRecoveryInFlight.delete(characterId);
+  });
+  staminaRecoveryInFlight.set(characterId, pending);
+  return pending;
+};
 
 /**
  * 从 DB 行数据计算恢复并写回（内部核心逻辑，不走缓存）
@@ -198,48 +216,29 @@ export const applyStaminaRecoveryByCharacterId = async (characterId: number): Pr
   const cached = await getCachedStamina(characterId);
   if (cached) return toRecoveryState(cached);
 
-  // 缓存未命中，走 DB（applyRecoveryFromRow 内部会回填缓存）
-  return applyRecoveryByCharacterIdFromDB((text, params) => query(text, params), characterId, false);
+  // 缓存未命中时，同一角色只允许一条恢复链路落到 DB，避免登录/重连风暴重复写同一行。
+  return runStaminaRecoverySingleFlight(characterId, async () => {
+    const cachedAfterJoin = await getCachedStamina(characterId);
+    if (cachedAfterJoin) {
+      return toRecoveryState(cachedAfterJoin);
+    }
+
+    // 缓存未命中，走 DB（applyRecoveryFromRow 内部会回填缓存）
+    return applyRecoveryByCharacterIdFromDB((text, params) => query(text, params), characterId, false);
+  });
 };
 
 /**
  * 按用户 ID 获取体力状态（含恢复计算）
  *
- * 需先查 characterId，再走缓存路径
+ * 复用角色 ID 缓存与体力缓存，避免在登录/读角色链路里重复整行查库。
  */
 export const applyStaminaRecoveryByUserId = async (userId: number): Promise<StaminaRecoveryState | null> => {
   if (!Number.isFinite(userId) || userId <= 0) return null;
-  const rowRes = await query(
-    `
-      SELECT
-        c.id,
-        c.stamina,
-        c.stamina_recover_at,
-        COALESCE(cip.level, 0) AS insight_level,
-        mco.start_at AS month_card_start_at,
-        mco.expire_at AS month_card_expire_at
-      FROM characters c
-      LEFT JOIN character_insight_progress cip ON cip.character_id = c.id
-      LEFT JOIN month_card_ownership mco
-        ON mco.character_id = c.id
-       AND mco.month_card_id = $2
-      WHERE c.user_id = $1
-      LIMIT 1
-    `,
-    [userId, DEFAULT_MONTH_CARD_ID],
-  );
-  const row = rowRes.rows[0];
-  if (!row) return null;
+  const characterId = await getCharacterIdByUserId(userId);
+  if (!characterId) return null;
 
-  const characterId = toNonNegativeInt(row.id, 0);
-  if (characterId <= 0) return null;
-
-  // 尝试缓存
-  const cached = await getCachedStamina(characterId);
-  if (cached) return toRecoveryState(cached);
-
-  // 缓存未命中，用已查到的 row 直接计算（避免重复查库）
-  return applyRecoveryFromRow((text, params) => query(text, params), row);
+  return applyStaminaRecoveryByCharacterId(characterId);
 };
 
 /**

@@ -12,7 +12,7 @@
  *
  * 数据流/状态流：
  * - 测试先把 `withTransaction` 改成直通，避免误触真实事务；
- * - 再按 SQL 语义模拟角色校验、今日重复校验、历史签到查询、签到插入与角色灵石更新；
+ * - 再按 SQL 语义模拟角色校验、历史签到查询、带唯一约束的签到插入与角色灵石更新；
  * - 最后断言签到结果与落库 reward 完全一致。
  *
  * 关键边界条件与坑点：
@@ -111,12 +111,8 @@ test('连续签到第5天应在基础奖励上增加400灵石', async (t) => {
         return createQueryResult([]);
       }
 
-      if (sql.includes('SELECT id FROM characters')) {
+      if (sql.includes('SELECT id FROM characters WHERE user_id = $1 LIMIT 1')) {
         return createQueryResult([{ id: 9001 }]);
-      }
-
-      if (sql.includes('SELECT id FROM sign_in_records') && sql.includes('LIMIT 1')) {
-        return createQueryResult([]);
       }
 
       if (sql.includes('SELECT sign_date') && sql.includes('ORDER BY sign_date DESC')) {
@@ -126,7 +122,7 @@ test('连续签到第5天应在基础奖励上增加400灵石', async (t) => {
       if (sql.includes('INSERT INTO sign_in_records')) {
         const rewardParam = params?.[2];
         insertedRewards.push(typeof rewardParam === 'number' ? rewardParam : Number(rewardParam));
-        return createQueryResult([]);
+        return createQueryResult([{ id: 1 }]);
       }
 
       if (sql.includes('UPDATE characters SET spirit_stones = spirit_stones +')) {
@@ -154,12 +150,8 @@ test('连续签到超过30天后奖励加成应封顶', async (t) => {
         return createQueryResult([]);
       }
 
-      if (sql.includes('SELECT id FROM characters')) {
+      if (sql.includes('SELECT id FROM characters WHERE user_id = $1 LIMIT 1')) {
         return createQueryResult([{ id: 9002 }]);
-      }
-
-      if (sql.includes('SELECT id FROM sign_in_records') && sql.includes('LIMIT 1')) {
-        return createQueryResult([]);
       }
 
       if (sql.includes('SELECT sign_date') && sql.includes('ORDER BY sign_date DESC')) {
@@ -169,7 +161,7 @@ test('连续签到超过30天后奖励加成应封顶', async (t) => {
       if (sql.includes('INSERT INTO sign_in_records')) {
         const rewardParam = params?.[2];
         insertedRewards.push(typeof rewardParam === 'number' ? rewardParam : Number(rewardParam));
-        return createQueryResult([]);
+        return createQueryResult([{ id: 1 }]);
       }
 
       if (sql.includes('UPDATE characters SET spirit_stones = spirit_stones +')) {
@@ -186,4 +178,37 @@ test('连续签到超过30天后奖励加成应封顶', async (t) => {
   assert.equal(result.data?.reward, 4400);
   assert.equal(result.data?.spiritStones, 14400);
   assert.deepEqual(insertedRewards, [4400]);
+});
+
+test('并发重复签到时应由唯一约束返回今日已签到', async (t) => {
+  t.mock.method(database.pool, 'connect', async () =>
+    createMockPoolClient(async (sql) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
+        return createQueryResult([]);
+      }
+
+      if (sql.includes('SELECT id FROM characters WHERE user_id = $1 LIMIT 1')) {
+        return createQueryResult([{ id: 9003 }]);
+      }
+
+      if (sql.includes('SELECT sign_date') && sql.includes('ORDER BY sign_date DESC')) {
+        return createQueryResult([]);
+      }
+
+      if (sql.includes('INSERT INTO sign_in_records')) {
+        return createQueryResult([]);
+      }
+
+      if (sql.includes('UPDATE characters SET spirit_stones = spirit_stones +')) {
+        throw new Error('重复签到不应继续发放灵石');
+      }
+
+      throw new Error(`未处理的 SQL: ${sql}`);
+    }),
+  );
+
+  const result = await signInService.doSignIn(1003);
+
+  assert.equal(result.success, false);
+  assert.equal(result.message, '今日已签到');
 });

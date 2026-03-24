@@ -14,11 +14,12 @@
  *           disassemble.ts（拆解奖励增加货币）、bag.ts（如需）
  *
  * 数据流：
- * - 查询 item_instance / characters 表 → 校验余额 → 执行扣除/增加
+ * - 物品扣除：查询 item_instance 表并锁定目标行 → 校验数量 → 执行扣除
+ * - 货币变更：对 characters 执行条件 UPDATE/RETURNING → 仅在失败时补查只读快照区分“不存在”和“余额不足”
  *
  * 边界条件：
  * 1. consumeMaterialByDefId 优先消耗未锁定、数量最多的堆叠行，全部锁定时报"材料已锁定"
- * 2. consumeCharacterCurrencies 在 silver/spiritStones 均为 0 时直接返回成功，不触发查询
+ * 2. consumeCharacterCurrencies / addCharacterCurrencies 不再先 `FOR UPDATE characters`，避免在已持有背包锁的事务里额外拉长角色行锁等待
  */
 import { query } from "../../../config/database.js";
 import { clampInt } from "./helpers.js";
@@ -157,31 +158,41 @@ export const consumeCharacterCurrencies = async (
   if (silverCost <= 0 && spiritCost <= 0)
     return { success: true, message: "无需扣除货币" };
 
-  const charResult = await query(
-    `SELECT silver, spirit_stones FROM characters WHERE id = $1 FOR UPDATE LIMIT 1`,
-    [characterId],
-  );
-  if (charResult.rows.length === 0)
-    return { success: false, message: "角色不存在" };
-
-  const curSilver = Number(charResult.rows[0].silver ?? 0) || 0;
-  const curSpirit = Number(charResult.rows[0].spirit_stones ?? 0) || 0;
-  if (curSilver < silverCost)
-    return { success: false, message: `银两不足，需要${silverCost}` };
-  if (curSpirit < spiritCost)
-    return { success: false, message: `灵石不足，需要${spiritCost}` };
-
-  await query(
+  const updatedResult = await query(
     `
       UPDATE characters
       SET silver = silver - $2,
           spirit_stones = spirit_stones - $3,
           updated_at = NOW()
       WHERE id = $1
+        AND silver >= $2
+        AND spirit_stones >= $3
+      RETURNING silver, spirit_stones
     `,
     [characterId, silverCost, spiritCost],
   );
-  return { success: true, message: "扣除成功" };
+  if (updatedResult.rows.length > 0) {
+    return { success: true, message: "扣除成功" };
+  }
+
+  const charResult = await query(
+    `SELECT silver, spirit_stones FROM characters WHERE id = $1 LIMIT 1`,
+    [characterId],
+  );
+  if (charResult.rows.length === 0) {
+    return { success: false, message: "角色不存在" };
+  }
+
+  const curSilver = Number(charResult.rows[0].silver ?? 0) || 0;
+  const curSpirit = Number(charResult.rows[0].spirit_stones ?? 0) || 0;
+  if (curSilver < silverCost) {
+    return { success: false, message: `银两不足，需要${silverCost}` };
+  }
+  if (curSpirit < spiritCost) {
+    return { success: false, message: `灵石不足，需要${spiritCost}` };
+  }
+
+  return { success: false, message: "角色货币已变化，请重试" };
 };
 
 /**
@@ -197,22 +208,19 @@ export const addCharacterCurrencies = async (
   if (silverGain <= 0 && spiritGain <= 0)
     return { success: true, message: "无需增加货币" };
 
-  const charResult = await query(
-    `SELECT id FROM characters WHERE id = $1 FOR UPDATE LIMIT 1`,
-    [characterId],
-  );
-  if (charResult.rows.length === 0)
-    return { success: false, message: "角色不存在" };
-
-  await query(
+  const updatedResult = await query(
     `
       UPDATE characters
       SET silver = silver + $2,
           spirit_stones = spirit_stones + $3,
           updated_at = NOW()
       WHERE id = $1
+      RETURNING id
     `,
     [characterId, silverGain, spiritGain],
   );
+  if (updatedResult.rows.length === 0) {
+    return { success: false, message: "角色不存在" };
+  }
   return { success: true, message: "增加成功" };
 };
