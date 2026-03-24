@@ -11,11 +11,12 @@
  * - 输出：`Promise<void>`；保证目标热点索引存在。
  *
  * 数据流/状态流：
- * - `db:sync` / 测试 -> ensurePerformanceIndexes -> 逐条执行 CREATE INDEX IF NOT EXISTS。
+ * - `db:sync` / 测试 -> ensurePerformanceIndexes -> 对比库内索引定义 -> 缺失则创建、旧定义则重建。
  *
  * 关键边界条件与坑点：
  * 1) mail 活跃范围查询依赖 `COALESCE(expire_at, 'infinity')` 表达式，索引表达式必须与查询写法保持一致，否则 PostgreSQL 无法稳定命中。
  * 2) item_instance 堆叠查询只应覆盖普通可堆叠实例，必须把 `metadata / quality / quality_rank IS NULL` 放进部分索引谓词，避免把特殊实例也塞进同一索引扫描路径。
+ * 3) 已存在但定义过旧的索引，`CREATE INDEX IF NOT EXISTS` 不会自动修正；必须显式校验定义并重建，否则优化永远落不到老库。
  */
 import { query } from '../../config/database.js';
 
@@ -29,6 +30,7 @@ export const MARKET_LISTING_ITEM_INSTANCE_ID_INDEX_NAME = 'idx_market_listing_it
 export type PerformanceIndexDefinition = {
   name: string;
   createSql: string;
+  matchFragments: string[];
 };
 
 const PERFORMANCE_INDEX_DEFINITIONS: PerformanceIndexDefinition[] = [
@@ -38,12 +40,19 @@ const PERFORMANCE_INDEX_DEFINITIONS: PerformanceIndexDefinition[] = [
       CREATE INDEX IF NOT EXISTS ${MAIL_CHARACTER_ACTIVE_SCOPE_INDEX_NAME}
       ON mail (
         recipient_character_id,
-        deleted_at,
         (COALESCE(expire_at, 'infinity'::timestamptz)),
         created_at DESC,
         id DESC
       )
+      WHERE deleted_at IS NULL
     `,
+    matchFragments: [
+      'recipient_character_id',
+      "COALESCE(expire_at, 'infinity'::timestamp with time zone)",
+      'created_at DESC',
+      'id DESC',
+      'deleted_at IS NULL',
+    ],
   },
   {
     name: MAIL_USER_ACTIVE_SCOPE_INDEX_NAME,
@@ -51,27 +60,53 @@ const PERFORMANCE_INDEX_DEFINITIONS: PerformanceIndexDefinition[] = [
       CREATE INDEX IF NOT EXISTS ${MAIL_USER_ACTIVE_SCOPE_INDEX_NAME}
       ON mail (
         recipient_user_id,
-        recipient_character_id,
-        deleted_at,
         (COALESCE(expire_at, 'infinity'::timestamptz)),
         created_at DESC,
         id DESC
       )
+      WHERE deleted_at IS NULL
+        AND recipient_character_id IS NULL
     `,
+    matchFragments: [
+      'recipient_user_id',
+      "COALESCE(expire_at, 'infinity'::timestamp with time zone)",
+      'created_at DESC',
+      'id DESC',
+      'deleted_at IS NULL',
+      'recipient_character_id IS NULL',
+    ],
   },
   {
     name: MAIL_CHARACTER_EXPIRE_CLEANUP_INDEX_NAME,
     createSql: `
       CREATE INDEX IF NOT EXISTS ${MAIL_CHARACTER_EXPIRE_CLEANUP_INDEX_NAME}
-      ON mail (recipient_character_id, deleted_at, expire_at)
+      ON mail (recipient_character_id, expire_at)
+      WHERE deleted_at IS NULL
+        AND expire_at IS NOT NULL
     `,
+    matchFragments: [
+      'recipient_character_id',
+      'expire_at',
+      'deleted_at IS NULL',
+      'expire_at IS NOT NULL',
+    ],
   },
   {
     name: MAIL_USER_EXPIRE_CLEANUP_INDEX_NAME,
     createSql: `
       CREATE INDEX IF NOT EXISTS ${MAIL_USER_EXPIRE_CLEANUP_INDEX_NAME}
-      ON mail (recipient_user_id, recipient_character_id, deleted_at, expire_at)
+      ON mail (recipient_user_id, expire_at)
+      WHERE recipient_character_id IS NULL
+        AND deleted_at IS NULL
+        AND expire_at IS NOT NULL
     `,
+    matchFragments: [
+      'recipient_user_id',
+      'expire_at',
+      'recipient_character_id IS NULL',
+      'deleted_at IS NULL',
+      'expire_at IS NOT NULL',
+    ],
   },
   {
     name: ITEM_INSTANCE_STACKABLE_LOOKUP_INDEX_NAME,
@@ -89,13 +124,29 @@ const PERFORMANCE_INDEX_DEFINITIONS: PerformanceIndexDefinition[] = [
         AND quality IS NULL
         AND quality_rank IS NULL
     `,
+    matchFragments: [
+      'owner_character_id',
+      'location',
+      'item_def_id',
+      'bind_type',
+      'qty DESC',
+      'id',
+      'metadata IS NULL',
+      'quality IS NULL',
+      'quality_rank IS NULL',
+    ],
   },
   {
     name: MARKET_LISTING_ITEM_INSTANCE_ID_INDEX_NAME,
     createSql: `
       CREATE INDEX IF NOT EXISTS ${MARKET_LISTING_ITEM_INSTANCE_ID_INDEX_NAME}
       ON market_listing (item_instance_id)
+      WHERE item_instance_id IS NOT NULL
     `,
+    matchFragments: [
+      'item_instance_id',
+      'item_instance_id IS NOT NULL',
+    ],
   },
 ];
 
@@ -103,8 +154,42 @@ export const getPerformanceIndexDefinitions = (): PerformanceIndexDefinition[] =
   return PERFORMANCE_INDEX_DEFINITIONS.slice();
 };
 
+const normalizeSql = (value: string): string => {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
+};
+
+const matchesExpectedFragments = (
+  indexDefinitionSql: string,
+  fragments: string[],
+): boolean => {
+  const normalizedIndexDefinition = normalizeSql(indexDefinitionSql);
+  return fragments.every((fragment) => normalizedIndexDefinition.includes(normalizeSql(fragment)));
+};
+
+const loadExistingIndexDefinition = async (indexName: string): Promise<string | null> => {
+  const result = await query<{ indexdef?: string }>(
+    `
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname = $1
+    `,
+    [indexName],
+  );
+  return typeof result.rows[0]?.indexdef === 'string' ? result.rows[0].indexdef : null;
+};
+
 export const ensurePerformanceIndexes = async (): Promise<void> => {
   for (const definition of PERFORMANCE_INDEX_DEFINITIONS) {
+    const existingDefinition = await loadExistingIndexDefinition(definition.name);
+    if (existingDefinition && matchesExpectedFragments(existingDefinition, definition.matchFragments)) {
+      continue;
+    }
+
+    if (existingDefinition) {
+      await query(`DROP INDEX IF EXISTS ${definition.name}`);
+    }
+
     await query(definition.createSql);
   }
 };

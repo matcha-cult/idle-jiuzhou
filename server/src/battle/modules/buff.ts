@@ -27,6 +27,130 @@ import { appendBattleLog } from '../logStream.js';
 import { buildAuraSubEffectSummary } from '../utils/auraSummary.js';
 import { CHARACTER_RATIO_ATTR_KEY_SET } from '../../services/shared/characterAttrRegistry.js';
 
+const AURA_SUB_EFFECT_BUFF_ID_PATTERN = /^aura:[^:]+:(.+)$/;
+
+/**
+ * 计算 Buff 强度分值
+ *
+ * 作用：
+ * 1. 为“同类光环效果取最高”提供统一比较口径，避免属性重算、DOT/HOT、反伤等消费端各自比较。
+ * 2. 只比较当前运行时真正参与结算的数值字段，不引入额外兜底规则。
+ * 3. 不做什么：不负责决定 Buff 是否可共存，只输出用于排序的强度分值。
+ *
+ * 输入/输出：
+ * - 输入：单个 ActiveBuff。
+ * - 输出：>= 0 的数值分值；分值越大表示效果越强。
+ *
+ * 数据流/状态流：
+ * ActiveBuff 运行时快照 -> 读取 attr/dot/hot/reflect 等字段 -> 汇总为单一强度分值 -> 供光环聚合函数复用。
+ *
+ * 关键边界条件与坑点：
+ * 1. Debuff 的属性值通常为负数，这里必须按绝对值比较，否则 `-30` 会被错误判成比 `-10` 更弱。
+ * 2. 同类光环效果应保持“同 key 比强度”，不应跨 buffDefId 比较，所以这里只负责强度，不负责分组。
+ */
+function calculateBuffStrengthScore(buff: ActiveBuff): number {
+  let score = 0;
+
+  for (const modifier of buff.attrModifiers ?? []) {
+    score += Math.abs(modifier.value * Math.max(1, buff.stacks));
+  }
+
+  if (buff.dot) {
+    score += Math.abs(buff.dot.damage);
+    if (typeof buff.dot.bonusTargetMaxQixueRate === 'number') {
+      score += Math.abs(buff.dot.bonusTargetMaxQixueRate);
+    }
+  }
+
+  if (buff.hot) {
+    score += Math.abs(buff.hot.heal);
+  }
+
+  if (buff.reflectDamage) {
+    score += Math.abs(buff.reflectDamage.rate);
+  }
+
+  if (buff.delayedBurst) {
+    score += Math.abs(buff.delayedBurst.damage);
+  }
+
+  if (buff.nextSkillBonus) {
+    score += Math.abs(buff.nextSkillBonus.rate);
+  }
+
+  if (buff.healForbidden) {
+    score += 1;
+  }
+
+  if (buff.control) {
+    score += 1;
+  }
+
+  return score;
+}
+
+function resolveAuraSubEffectGroupKey(buff: ActiveBuff): string | null {
+  if (buff.category !== 'aura') return null;
+  if (!buff.tags.includes('aura_sub')) return null;
+
+  const matched = AURA_SUB_EFFECT_BUFF_ID_PATTERN.exec(buff.buffDefId);
+  if (!matched) return null;
+
+  return `${buff.type}:${matched[1]}`;
+}
+
+/**
+ * 获取当前真正参与结算的 Buff 列表
+ *
+ * 作用：
+ * 1. 把“多个相同光环子效果取最高，不再叠加”集中成单一入口，供属性重算、回合效果、反伤/禁疗判断共同复用。
+ * 2. 非光环 Buff 维持原有可叠加行为，避免把普通技能 Buff 误改成互斥。
+ * 3. 不做什么：不修改原始 `unit.buffs` 数组，也不处理持续时间递减。
+ *
+ * 输入/输出：
+ * - 输入：单位当前持有的 Buff 列表。
+ * - 输出：去重后的“有效 Buff”数组；同类光环子 Buff 只保留强度最高的一条。
+ *
+ * 数据流/状态流：
+ * unit.buffs -> 识别 aura_sub 分组 key -> 比较强度 -> 返回消费端统一复用的有效 Buff 列表。
+ *
+ * 关键边界条件与坑点：
+ * 1. 光环子 Buff 仍需按来源分别保留在原始列表里，用于各自刷新/过期；这里只是在消费时做“同类取最高”。
+ * 2. 同强度时优先保留持续时间更长的那条，避免数值相同但剩余时长更长的效果被短时 Buff 抢走。
+ */
+function collectEffectiveBuffs(buffs: readonly ActiveBuff[]): ActiveBuff[] {
+  const effectiveBuffs: ActiveBuff[] = [];
+  const auraBuffIndexByGroupKey = new Map<string, number>();
+
+  for (const buff of buffs) {
+    const groupKey = resolveAuraSubEffectGroupKey(buff);
+    if (!groupKey) {
+      effectiveBuffs.push(buff);
+      continue;
+    }
+
+    const existingIndex = auraBuffIndexByGroupKey.get(groupKey);
+    if (existingIndex == null) {
+      auraBuffIndexByGroupKey.set(groupKey, effectiveBuffs.length);
+      effectiveBuffs.push(buff);
+      continue;
+    }
+
+    const existingBuff = effectiveBuffs[existingIndex];
+    const nextScore = calculateBuffStrengthScore(buff);
+    const existingScore = calculateBuffStrengthScore(existingBuff);
+    if (nextScore > existingScore) {
+      effectiveBuffs[existingIndex] = buff;
+      continue;
+    }
+    if (nextScore === existingScore && buff.remainingDuration > existingBuff.remainingDuration) {
+      effectiveBuffs[existingIndex] = buff;
+    }
+  }
+
+  return effectiveBuffs;
+}
+
 /**
  * 添加Buff到单位
  *
@@ -136,8 +260,9 @@ export function processRoundStartEffects(
   unit: BattleUnit
 ): BattleLogEntry[] {
   const logs: BattleLogEntry[] = [];
+  const effectiveBuffs = collectEffectiveBuffs(unit.buffs);
   
-  for (const buff of unit.buffs) {
+  for (const buff of effectiveBuffs) {
     if (buff.delayedBurst) {
       if (buff.delayedBurst.remainingRounds > 1) {
         buff.delayedBurst.remainingRounds -= 1;
@@ -461,13 +586,13 @@ function applyAuraSubEffect(
 }
 
 export function isHealingForbidden(unit: BattleUnit): boolean {
-  return unit.buffs.some((buff) => buff.healForbidden === true);
+  return collectEffectiveBuffs(unit.buffs).some((buff) => buff.healForbidden === true);
 }
 
 export function getUnitReflectDamageRate(unit: BattleUnit): number {
   let totalRate = 0;
 
-  for (const buff of unit.buffs) {
+  for (const buff of collectEffectiveBuffs(unit.buffs)) {
     const reflectDamage = buff.reflectDamage;
     if (!reflectDamage) continue;
 
@@ -517,12 +642,13 @@ export const createNextSkillBonusRuntime = (params: {
 function recalculateUnitAttrs(unit: BattleUnit): void {
   // 从基础属性开始
   unit.currentAttrs = { ...unit.baseAttrs };
+  const effectiveBuffs = collectEffectiveBuffs(unit.buffs);
   
   // 收集所有属性修正
   const flatMods: Partial<Record<keyof BattleAttrs, number>> = {};
   const percentMods: Partial<Record<keyof BattleAttrs, number>> = {};
   
-  for (const buff of unit.buffs) {
+  for (const buff of effectiveBuffs) {
     if (!buff.attrModifiers) continue;
     
     for (const mod of buff.attrModifiers) {

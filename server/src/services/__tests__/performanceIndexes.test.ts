@@ -28,6 +28,8 @@ import {
   getPerformanceIndexDefinitions,
   ITEM_INSTANCE_STACKABLE_LOOKUP_INDEX_NAME,
   MAIL_CHARACTER_ACTIVE_SCOPE_INDEX_NAME,
+  MAIL_CHARACTER_EXPIRE_CLEANUP_INDEX_NAME,
+  MARKET_LISTING_ITEM_INSTANCE_ID_INDEX_NAME,
 } from '../shared/performanceIndexes.js';
 
 test.after(async () => {
@@ -67,6 +69,7 @@ test('ensurePerformanceIndexes 应保证热点性能索引存在', async () => {
   );
   const mailIndexDef = mailIndexResult.rows[0]?.indexdef ?? '';
   assert.match(mailIndexDef, /COALESCE\(expire_at, 'infinity'::timestamp with time zone\)/i);
+  assert.match(mailIndexDef, /deleted_at IS NULL/i);
 
   const itemStackIndexResult = await query<{ indexdef: string }>(
     `
@@ -81,4 +84,29 @@ test('ensurePerformanceIndexes 应保证热点性能索引存在', async () => {
   assert.match(itemStackIndexDef, /metadata IS NULL/i);
   assert.match(itemStackIndexDef, /quality IS NULL/i);
   assert.match(itemStackIndexDef, /quality_rank IS NULL/i);
+
+  const cleanupIndexResult = await query<{ indexdef: string }>(
+    `
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname = $1
+    `,
+    [MAIL_CHARACTER_EXPIRE_CLEANUP_INDEX_NAME],
+  );
+  const cleanupIndexDef = cleanupIndexResult.rows[0]?.indexdef ?? '';
+  assert.match(cleanupIndexDef, /deleted_at IS NULL/i);
+  assert.match(cleanupIndexDef, /expire_at IS NOT NULL/i);
+
+  const marketListingIndexResult = await query<{ indexdef: string }>(
+    `
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname = $1
+    `,
+    [MARKET_LISTING_ITEM_INSTANCE_ID_INDEX_NAME],
+  );
+  const marketListingIndexDef = marketListingIndexResult.rows[0]?.indexdef ?? '';
+  assert.match(marketListingIndexDef, /item_instance_id IS NOT NULL/i);
 });

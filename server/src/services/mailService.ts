@@ -119,6 +119,7 @@ const MAIL_HAS_ATTACHMENTS_SQL = '(attach_silver > 0 OR attach_spirit_stones > 0
 const MAIL_ACTIVE_SCOPE_SQL = `COALESCE(expire_at, 'infinity'::timestamptz) > NOW()`;
 const MAIL_UNREAD_CACHE_REDIS_TTL_SEC = 30;
 const MAIL_UNREAD_CACHE_MEMORY_TTL_MS = 5_000;
+const MAIL_EXPIRE_CLEANUP_THROTTLE_MS = 60_000;
 
 type MailScopedUnionSqlOptions = {
   selectSql: string;
@@ -142,6 +143,13 @@ type LoadMailCounterOptions = {
   userId: number;
   commonWhereSql?: string[];
 };
+
+type MailExpireCleanupState = {
+  nextAllowedAtMs: number;
+  runningPromise: Promise<void> | null;
+};
+
+const mailExpireCleanupState = new Map<string, MailExpireCleanupState>();
 
 const buildLegacyMailRewardPayload = (input: {
   attachSilver: number;
@@ -180,6 +188,8 @@ const buildMailPreviewRewards = (input: {
 const buildMailUnreadCacheKey = (userId: number, characterId: number): string => {
   return `${userId}:${characterId}`;
 };
+
+const buildMailExpireCleanupKey = buildMailUnreadCacheKey;
 
 const parseMailUnreadCacheKey = (
   cacheKey: string,
@@ -347,6 +357,64 @@ class MailService {
         [userId],
       ),
     ]);
+  }
+
+  /**
+   * 调度“收件人作用域”的过期邮件清理任务。
+   *
+   * 作用：
+   * - 把过期软删除从同步读链路中摘出来，避免 `getMailList` 每次都阻塞等待两条 `UPDATE mail`；
+   * - 以“用户ID + 角色ID”为单一调度键做节流与并发去重，避免同一收件人短时间重复清理。
+   *
+   * 输入/输出：
+   * - 输入：userId、characterId
+   * - 输出：无；内部以 best-effort 方式异步执行清理，失败仅记录日志，不影响列表读取。
+   *
+   * 数据流/状态流：
+   * - getMailList -> scheduleExpiredMailCleanupForRecipient -> 内存节流状态
+   *   -> cleanupExpiredMailForRecipient -> 更新 mail.deleted_at。
+   *
+   * 关键边界条件与坑点：
+   * 1) 可见性不依赖软删除完成时机，因为列表/计数查询本身已带 `MAIL_ACTIVE_SCOPE_SQL` 过滤，过期邮件不会重新暴露给用户。
+   * 2) 节流只作用于清理任务，不影响发信/读信/领附件后的未读缓存失效；两条链路职责必须分开。
+   */
+  private scheduleExpiredMailCleanupForRecipient(
+    userId: number,
+    characterId: number,
+  ): void {
+    const cacheKey = buildMailExpireCleanupKey(userId, characterId);
+    const currentState = mailExpireCleanupState.get(cacheKey);
+    const nowMs = Date.now();
+
+    if (currentState?.runningPromise) {
+      return;
+    }
+    if (currentState && currentState.nextAllowedAtMs > nowMs) {
+      return;
+    }
+
+    const runningPromise = this.cleanupExpiredMailForRecipient(userId, characterId)
+      .catch((error) => {
+        console.error(
+          `[mail] 异步清理过期邮件失败: userId=${userId}, characterId=${characterId}`,
+          error,
+        );
+      })
+      .finally(() => {
+        const latestState = mailExpireCleanupState.get(cacheKey);
+        if (!latestState || latestState.runningPromise !== runningPromise) {
+          return;
+        }
+        mailExpireCleanupState.set(cacheKey, {
+          nextAllowedAtMs: Date.now() + MAIL_EXPIRE_CLEANUP_THROTTLE_MS,
+          runningPromise: null,
+        });
+      });
+
+    mailExpireCleanupState.set(cacheKey, {
+      nextAllowedAtMs: nowMs + MAIL_EXPIRE_CLEANUP_THROTTLE_MS,
+      runningPromise,
+    });
   }
 
   /**
@@ -926,9 +994,6 @@ class MailService {
     });
 
     try {
-      // 清理过期邮件（软删除）
-      await this.cleanupExpiredMailForRecipient(userId, characterId);
-
       const [result, stats] = await Promise.all([
         query(`
           WITH scoped_mail AS (
@@ -960,7 +1025,7 @@ class MailService {
           ...item,
           item_def_id: String(item.item_def_id || '').trim(),
         })),
-        attachRewards: buildMailPreviewRewards({
+          attachRewards: buildMailPreviewRewards({
           attachSilver: Number(row.attach_silver) || 0,
           attachSpiritStones: Number(row.attach_spirit_stones) || 0,
           attachItems: this.normalizeAttachItems(row.attach_items),
@@ -971,6 +1036,8 @@ class MailService {
         expireAt: row.expire_at?.toISOString() || null,
         createdAt: row.created_at.toISOString()
       }));
+
+      this.scheduleExpiredMailCleanupForRecipient(userId, characterId);
 
       return {
         success: true,
