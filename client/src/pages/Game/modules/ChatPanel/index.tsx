@@ -9,6 +9,7 @@ import PlayerName from '../../shared/PlayerName';
 import { useDeferredGameRequest } from '../../shared/useDeferredGameRequest';
 import { usePhoneBindingStatus } from '../../shared/usePhoneBindingStatus';
 import StatsShell from './StatsShell';
+import { useStickyMessageScroll } from './useStickyMessageScroll';
 import './index.scss';
 
 type ChatChannel = 'all' | 'world' | 'team' | 'sect' | 'private' | 'battle' | 'system';
@@ -380,10 +381,9 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
     refresh: refreshPhoneBindingStatus,
   } = usePhoneBindingStatus(shouldLoadPhoneBindingStatus);
   const mainMessagesRef = useRef<HTMLDivElement>(null);
+  const mainMessagesContentRef = useRef<HTMLDivElement>(null);
   const privateMessagesRef = useRef<HTMLDivElement>(null);
-  const shouldStickToBottomRef = useRef(true);
-  const prevMessageViewKeyRef = useRef('');
-  const prevMessageTailIdRef = useRef('');
+  const privateMessagesContentRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<InputRef>(null);
   const myCharacterIdRef = useRef<number | null>(character?.id ?? null);
 
@@ -808,48 +808,24 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
     return messageBuckets[activeChannel];
   }, [activeChannel, activePrivateTargetId, messageBuckets]);
 
-  const getActiveMessagesContainer = useCallback((): HTMLDivElement | null => {
-    return activeChannel === 'private' ? privateMessagesRef.current : mainMessagesRef.current;
-  }, [activeChannel]);
-
-  const isNearBottom = useCallback((el: HTMLDivElement): boolean => {
-    return el.scrollHeight - el.scrollTop - el.clientHeight <= 24;
-  }, []);
-
-  const handleMainMessagesScroll = useCallback(() => {
-    if (activeChannel === 'private') return;
-    const el = mainMessagesRef.current;
-    if (!el) return;
-    shouldStickToBottomRef.current = isNearBottom(el);
-  }, [activeChannel, isNearBottom]);
-
-  const handlePrivateMessagesScroll = useCallback(() => {
-    if (activeChannel !== 'private') return;
-    const el = privateMessagesRef.current;
-    if (!el) return;
-    shouldStickToBottomRef.current = isNearBottom(el);
-  }, [activeChannel, isNearBottom]);
-
   const activeMessageViewKey = activeChannel === 'private' ? `private:${activePrivateTargetId}` : activeChannel;
   const activeMessageTailId = filteredMessages[filteredMessages.length - 1]?.id ?? '';
 
-  useEffect(() => {
-    const viewChanged = prevMessageViewKeyRef.current !== activeMessageViewKey;
-    const tailChanged = prevMessageTailIdRef.current !== activeMessageTailId;
-    const shouldScroll = viewChanged || (tailChanged && shouldStickToBottomRef.current);
+  const { handleScroll: handleMainMessagesScroll } = useStickyMessageScroll({
+    containerRef: mainMessagesRef,
+    contentRef: mainMessagesContentRef,
+    enabled: activeChannel !== 'private',
+    viewKey: activeChannel !== 'private' ? activeMessageViewKey : '',
+    tailKey: activeChannel !== 'private' ? activeMessageTailId : '',
+  });
 
-    prevMessageViewKeyRef.current = activeMessageViewKey;
-    prevMessageTailIdRef.current = activeMessageTailId;
-    if (!shouldScroll) return;
-
-    const rafId = window.requestAnimationFrame(() => {
-      const el = getActiveMessagesContainer();
-      if (!el) return;
-      el.scrollTop = el.scrollHeight;
-      shouldStickToBottomRef.current = true;
-    });
-    return () => window.cancelAnimationFrame(rafId);
-  }, [activeMessageTailId, activeMessageViewKey, getActiveMessagesContainer]);
+  const { handleScroll: handlePrivateMessagesScroll } = useStickyMessageScroll({
+    containerRef: privateMessagesRef,
+    contentRef: privateMessagesContentRef,
+    enabled: activeChannel === 'private',
+    viewKey: activeChannel === 'private' ? activeMessageViewKey : '',
+    tailKey: activeChannel === 'private' ? activeMessageTailId : '',
+  });
 
   const battleMessages = useMemo(() => {
     if (!dropStatsOpen && !outputStatsOpen) return [];
@@ -1571,26 +1547,15 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
 
             <div className="chat-private-right">
               <div className="chat-private-messages" ref={privateMessagesRef} onScroll={handlePrivateMessagesScroll}>
-                {filteredMessages.map((msg) => (
-                  <div key={msg.id} className={`message-item ${msg.isSelf ? 'self' : ''}`}>
-                    <span
-                      className={`message-sender ${msg.senderName === '系统' ? '' : 'is-clickable'}`}
-                      role={msg.senderName === '系统' ? undefined : 'button'}
-                      tabIndex={msg.senderName === '系统' ? undefined : 0}
-                      onClick={() => {
-                        if (msg.senderName === '系统') return;
-                        onSelectPlayer?.(
-                          buildPlayerTarget(
-                            msg.senderTitle,
-                            msg.senderName,
-                            msg.senderCharacterId,
-                            msg.senderMonthCardActive,
-                          ),
-                        );
-                      }}
-                      onKeyDown={(e) => {
-                        if (msg.senderName === '系统') return;
-                        if (e.key === 'Enter' || e.key === ' ') {
+                <div ref={privateMessagesContentRef} className="chat-message-list">
+                  {filteredMessages.map((msg) => (
+                    <div key={msg.id} className={`message-item ${msg.isSelf ? 'self' : ''}`}>
+                      <span
+                        className={`message-sender ${msg.senderName === '系统' ? '' : 'is-clickable'}`}
+                        role={msg.senderName === '系统' ? undefined : 'button'}
+                        tabIndex={msg.senderName === '系统' ? undefined : 0}
+                        onClick={() => {
+                          if (msg.senderName === '系统') return;
                           onSelectPlayer?.(
                             buildPlayerTarget(
                               msg.senderTitle,
@@ -1599,27 +1564,40 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
                               msg.senderMonthCardActive,
                             ),
                           );
-                        }
-                      }}
-                    >
-                      <PlayerName
-                        name={msg.senderName}
-                        title={msg.senderTitle}
-                        monthCardActive={msg.senderMonthCardActive}
-                        ellipsis
-                      />
-                      :
-                    </span>
-                    <span className={`message-content ${msg.channel === 'battle' ? 'message-content-battle' : ''}`}>
-                      {renderMessageContent(msg)}
-                    </span>
-                  </div>
-                ))}
+                        }}
+                        onKeyDown={(e) => {
+                          if (msg.senderName === '系统') return;
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            onSelectPlayer?.(
+                              buildPlayerTarget(
+                                msg.senderTitle,
+                                msg.senderName,
+                                msg.senderCharacterId,
+                                msg.senderMonthCardActive,
+                              ),
+                            );
+                          }
+                        }}
+                      >
+                        <PlayerName
+                          name={msg.senderName}
+                          title={msg.senderTitle}
+                          monthCardActive={msg.senderMonthCardActive}
+                          ellipsis
+                        />
+                        :
+                      </span>
+                      <span className={`message-content ${msg.channel === 'battle' ? 'message-content-battle' : ''}`}>
+                        {renderMessageContent(msg)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         ) : (
-          <>
+          <div ref={mainMessagesContentRef} className="chat-message-list">
             {filteredMessages.map((msg) => (
               <div key={msg.id} className={`message-item ${msg.isSelf ? 'self' : ''}`}>
                 {activeChannel === 'all' ? <span className="message-channel">{getChannelPrefixText(msg.channel)}</span> : null}
@@ -1665,7 +1643,7 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
                 </span>
               </div>
             ))}
-          </>
+          </div>
         )}
       </div>
 

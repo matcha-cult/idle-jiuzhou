@@ -356,6 +356,10 @@
   }
 }
 
+.chat-message-list {
+  min-width: 0;
+}
+
 .chat-panel.is-private {
   .chat-messages {
     overflow: hidden;
