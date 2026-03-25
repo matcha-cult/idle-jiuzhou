@@ -31,7 +31,11 @@ test('在线战斗角色快照刷新应重建整份快照并在提交后执行',
 
   assert.match(
     source,
-    /export const refreshOnlineBattleCharacterSnapshotByCharacterId[\s\S]*?buildCharacterSnapshotsByCharacterIds\(\[normalizedCharacterId\]\)[\s\S]*?persistCharacterSnapshot\(nextSnapshot\)/u,
+    /export const refreshOnlineBattleCharacterSnapshotsByCharacterIds[\s\S]*?buildCharacterSnapshotsByCharacterIds\(normalizedCharacterIds\)[\s\S]*?persistCharacterSnapshotsBatch\(nextSnapshots\)/u,
+  );
+  assert.match(
+    source,
+    /export const refreshOnlineBattleCharacterSnapshotByCharacterId[\s\S]*?refreshOnlineBattleCharacterSnapshotsByCharacterIds\(\[normalizedCharacterId\]\)/u,
   );
   assert.match(
     source,

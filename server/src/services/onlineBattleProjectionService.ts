@@ -1949,39 +1949,72 @@ export const setOnlineBattleCharacterPosition = async (
 };
 
 /**
- * 提交后刷新在线战斗角色整份快照。
+ * 立即刷新在线战斗角色整批快照。
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：基于最新 DB + 计算属性 + 装备/伙伴/队伍投影，重建单个角色的整份在线战斗快照。
- * 2. 做什么：给突破、战斗配置变更等“会影响整份 computed 快照”的写链路提供单一刷新入口，避免业务侧只改局部字段导致运行时状态分裂。
+ * 1. 做什么：基于最新 DB + 计算属性 + 装备/伙伴/队伍投影，重建一批角色的整份在线战斗快照。
+ * 2. 做什么：给秘境准入、突破、战斗配置变更等“会影响整份 computed 快照”的链路提供单一刷新入口，避免业务侧只改局部字段导致运行时状态分裂。
  * 3. 不做什么：不写角色数据库，也不推送客户端；调用方仍负责自己的写库与消息通知。
+ *
+ * 输入/输出：
+ * - 输入：characterIds。
+ * - 输出：按 characterId 组织的刷新后快照映射；无法组装快照的角色不会出现在结果中。
+ *
+ * 数据流/状态流：
+ * - 写链路在事务提交后调用本函数；
+ * - 本函数重新组装目标角色集合的 `OnlineBattleCharacterSnapshot`；
+ * - 最终批量覆盖内存 + Redis 权威快照，后续秘境/战斗读取同一份新状态。
+ *
+ * 关键边界条件与坑点：
+ * 1. 必须重建整份快照，不能只补 `realm/sub_realm`；突破等链路会同时影响派生属性，局部覆盖会让战斗数值继续使用旧值。
+ * 2. 返回结果只包含成功组装的角色；调用方若依赖全量命中，必须自行检查缺失项。
+ */
+export const refreshOnlineBattleCharacterSnapshotsByCharacterIds = async (
+  characterIds: number[],
+): Promise<Map<number, OnlineBattleCharacterSnapshot>> => {
+  requireOnlineBattleProjectionReady();
+  const normalizedCharacterIds = normalizeProjectionEntityIds(characterIds);
+  const result = new Map<number, OnlineBattleCharacterSnapshot>();
+  if (normalizedCharacterIds.length <= 0) return result;
+
+  const nextSnapshots = await buildCharacterSnapshotsByCharacterIds(normalizedCharacterIds);
+  if (nextSnapshots.length <= 0) return result;
+
+  await persistCharacterSnapshotsBatch(nextSnapshots);
+  for (const nextSnapshot of nextSnapshots) {
+    result.set(nextSnapshot.characterId, nextSnapshot);
+  }
+  return result;
+};
+
+/**
+ * 立即刷新在线战斗角色整份快照。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：为单角色调用方复用批量刷新入口，避免再维护一套单独的构建/写入逻辑。
+ * 2. 做什么：保持单角色与批量角色刷新使用完全一致的快照口径。
+ * 3. 不做什么：不绕开批量刷新逻辑直接写 Redis。
  *
  * 输入/输出：
  * - 输入：characterId。
  * - 输出：刷新后的在线战斗角色快照；若角色不存在或无法组装快照则返回 `null`。
  *
  * 数据流/状态流：
- * - 写链路在事务提交后调用本函数；
- * - 本函数重新组装目标角色的 `OnlineBattleCharacterSnapshot`；
- * - 最终覆盖内存 + Redis 权威快照，后续秘境/战斗读取同一份新状态。
+ * - 单角色调用 -> 委托给批量刷新入口；
+ * - 批量刷新完成后 -> 取回目标角色对应快照返回。
  *
  * 关键边界条件与坑点：
- * 1. 必须重建整份快照，不能只补 `realm/sub_realm`；突破等链路会同时影响派生属性，局部覆盖会让战斗数值继续使用旧值。
- * 2. 该刷新必须发生在事务提交后；若在事务中提前写 Redis，回滚时会把运行时快照写成“假成功”状态。
+ * 1. 这里不重复做构建逻辑；批量入口变更时，单角色会自动继承同一策略。
+ * 2. 非正整数角色 ID 会直接返回 `null`，避免把脏值传入批量刷新入口。
  */
 export const refreshOnlineBattleCharacterSnapshotByCharacterId = async (
   characterId: number,
 ): Promise<OnlineBattleCharacterSnapshot | null> => {
-  requireOnlineBattleProjectionReady();
   const normalizedCharacterId = toInt(characterId);
   if (normalizedCharacterId <= 0) return null;
 
-  const nextSnapshots = await buildCharacterSnapshotsByCharacterIds([normalizedCharacterId]);
-  const nextSnapshot = nextSnapshots[0] ?? null;
-  if (!nextSnapshot) return null;
-
-  await persistCharacterSnapshot(nextSnapshot);
-  return nextSnapshot;
+  const refreshedSnapshots = await refreshOnlineBattleCharacterSnapshotsByCharacterIds([normalizedCharacterId]);
+  return refreshedSnapshots.get(normalizedCharacterId) ?? null;
 };
 
 /**

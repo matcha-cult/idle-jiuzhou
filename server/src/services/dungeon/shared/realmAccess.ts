@@ -21,6 +21,7 @@
  */
 
 import { getRealmOrderIndex } from '../../shared/realmRules.js';
+import { refreshOnlineBattleCharacterSnapshotsByCharacterIds } from '../../onlineBattleProjectionService.js';
 import {
   buildParticipantLabel,
   getParticipantNicknameMap,
@@ -83,6 +84,10 @@ export const validateDungeonParticipantRealmAccess = async (params: {
   if (requiredRank < 0) {
     return { success: false, message: `秘境境界配置无效：${requiredRealm}` };
   }
+
+  await refreshOnlineBattleCharacterSnapshotsByCharacterIds(
+    params.participants.map((participant) => participant.characterId),
+  );
 
   const [participantNicknameMap, participantRealmMap] = await Promise.all([
     getParticipantNicknameMap(params.participants),
