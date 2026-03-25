@@ -34,6 +34,7 @@ import {
   getActivePartnerBattleMemberByCharacterId,
   scheduleActivePartnerBattleCacheRefreshByCharacterId,
 } from './battle/shared/profileCache.js';
+import { scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId } from './onlineBattleProjectionService.js';
 import { resolveGeneratedTechniqueBookDisplay } from './shared/generatedTechniqueBookView.js';
 import {
   PARTNER_GROWTH_KEYS,
@@ -236,6 +237,34 @@ const buildPartnerTechniqueLearnedEntry = (params: {
   learnedFromItemDefId: params.itemDefId,
 });
 
+/**
+ * 伙伴战斗相关写入后的统一刷新入口。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1) 做什么：把“伙伴战斗缓存刷新 + 在线战斗角色投影刷新”收口到单一入口，避免伙伴切换、培养、技能策略等写链路各漏刷一处。
+ * 2) 做什么：确保后续进入战斗读取到的当前出战伙伴，与伙伴面板里刚提交成功的最新状态保持一致。
+ * 3) 不做什么：不做数据库写入，也不决定哪些业务该调用；调用方仍需在真正影响伙伴战斗快照后显式使用本函数。
+ *
+ * 输入/输出：
+ * - 输入：characterId。
+ * - 输出：无；副作用是在事务提交后刷新伙伴战斗缓存与在线战斗角色快照。
+ *
+ * 数据流/状态流：
+ * partnerService 写库成功 -> 本函数登记 after-commit 刷新 -> battle/profileCache + onlineBattleProjection 同步更新。
+ *
+ * 关键边界条件与坑点：
+ * 1) 这里只做提交后刷新，不在事务中抢先覆盖运行时快照，避免事务回滚后把 Redis/内存状态写脏。
+ * 2) 在线战斗入口实际读取的是角色在线战斗投影里的 `activePartner`；只刷伙伴缓存而不刷投影，会导致“面板已切换、开战仍是旧伙伴”。
+ */
+const schedulePartnerBattleStateRefreshByCharacterId = async (
+  characterId: number,
+): Promise<void> => {
+  await Promise.all([
+    scheduleActivePartnerBattleCacheRefreshByCharacterId(characterId),
+    scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId(characterId),
+  ]);
+};
+
 const loadPartnerTechniqueBookContext = async (params: {
   characterId: number;
   itemInstanceId: number;
@@ -418,7 +447,7 @@ const buildPartnerTechniqueLearnSuccessResult = async (params: {
     return { success: false, message: '伙伴功法刷新失败' };
   }
 
-  await scheduleActivePartnerBattleCacheRefreshByCharacterId(params.characterId);
+  await schedulePartnerBattleStateRefreshByCharacterId(params.characterId);
 
   return {
     success: true,
@@ -1001,7 +1030,7 @@ class PartnerService {
           [partnerId, slot.skillId, slot.priority, slot.enabled],
         );
       }
-      await scheduleActivePartnerBattleCacheRefreshByCharacterId(characterId);
+      await schedulePartnerBattleStateRefreshByCharacterId(characterId);
 
       return {
         success: true,
@@ -1076,7 +1105,7 @@ class PartnerService {
           subRealm: character.subRealm,
         },
       });
-      await scheduleActivePartnerBattleCacheRefreshByCharacterId(characterId);
+      await schedulePartnerBattleStateRefreshByCharacterId(characterId);
 
       return {
         success: true,
@@ -1110,7 +1139,7 @@ class PartnerService {
         partnerId: null,
         execute: query,
       });
-      await scheduleActivePartnerBattleCacheRefreshByCharacterId(characterId);
+      await schedulePartnerBattleStateRefreshByCharacterId(characterId);
 
       return {
         success: true,
@@ -1218,7 +1247,7 @@ class PartnerService {
       });
 
       await invalidateCharacterComputedCache(characterId);
-      await scheduleActivePartnerBattleCacheRefreshByCharacterId(characterId);
+      await schedulePartnerBattleStateRefreshByCharacterId(characterId);
 
       return {
         success: true,
@@ -1307,7 +1336,7 @@ class PartnerService {
         },
       });
 
-      await scheduleActivePartnerBattleCacheRefreshByCharacterId(characterId);
+      await schedulePartnerBattleStateRefreshByCharacterId(characterId);
 
       return {
         success: true,
@@ -1552,7 +1581,7 @@ class PartnerService {
       }
 
       await invalidateCharacterComputedCache(characterId);
-      await scheduleActivePartnerBattleCacheRefreshByCharacterId(characterId);
+      await schedulePartnerBattleStateRefreshByCharacterId(characterId);
 
       return {
         success: true,
