@@ -34,6 +34,7 @@ import {
   renderSkillCardDetails,
 } from './skillDetailShared';
 import {
+  TECHNIQUE_RESEARCH_BURNING_WORD_LABEL,
   buildTechniqueResearchBurningWordTagText,
 } from './researchPromptShared';
 
@@ -132,7 +133,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
                 placeholder="留空随机"
                 maxLength={burningWordPromptMaxLength}
                 disabled={burningWordPromptInputDisabled}
-                prefix={<span className="tech-research-burning-word-prefix">焚诀</span>}
+                prefix={<span className="tech-research-burning-word-prefix">{TECHNIQUE_RESEARCH_BURNING_WORD_LABEL}</span>}
               />
               <Button
                 className="tech-research-generate-button"

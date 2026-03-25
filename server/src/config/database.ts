@@ -93,6 +93,7 @@ type ClientTransactionState = {
 type DecoratedPoolClient = PoolClient & {
   __txState?: ClientTransactionState;
   __txRawQuery?: QueryCallable;
+  __txCheckoutErrorListener?: (error: Error) => void;
 };
 
 type ErrorChainEntry = {
@@ -362,6 +363,43 @@ const safeReleaseClient = (client: PoolClient): void => {
   }
 };
 
+const buildCheckedOutClientErrorLogLabel = (error: Error): string => {
+  if (isTransientPgError(error)) {
+    return '数据库连接在借出期间意外中断，当前查询将失败并由上层决定是否重试';
+  }
+
+  return '数据库连接在借出期间发生非预期异常';
+};
+
+const detachCheckedOutClientErrorListener = (client: DecoratedPoolClient): void => {
+  const listener = client.__txCheckoutErrorListener;
+  if (!listener) {
+    return;
+  }
+
+  client.removeListener('error', listener);
+  delete client.__txCheckoutErrorListener;
+};
+
+const attachCheckedOutClientErrorListener = (
+  client: DecoratedPoolClient,
+  state: ClientTransactionState,
+): void => {
+  detachCheckedOutClientErrorListener(client);
+
+  const listener = (error: Error): void => {
+    console.error(buildCheckedOutClientErrorLogLabel(error), {
+      clientId: state.clientId,
+      transactionDepth: state.depth,
+      released: state.released,
+      errorChain: buildErrorChain(error),
+    });
+  };
+
+  client.__txCheckoutErrorListener = listener;
+  client.on('error', listener);
+};
+
 const decoratePoolClient = (client: PoolClient): PoolClient => {
   const decoratedClient = client as DecoratedPoolClient;
   const rawQuery = (decoratedClient.__txRawQuery ?? client.query.bind(client)) as QueryCallable;
@@ -378,6 +416,7 @@ const decoratePoolClient = (client: PoolClient): PoolClient => {
   decoratedClient.__txState = state;
   decoratedClient.__txRawQuery = rawQuery;
   normalizeClientStateOnCheckout(state);
+  attachCheckedOutClientErrorListener(decoratedClient, state);
 
   client.query = ((...queryArgs: unknown[]) => {
     const sql = extractSqlTextFromQueryArgs(queryArgs);
@@ -466,6 +505,7 @@ const decoratePoolClient = (client: PoolClient): PoolClient => {
 
     // 标记为即将释放，防止并发调用
     state.released = true;
+    detachCheckedOutClientErrorListener(decoratedClient);
 
     if (state.depth > 0) {
       // 如果事务还在进行中就被释放，这是一个错误

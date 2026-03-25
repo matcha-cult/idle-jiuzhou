@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  TECHNIQUE_RESEARCH_BURNING_WORD_LABEL,
   buildTechniqueResearchBurningWordHelperText,
   buildTechniqueResearchBurningWordTagText,
   getTechniqueResearchBurningWordInputLength,
@@ -28,6 +29,7 @@ describe('researchPromptShared', () => {
 
   it('应输出统一的帮助文案与回显标签', () => {
     expect(buildTechniqueResearchBurningWordHelperText(2)).toContain('不会突破原有强度规则');
-    expect(buildTechniqueResearchBurningWordTagText('焰火')).toBe('焚诀 焰火');
+    expect(buildTechniqueResearchBurningWordHelperText(2)).toContain(TECHNIQUE_RESEARCH_BURNING_WORD_LABEL);
+    expect(buildTechniqueResearchBurningWordTagText('焰火')).toBe(`${TECHNIQUE_RESEARCH_BURNING_WORD_LABEL} 焰火`);
   });
 });
