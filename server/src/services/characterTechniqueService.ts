@@ -10,6 +10,7 @@ import { updateAchievementProgress } from './achievementService.js';
 import { isCharacterInBattle } from './battle/index.js';
 import { scheduleCharacterBattleLoadoutRefreshByCharacterId } from './battle/shared/profileCache.js';
 import { invalidateCharacterComputedCache } from './characterComputedService.js';
+import { scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId } from './onlineBattleProjectionService.js';
 import { getItemDefinitionById } from './staticConfigLoader.js';
 import {
   getItemMetaMap,
@@ -153,6 +154,61 @@ const reconcileEquippedSkillSlots = async (characterId: number): Promise<Reconci
     .filter((entry): entry is SkillSlotLite => Boolean(entry));
 
   return buildReconciledSkillSlots(removedSlots);
+};
+
+/**
+ * 功法变更后的战斗状态刷新入口。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：统一处理功法升级、装备、卸下后的属性缓存失效与在线战斗快照刷新。
+ * 2. 做什么：复用 `invalidateCharacterComputedCache` 内置的 battle loadout 刷新，避免多个写链路重复拼同一套刷新顺序。
+ * 3. 不做什么：不处理技能槽顺序变更；那类改动走独立的技能槽刷新入口。
+ *
+ * 输入/输出：
+ * - 输入：characterId。
+ * - 输出：Promise<void>；副作用是事务提交后让后续战斗读取到最新功法属性与技能装配。
+ *
+ * 数据流/状态流：
+ * 功法写库成功 -> 本入口 -> invalidateCharacterComputedCache
+ * -> scheduleCharacterBattleLoadoutRefreshByCharacterId
+ * -> scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId。
+ *
+ * 关键边界条件与坑点：
+ * 1. 必须先失效 computed，再刷新在线战斗快照；否则快照重建会读到旧属性或旧 loadout。
+ * 2. invalidateCharacterComputedCache 已经负责调度 battle loadout 刷新，这里不能再重复调同一层刷新。
+ */
+const refreshCharacterBattleStateAfterTechniqueMutation = async (
+  characterId: number,
+): Promise<void> => {
+  await invalidateCharacterComputedCache(characterId);
+  await scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId(characterId);
+};
+
+/**
+ * 技能槽变更后的战斗状态刷新入口。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：统一处理主动技能槽写入后的 battle loadout 刷新与在线战斗快照刷新。
+ * 2. 做什么：避免 equipSkill / unequipSkill 各自维护一套刷新调用，导致技能栏与战斗入口读取口径漂移。
+ * 3. 不做什么：不触发属性重算；技能槽顺序调整本身不改变 computed 属性。
+ *
+ * 输入/输出：
+ * - 输入：characterId。
+ * - 输出：Promise<void>；副作用是事务提交后让新战斗读取到最新技能槽顺序。
+ *
+ * 数据流/状态流：
+ * 技能槽写库成功 -> 本入口 -> scheduleCharacterBattleLoadoutRefreshByCharacterId
+ * -> scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId。
+ *
+ * 关键边界条件与坑点：
+ * 1. 这里只适用于技能槽变化；若同时影响角色属性，必须走功法刷新入口。
+ * 2. 在线战斗入口优先读取 OnlineBattleCharacterSnapshot.loadout，只刷新 loadout 但不刷新 snapshot 仍会拿到旧技能集。
+ */
+const refreshCharacterBattleStateAfterSkillSlotMutation = async (
+  characterId: number,
+): Promise<void> => {
+  await scheduleCharacterBattleLoadoutRefreshByCharacterId(characterId);
+  await scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId(characterId);
 };
 
 /**
@@ -401,7 +457,7 @@ class CharacterTechniqueService {
       'UPDATE character_technique SET current_layer = $1, updated_at = NOW() WHERE id = $2',
       [nextLayer, ctId]
     );
-    await invalidateCharacterComputedCache(characterId);
+    await refreshCharacterBattleStateAfterTechniqueMutation(characterId);
 
     await updateSectionProgress(characterId, { type: 'upgrade_technique', techniqueId, layer: nextLayer });
     await updateAchievementProgress(characterId, 'skill:level:any', 1);
@@ -513,7 +569,7 @@ class CharacterTechniqueService {
     }
     const removedSlots = await reconcileEquippedSkillSlots(characterId);
     await cleanupPersistedIdleConfigAutoSkillPolicy(characterId);
-    await invalidateCharacterComputedCache(characterId);
+    await refreshCharacterBattleStateAfterTechniqueMutation(characterId);
     return {
       success: true,
       message: buildTechniqueSwitchMessage('装备成功', removedSlots),
@@ -553,7 +609,7 @@ class CharacterTechniqueService {
     }
     const removedSlots = await reconcileEquippedSkillSlots(characterId);
     await cleanupPersistedIdleConfigAutoSkillPolicy(characterId);
-    await invalidateCharacterComputedCache(characterId);
+    await refreshCharacterBattleStateAfterTechniqueMutation(characterId);
     return {
       success: true,
       message: buildTechniqueSwitchMessage('卸下成功', removedSlots),
@@ -703,7 +759,7 @@ class CharacterTechniqueService {
       VALUES ($1, $2, $3)
       ON CONFLICT (character_id, slot_index) DO UPDATE SET skill_id = $3, updated_at = NOW()
     `, [characterId, slotIndex, skillId]);
-    await scheduleCharacterBattleLoadoutRefreshByCharacterId(characterId);
+    await refreshCharacterBattleStateAfterSkillSlotMutation(characterId);
     return { success: true, message: '装备成功' };
   }
 
@@ -723,7 +779,7 @@ class CharacterTechniqueService {
       return { success: false, message: '该槽位无技能' };
     }
 
-    await scheduleCharacterBattleLoadoutRefreshByCharacterId(characterId);
+    await refreshCharacterBattleStateAfterSkillSlotMutation(characterId);
     return { success: true, message: '卸下成功' };
   }
 

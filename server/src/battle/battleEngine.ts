@@ -344,8 +344,11 @@ export class BattleEngine {
       return { success: false, error: validation.error };
     }
     
-    // 获取技能
-    const skill = currentUnit.skills.find(s => s.id === skillId) || getNormalAttack(currentUnit);
+    // 只允许使用当前战斗快照中实际携带的技能，禁止未知技能静默回退成普攻。
+    const skill = currentUnit.skills.find(s => s.id === skillId);
+    if (!skill) {
+      return { success: false, error: `技能不存在: ${skillId}` };
+    }
     
     // 验证技能使用
     const skillValidation = validateSkillUse(this.state, currentUnit, skill, targetIds);
