@@ -27,22 +27,22 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const readSource = (relativePath: string): string => {
-  return readFileSync(new URL(relativePath, import.meta.url), 'utf8');
+    return readFileSync(new URL(relativePath, import.meta.url), 'utf8');
 };
 
 test('useItem 的普通功法书与生成功法书都应复用共享学习境界规则', () => {
-  const source = readSource('../itemService.ts');
+    const source = readSource('../itemService.ts');
 
-  assert.match(
-    source,
-    /if \(effectType === 'learn_technique'\) \{[\s\S]*shouldValidateTechniqueLearnRealm\(\{ effectType: 'learn_technique', itemDefId \}\)[\s\S]*境界不足，需要达到\$\{requiredRealm\}/u,
-  );
-  assert.match(
-    source,
-    /if \(effectType === 'learn_generated_technique'\) \{[\s\S]*shouldValidateTechniqueLearnRealm\(\{ effectType: 'learn_generated_technique', itemDefId \}\)[\s\S]*境界不足，需要达到\$\{requiredRealm\}/u,
-  );
-  assert.doesNotMatch(
-    source,
-    /if \(effectType === 'learn_generated_technique'\) \{[\s\S]*const requiredRealm = String\(techniqueDef\.required_realm \|\| ''\)\.trim\(\);\s*if \(!isRealmSufficient/u,
-  );
+    assert.match(
+        source,
+        /if \(effectType === 'learn_technique'\) \{[\s\S]*shouldValidateTechniqueLearnRealm\(\{ effectType: 'learn_technique', itemDefId \}\)[\s\S]*境界不足，需要达到\$\{requiredRealm\}/u,
+    );
+    assert.match(
+        source,
+        /if \(effectType === 'learn_generated_technique'\) \{[\s\S]*shouldValidateTechniqueLearnRealm\(\{ effectType: 'learn_generated_technique', itemDefId \}\)[\s\S]*境界不足，需要达到\$\{requiredRealm\}/u,
+    );
+    assert.doesNotMatch(
+        source,
+        /if \(effectType === 'learn_generated_technique'\) \{[\s\S]*const requiredRealm = String\(techniqueDef\.required_realm \|\| ''\)\.trim\(\);\s*if \(!isRealmSufficient/u,
+    );
 });

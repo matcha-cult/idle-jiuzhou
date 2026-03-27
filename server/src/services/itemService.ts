@@ -423,17 +423,17 @@ class ItemService {
     `,
       [instanceId, characterId],
     );
-  
+
     if (instanceResult.rows.length === 0) {
       return { success: false, message: '物品不存在' };
     }
-  
+
     const item = instanceResult.rows[0];
     const itemDefId = item.item_def_id.trim();
     if (!itemDefId) {
       return { success: false, message: '物品数据异常' };
     }
-  
+
     const itemDef = getItemDefinitionById(itemDefId);
     if (!itemDef) {
       return { success: false, message: '物品不存在' };
@@ -448,20 +448,20 @@ class ItemService {
       ? itemDef.effect_defs.filter((effect): effect is ItemUseEffect => isJsonObject(effect as JsonValue | undefined))
       : [];
     const itemUseTargetType = getItemUseTargetType(effectDefs);
-  
+
     // 检查是否可使用
     if (category === 'equipment' || category === 'material' || category === 'gem') {
       return { success: false, message: '该物品不可使用' };
     }
-  
+
     if (!useType) {
       return { success: false, message: '该物品不可使用' };
     }
-  
+
     if (item.locked) {
       return { success: false, message: '物品已锁定' };
     }
-  
+
     if ((Number(item.qty) || 0) < qty) {
       return { success: false, message: '数量不足' };
     }
@@ -472,11 +472,11 @@ class ItemService {
     ) {
       return { success: false, message: '请选择要解绑的装备' };
     }
-  
+
     const cdRound = Number(itemDef.use_cd_round) || 0;
     const cdSec = Number(itemDef.use_cd_sec) || 0;
     const effectiveCdSec = Math.max(0, cdSec, cdRound);
-  
+
     if (effectiveCdSec > 0) {
       const cdResult = await query<ItemUseCooldownRow>(
         `SELECT cooldown_until FROM item_use_cooldown WHERE character_id = $1 AND item_def_id = $2`,
@@ -503,7 +503,7 @@ class ItemService {
          FOR UPDATE`,
         [characterId, itemDefId]
       );
-  
+
       const todayStr = new Date().toISOString().slice(0, 10);
       const row = cntResult.rows[0] ?? null;
       const lastResetStr =
@@ -512,16 +512,16 @@ class ItemService {
           : String(row?.last_daily_reset ?? '');
       const dailyUsed = lastResetStr === todayStr ? Number(row?.daily_count) || 0 : 0;
       const totalUsed = Number(row?.total_count) || 0;
-  
+
       if (dailyLimit > 0 && dailyUsed + qty > dailyLimit) {
         return { success: false, message: '今日使用次数已达上限' };
       }
-  
+
       if (totalLimit > 0 && totalUsed + qty > totalLimit) {
         return { success: false, message: '使用次数已达上限' };
       }
     }
-  
+
     let deltaQixue = 0;
     let deltaLingqi = 0;
     let deltaStamina = 0;
@@ -538,11 +538,11 @@ class ItemService {
     let totalExpandSize = 0;
     let deltaSilver = 0;
     let deltaSpiritStones = 0;
-  
+
     for (const effect of effectDefs) {
       normalizedEffects.push(effect);
       if (String(effect.trigger || '') !== 'use') continue;
-  
+
       const effectType = typeof effect.effect_type === 'string' ? effect.effect_type : undefined;
       const params = asJsonObject(effect.params);
 
@@ -570,11 +570,11 @@ class ItemService {
       }
 
       if (String(effect.target || 'self') !== 'self') continue;
-  
+
       if (effectType === 'loot') {
         hasLoot = true;
         const lootType = params ? String(params.loot_type || '') : '';
-  
+
         if (lootType === 'currency') {
           const currency = params ? String(params.currency || '') : '';
           const amount = rollItemUseAmount({
@@ -620,7 +620,7 @@ class ItemService {
           const maxLevel = Math.max(minLevel, toPositiveInt(params?.max_level, 3));
           const gemsPerUse = toPositiveInt(params?.gems_per_use, 1);
           const rollCount = qty * gemsPerUse;
-  
+
           const subCategorySet = new Set(subCategories);
           const gemIds = getItemDefinitions()
             .filter((entry) => {
@@ -633,18 +633,18 @@ class ItemService {
             })
             .map((entry) => String(entry.id || '').trim())
             .filter((id): id is string => id.length > 0);
-  
+
           if (gemIds.length === 0) {
             return { success: false, message: '宝石袋配置异常：没有可掉落宝石' };
           }
-  
+
           const rolledGemCounts = new Map<string, number>();
           for (let i = 0; i < rollCount; i += 1) {
             const rolledGemId = gemIds[Math.floor(Math.random() * gemIds.length)];
             if (!rolledGemId) continue;
             rolledGemCounts.set(rolledGemId, (rolledGemCounts.get(rolledGemId) ?? 0) + 1);
           }
-  
+
           for (const [rolledGemId, rolledQty] of rolledGemCounts.entries()) {
             if (rolledQty <= 0) continue;
             lootItemsToAdd.push({ itemDefId: rolledGemId, qty: rolledQty });
@@ -652,24 +652,24 @@ class ItemService {
         }
         continue;
       }
-  
+
       if (effectType === 'expand') {
         const expandType = params ? String(params.expand_type || '') : '';
         if (expandType !== 'bag') {
           return { success: false, message: '该道具暂不支持当前扩容类型' };
         }
-  
+
         const valueRaw = asFiniteNumber(params?.value) ?? Number.NaN;
         const expandValue = Number.isInteger(valueRaw) ? valueRaw : Math.floor(valueRaw);
         if (!Number.isInteger(expandValue) || expandValue <= 0) {
           return { success: false, message: '扩容道具配置错误' };
         }
-  
+
         totalExpandSize += expandValue * qty;
         hasExpandEffect = true;
         continue;
       }
-  
+
       if (effectType === 'learn_technique') {
         const techniqueId =
           resolvedTechniqueBook?.effectType === 'learn_technique'
@@ -700,7 +700,7 @@ class ItemService {
           });
           continue;
         }
-  
+
         const techniqueDef = getTechniqueDefinitions().find((entry) => (
           entry.id === techniqueId &&
           entry.enabled !== false &&
@@ -709,7 +709,7 @@ class ItemService {
         if (!techniqueDef) {
           return { success: false, message: '目标功法不存在或未开放' };
         }
-  
+
         const requiredRealm = String(techniqueDef.required_realm || '').trim();
         if (
           shouldValidateTechniqueLearnRealm({ effectType: 'learn_technique', itemDefId }) &&
@@ -717,7 +717,7 @@ class ItemService {
         ) {
           return { success: false, message: `境界不足，需要达到${requiredRealm}` };
         }
-  
+
         const existsRes = await query(
           'SELECT 1 FROM character_technique WHERE character_id = $1 AND technique_id = $2 LIMIT 1',
           [characterId, techniqueId]
@@ -725,7 +725,7 @@ class ItemService {
         if (existsRes.rows.length > 0) {
           return { success: false, message: '已学习该功法' };
         }
-  
+
         await query(
           `INSERT INTO character_technique (
             character_id, technique_id, current_layer, obtained_from, obtained_ref_id, acquired_at
@@ -833,7 +833,7 @@ class ItemService {
       deltaStamina += resourceDelta.stamina;
       deltaExp += resourceDelta.exp;
     }
-  
+
     if (
       deltaQixue === 0 &&
       deltaLingqi === 0 &&
@@ -847,18 +847,18 @@ class ItemService {
     ) {
       return { success: false, message: '该物品暂不支持使用效果' };
     }
-  
+
     if (hasExpandEffect) {
       const expandResult = await expandInventory(characterId, 'bag', totalExpandSize);
       if (!expandResult.success) {
         return { success: false, message: expandResult.message };
       }
     }
-  
+
     const setClauses = ['updated_at = NOW()'];
     const setValues: number[] = [characterId];
     let paramIdx = 2;
-  
+
     if (deltaExp !== 0) {
       setClauses.push(`exp = exp + $${paramIdx}`);
       setValues.push(deltaExp);
@@ -874,12 +874,12 @@ class ItemService {
       setValues.push(deltaSpiritStones);
       paramIdx++;
     }
-  
+
     const updatedCharResult = await query(
       `UPDATE characters SET ${setClauses.join(', ')} WHERE id = $1 RETURNING id`,
       setValues
     );
-  
+
     for (const lootItem of lootItemsToAdd) {
       const addRes = await addItemToInventory(characterId, userId, lootItem.itemDefId, lootItem.qty, {
         location: 'bag',
@@ -891,7 +891,7 @@ class ItemService {
       const itemName = getItemDefinitionById(lootItem.itemDefId)?.name || lootItem.itemDefId;
       lootResults.push({ type: 'item', name: itemName, amount: lootItem.qty });
     }
-  
+
     if (effectiveCdSec > 0) {
       await query(
         `
@@ -903,7 +903,7 @@ class ItemService {
         [characterId, itemDefId, Math.floor(effectiveCdSec)]
       );
     }
-  
+
     if (dailyLimit > 0 || totalLimit > 0) {
       await query(
         `
@@ -922,7 +922,7 @@ class ItemService {
         [characterId, itemDefId, qty]
       );
     }
-  
+
     // 扣除物品
     if ((Number(item.qty) || 0) === qty) {
       await query('DELETE FROM item_instance WHERE id = $1', [instanceId]);
