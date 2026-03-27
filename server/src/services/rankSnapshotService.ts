@@ -21,7 +21,7 @@
 import { query } from '../config/database.js';
 import type { CharacterComputedRow } from './characterComputedService.js';
 import { getRealmRankZeroBased } from './shared/realmRules.js';
-import { computeRankPower, normalizeRankPowerStat } from './shared/rankPower.js';
+import { computeRankPower, normalizeRankPowerStat, type RankPowerSource } from './shared/rankPower.js';
 
 export interface CharacterRankSnapshotRow {
   characterId: number;
@@ -38,18 +38,11 @@ export interface CharacterRankSnapshotRow {
   sudu: number;
 }
 
-export interface CharacterRankSnapshotSource {
+export interface CharacterRankSnapshotSource extends RankPowerSource {
   id: number;
   nickname: string;
   realm: string;
   sub_realm: string | null;
-  wugong?: number | null;
-  fagong?: number | null;
-  wufang?: number | null;
-  fafang?: number | null;
-  max_qixue?: number | null;
-  max_lingqi?: number | null;
-  sudu?: number | null;
 }
 
 const normalizeCharacterId = (characterId: number): number => {
@@ -75,15 +68,7 @@ export const buildCharacterRankSnapshotRow = (
     nickname: String(computedRow.nickname ?? '').trim(),
     realm,
     realmRank: getRealmRankZeroBased(computedRow.realm, computedRow.sub_realm),
-    power: computeRankPower({
-      wugong,
-      fagong,
-      wufang,
-      fafang,
-      max_qixue: maxQixue,
-      max_lingqi: maxLingqi,
-      sudu,
-    }),
+    power: computeRankPower(computedRow),
     wugong,
     fagong,
     wufang,
