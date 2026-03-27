@@ -2,20 +2,21 @@
  * 伙伴弹窗共享常量与纯函数。
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：集中维护伙伴面板枚举、属性展示顺序、技能结果文案与技能策略重排规则，供总览/升级/功法/技能策略面板复用。
+ * 1. 做什么：集中维护伙伴面板枚举、状态标签规则、属性展示顺序、技能结果文案与技能策略重排规则，供总览/升级/功法/技能策略面板复用。
  * 2. 做什么：把高频变化的展示规则从组件 JSX 中抽离，减少重复 map/label 判断。
  * 3. 不做什么：不发请求、不持有状态，也不处理弹窗生命周期。
  *
  * 输入/输出：
  * - 输入：伙伴 DTO、属性键值、功法学习结果。
- * - 输出：可直接渲染的标签、文案和图标地址。
+ * - 输出：可直接渲染的标签描述、文案和图标地址。
  *
  * 数据流/状态流：
  * partner api DTO -> 本文件格式化/映射/重排 -> PartnerModal UI。
  *
  * 关键边界条件与坑点：
- * 1. 百分比属性与数值属性的格式化规则必须集中，否则总览和功法面板容易出现显示不一致。
- * 2. 技能策略的“顺序即优先级”必须只在这里重排一次，避免前端多个入口各自改 priority 导致提交口径漂移。
+ * 1. 伙伴状态标签必须按统一优先级输出，否则“坊市中/待命中/归契中”会在列表卡片和详情卡片里出现顺序漂移。
+ * 2. 百分比属性与数值属性的格式化规则必须集中，否则总览和功法面板容易出现显示不一致。
+ * 3. 技能策略的“顺序即优先级”必须只在这里重排一次，避免前端多个入口各自改 priority 导致提交口径漂移。
  */
 
 import type {
@@ -65,6 +66,83 @@ export const PARTNER_GROWTH_ATTRS: Array<keyof PartnerDetailDto['growth']> = [
   'fafang',
   'sudu',
 ];
+
+export type PartnerStatusTagKey = 'market_listed' | 'active' | 'idle' | 'fusion_locked';
+type PartnerStatusTagVariant = 'list' | 'summary';
+type PartnerStatusTagLabelKey = 'listLabel' | 'summaryLabel';
+
+export type PartnerStatusTagDescriptor = {
+  key: PartnerStatusTagKey;
+  color: 'default' | 'green' | 'orange' | 'magenta';
+  label: string;
+};
+
+const PARTNER_STATUS_TAG_META: Record<PartnerStatusTagKey, {
+  color: PartnerStatusTagDescriptor['color'];
+  listLabel: string;
+  summaryLabel: string;
+}> = {
+  market_listed: {
+    color: 'orange',
+    listLabel: '坊市中',
+    summaryLabel: '坊市中',
+  },
+  active: {
+    color: 'green',
+    listLabel: '已出战',
+    summaryLabel: '当前出战',
+  },
+  idle: {
+    color: 'default',
+    listLabel: '待命中',
+    summaryLabel: '未出战',
+  },
+  fusion_locked: {
+    color: 'magenta',
+    listLabel: '归契中',
+    summaryLabel: '归契中',
+  },
+};
+
+const appendPartnerStatusTag = (
+  tags: PartnerStatusTagDescriptor[],
+  key: PartnerStatusTagKey,
+  labelKey: PartnerStatusTagLabelKey,
+): void => {
+  const meta = PARTNER_STATUS_TAG_META[key];
+  tags.push({
+    key,
+    color: meta.color,
+    label: meta[labelKey],
+  });
+};
+
+export const resolvePartnerStatusTagDescriptors = (
+  partner: Pick<PartnerDetailDto, 'isActive' | 'tradeStatus' | 'fusionStatus'>,
+  variant: PartnerStatusTagVariant,
+): PartnerStatusTagDescriptor[] => {
+  const labelKey: PartnerStatusTagLabelKey = variant === 'list' ? 'listLabel' : 'summaryLabel';
+  const tags: PartnerStatusTagDescriptor[] = [];
+  const isMarketListed = partner.tradeStatus === 'market_listed';
+  const isFusionLocked = partner.fusionStatus === 'fusion_locked';
+  const hasBlockingStatus = isMarketListed || isFusionLocked;
+
+  if (isMarketListed) {
+    appendPartnerStatusTag(tags, 'market_listed', labelKey);
+  }
+
+  if (isFusionLocked) {
+    appendPartnerStatusTag(tags, 'fusion_locked', labelKey);
+  }
+
+  if (partner.isActive) {
+    appendPartnerStatusTag(tags, 'active', labelKey);
+  } else if (!hasBlockingStatus) {
+    appendPartnerStatusTag(tags, 'idle', labelKey);
+  }
+
+  return tags;
+};
 
 export const resolvePartnerActionLabel = (isActive: boolean): string => {
   return isActive ? '下阵' : '设为出战';

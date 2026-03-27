@@ -1,21 +1,22 @@
 /**
- * 伙伴面板出战动作与选中回退规则测试
+ * 伙伴面板出战动作、状态标签与选中回退规则测试
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：锁定伙伴面板“设为出战 / 下阵”文案规则，以及无出战伙伴时的默认选中回退逻辑。
- * 2. 做什么：把高频 UI 判断收敛到共享纯函数，避免按钮文案和选中逻辑散在组件 JSX 与 effect 中。
+ * 1. 做什么：锁定伙伴面板“设为出战 / 下阵”文案规则、状态标签优先级，以及无出战伙伴时的默认选中回退逻辑。
+ * 2. 做什么：把高频 UI 判断收敛到共享纯函数，避免按钮文案、状态标签和选中逻辑散在组件 JSX 与 effect 中。
  * 3. 不做什么：不渲染真实弹窗、不发请求，也不覆盖伙伴升级、功法或招募链路。
  *
  * 输入/输出：
- * - 输入：伙伴是否出战、伙伴总览 DTO 片段、当前选中伙伴 ID。
- * - 输出：伙伴操作文案，以及伙伴弹窗下一次应选中的伙伴 ID。
+ * - 输入：伙伴是否出战、上架/归契状态、伙伴总览 DTO 片段、当前选中伙伴 ID。
+ * - 输出：伙伴操作文案、状态标签描述，以及伙伴弹窗下一次应选中的伙伴 ID。
  *
  * 数据流/状态流：
- * partner overview DTO -> partnerShared 纯函数 -> PartnerModal 按钮文案 / 选中伙伴状态。
+ * partner overview DTO -> partnerShared 纯函数 -> PartnerModal 按钮文案 / 状态标签 / 选中伙伴状态。
  *
  * 关键边界条件与坑点：
- * 1. 当前没有出战伙伴时，不能因为 `activePartnerId = null` 就让弹窗落到空详情，必须回退到第一个伙伴。
- * 2. 当前已选中的伙伴仍然存在时，不应因为总览刷新而强制跳走，否则玩家查看详情会频繁丢焦点。
+ * 1. 坊市中或归契中的伙伴都不能继续展示“待命中/未出战”，否则会和“当前不可出战”的业务语义冲突。
+ * 2. 当前没有出战伙伴时，不能因为 `activePartnerId = null` 就让弹窗落到空详情，必须回退到第一个伙伴。
+ * 3. 当前已选中的伙伴仍然存在时，不应因为总览刷新而强制跳走，否则玩家查看详情会频繁丢焦点。
  */
 
 import { describe, expect, it } from 'vitest';
@@ -23,20 +24,25 @@ import type { PartnerDetailDto, PartnerOverviewDto } from '../../../../services/
 import {
   resolvePartnerActionLabel,
   resolvePartnerNextSelectedId,
+  resolvePartnerStatusTagDescriptors,
 } from '../PartnerModal/partnerShared';
 
 const createPartner = (params: {
   id: number;
   isActive: boolean;
   name: string;
+  tradeStatus?: PartnerDetailDto['tradeStatus'];
+  fusionStatus?: PartnerDetailDto['fusionStatus'];
 }): PartnerDetailDto => ({
   id: params.id,
   partnerDefId: `partner-${params.id}`,
   nickname: params.name,
   name: params.name,
   description: `${params.name} 描述`,
-  tradeStatus: 'none',
+  tradeStatus: params.tradeStatus ?? 'none',
   marketListingId: null,
+  fusionStatus: params.fusionStatus ?? 'none',
+  fusionJobId: null,
   avatar: null,
   element: 'mu',
   role: '剑修',
@@ -139,6 +145,42 @@ describe('partnerShared 出战动作', () => {
 
   it('当前出战伙伴应显示下阵', () => {
     expect(resolvePartnerActionLabel(true)).toBe('下阵');
+  });
+});
+
+describe('resolvePartnerStatusTagDescriptors', () => {
+  it('坊市中的伙伴应把坊市中排到最前，且不再显示待命中', () => {
+    expect(resolvePartnerStatusTagDescriptors(createPartner({
+      id: 31,
+      isActive: false,
+      name: '青萝',
+      tradeStatus: 'market_listed',
+      fusionStatus: 'fusion_locked',
+    }), 'list')).toEqual([
+      { key: 'market_listed', color: 'orange', label: '坊市中' },
+      { key: 'fusion_locked', color: 'magenta', label: '归契中' },
+    ]);
+  });
+
+  it('归契中的伙伴应把归契中排到最前，且不再显示未出战标签', () => {
+    expect(resolvePartnerStatusTagDescriptors(createPartner({
+      id: 33,
+      isActive: false,
+      name: '墨麟',
+      fusionStatus: 'fusion_locked',
+    }), 'summary')).toEqual([
+      { key: 'fusion_locked', color: 'magenta', label: '归契中' },
+    ]);
+  });
+
+  it('详情卡片应沿用统一状态顺序，但保留当前出战文案', () => {
+    expect(resolvePartnerStatusTagDescriptors(createPartner({
+      id: 32,
+      isActive: true,
+      name: '玄槐',
+    }), 'summary')).toEqual([
+      { key: 'active', color: 'green', label: '当前出战' },
+    ]);
   });
 });
 

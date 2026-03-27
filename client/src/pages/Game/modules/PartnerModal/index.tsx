@@ -70,6 +70,7 @@ import {
   resolvePartnerAvatar,
   resolvePartnerBookLabel,
   resolvePartnerNextSelectedId,
+  resolvePartnerStatusTagDescriptors,
   togglePartnerSkillPolicyEntry,
   type PartnerPanelKey,
 } from './partnerShared';
@@ -907,54 +908,57 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
           <Tag color="blue">角色可灌注经验 {characterExp.toLocaleString()}</Tag>
         </div>
         <div className="partner-list">
-          {overview.partners.map((partner) => (
-            <div
-              key={partner.id}
-              className={`partner-list-item${selectedPartnerId === partner.id ? ' is-selected' : ''}${partner.isActive ? ' is-active' : ''}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelectedPartnerId(partner.id)}
-              onKeyDown={(event) => {
-                if (event.currentTarget !== event.target) return;
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
-                setSelectedPartnerId(partner.id);
-              }}
-            >
-              <img className="partner-list-thumb" src={resolvePartnerAvatar(partner.avatar)} alt={partner.name} />
-              <div className="partner-list-main">
-                <div className="partner-list-info">
-                  <div className="partner-list-name">{getPartnerDisplayName(partner)}</div>
-                  <div className="partner-list-desc">
-                    {formatPartnerLevelSummary(partner)} · <span className={getElementTextClassName(partner.element)}>{formatPartnerElementLabel(partner.element)}</span> · {partner.role}
+          {overview.partners.map((partner) => {
+            const statusTags = resolvePartnerStatusTagDescriptors(partner, 'list');
+            return (
+              <div
+                key={partner.id}
+                className={`partner-list-item${selectedPartnerId === partner.id ? ' is-selected' : ''}${partner.isActive ? ' is-active' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedPartnerId(partner.id)}
+                onKeyDown={(event) => {
+                  if (event.currentTarget !== event.target) return;
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  setSelectedPartnerId(partner.id);
+                }}
+              >
+                <img className="partner-list-thumb" src={resolvePartnerAvatar(partner.avatar)} alt={partner.name} />
+                <div className="partner-list-main">
+                  <div className="partner-list-info">
+                    <div className="partner-list-name">{getPartnerDisplayName(partner)}</div>
+                    <div className="partner-list-desc">
+                      {formatPartnerLevelSummary(partner)} · <span className={getElementTextClassName(partner.element)}>{formatPartnerElementLabel(partner.element)}</span> · {partner.role}
+                    </div>
+                    <div className="partner-tag-row">
+                      {statusTags.map((tag) => (
+                        <Tag key={tag.key} color={tag.color}>{tag.label}</Tag>
+                      ))}
+                      <Tag className={getItemQualityTagClassName(partner.quality)}>{partner.quality}</Tag>
+                    </div>
                   </div>
-                  <div className="partner-tag-row">
-                    <Tag color={partner.isActive ? 'green' : 'default'}>{partner.isActive ? '已出战' : '待命中'}</Tag>
-                    <Tag className={getItemQualityTagClassName(partner.quality)}>{partner.quality}</Tag>
-                    {partner.tradeStatus === 'market_listed' ? <Tag color="orange">坊市中</Tag> : null}
-                    {partner.fusionStatus === 'fusion_locked' ? <Tag color="magenta">归契中</Tag> : null}
+                  <div className="partner-action-row partner-list-action-row">
+                    <Button
+                      type={partner.isActive ? 'default' : 'primary'}
+                      loading={actionKey === `${partner.isActive ? 'dismiss' : 'activate'}-${partner.id}`}
+                      disabled={partner.tradeStatus === 'market_listed' || partner.fusionStatus === 'fusion_locked'}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (partner.isActive) {
+                          void handleDismiss(partner.id);
+                          return;
+                        }
+                        void handleActivate(partner.id);
+                      }}
+                    >
+                      {resolvePartnerActionLabel(partner.isActive)}
+                    </Button>
                   </div>
-                </div>
-                <div className="partner-action-row partner-list-action-row">
-                  <Button
-                    type={partner.isActive ? 'default' : 'primary'}
-                    loading={actionKey === `${partner.isActive ? 'dismiss' : 'activate'}-${partner.id}`}
-                    disabled={partner.tradeStatus === 'market_listed' || partner.fusionStatus === 'fusion_locked'}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (partner.isActive) {
-                        void handleDismiss(partner.id);
-                        return;
-                      }
-                      void handleActivate(partner.id);
-                    }}
-                  >
-                    {resolvePartnerActionLabel(partner.isActive)}
-                  </Button>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
@@ -990,7 +994,9 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
               </button>
             </div>
             <div className="partner-tag-row">
-              <Tag color={selectedPartner.isActive ? 'green' : 'default'}>{selectedPartner.isActive ? '当前出战' : '未出战'}</Tag>
+              {resolvePartnerStatusTagDescriptors(selectedPartner, 'summary').map((tag) => (
+                <Tag key={tag.key} color={tag.color}>{tag.label}</Tag>
+              ))}
               <Tag color="blue">等级 {selectedPartner.level}</Tag>
               {hasPartnerLevelLimitApplied(selectedPartner) ? (
                 <Tag color="red">生效等级 {selectedPartner.currentEffectiveLevel}</Tag>
@@ -999,8 +1005,6 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
               <Tag className={getElementToneClassName(selectedPartner.element)}>{formatPartnerElementLabel(selectedPartner.element)}</Tag>
               <Tag color="cyan">{selectedPartner.role}</Tag>
               <Tag color="purple">功法槽 {selectedPartner.slotCount}</Tag>
-              {selectedPartner.tradeStatus === 'market_listed' ? <Tag color="orange">坊市中</Tag> : null}
-              {selectedPartner.fusionStatus === 'fusion_locked' ? <Tag color="magenta">归契中</Tag> : null}
             </div>
             {selectedPartner.description ? (
               <div className="partner-meta">{selectedPartner.description}</div>
