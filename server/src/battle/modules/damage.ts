@@ -5,6 +5,7 @@
 import type { BattleState, BattleUnit, DamageResult } from '../types.js';
 import { BATTLE_CONSTANTS } from '../types.js';
 import { rollChance } from '../utils/random.js';
+import { consumeNextDodgeBuff } from './buff.js';
 import { calculateDefenseReductionRate } from './defense.js';
 import { getVoidErosionDamageBonusRate } from './mark.js';
 
@@ -50,13 +51,19 @@ export function calculateDamage(
   let damage = Math.max(0, profile.baseDamage);
   if (damage <= 0) return result;
 
+  // 1.5 “下一次闪避”优先于基础命中公式结算，避免被普通闪避率差值稀释。
+  if (consumeNextDodgeBuff(defender)) {
+    result.isMiss = true;
+    return result;
+  }
+
   // 2. 命中判定
   const hitRate = clamp(
     attacker.currentAttrs.mingzhong - defender.currentAttrs.shanbi,
     BATTLE_CONSTANTS.MIN_HIT_RATE,
     BATTLE_CONSTANTS.MAX_HIT_RATE
   );
-  
+
   if (!rollChance(state, hitRate)) {
     result.isMiss = true;
     return result;
@@ -81,7 +88,7 @@ export function calculateDamage(
     0,
     BATTLE_CONSTANTS.MAX_CRIT_RATE
   );
-  
+
   if (rollChance(state, critRate)) {
     result.isCrit = true;
     const critDamageMultiplier = calculateCritDamageMultiplier(attacker, defender);
@@ -111,7 +118,7 @@ export function calculateDamage(
 
   // 最终伤害取整，最低1点
   result.damage = Math.floor(Math.max(1, damage));
-  
+
   return result;
 }
 
@@ -129,20 +136,20 @@ export function applyDamage(
 
   // 按优先级处理护盾
   const sortedShields = [...target.shields].sort((a, b) => b.priority - a.priority);
-  
+
   for (const shield of sortedShields) {
     if (remainingDamage <= 0) break;
-    
+
     // 检查护盾类型是否匹配
     if (shield.absorbType !== 'all' && shield.absorbType !== damageType) {
       continue;
     }
-    
+
     const absorbed = Math.min(shield.value, remainingDamage);
     shield.value -= absorbed;
     remainingDamage -= absorbed;
     totalAbsorbed += absorbed;
-    
+
     // 移除耗尽的护盾
     if (shield.value <= 0) {
       target.shields = target.shields.filter(s => s.id !== shield.id);
@@ -152,10 +159,10 @@ export function applyDamage(
   // 扣除气血
   const actualDamage = Math.min(remainingDamage, target.qixue);
   target.qixue -= actualDamage;
-  
+
   // 更新统计
   target.stats.damageTaken += actualDamage;
-  
+
   // 检查死亡
   if (target.qixue <= 0) {
     target.qixue = 0;
@@ -180,7 +187,7 @@ function isElementCounter(attackElement?: string, defendElement?: string): boole
  */
 function getElementResistance(unit: BattleUnit, element?: string): number {
   if (!element || element === 'none') return 0;
-  
+
   const resistanceMap: Record<string, keyof typeof unit.currentAttrs> = {
     'jin': 'jin_kangxing',
     'mu': 'mu_kangxing',
@@ -188,7 +195,7 @@ function getElementResistance(unit: BattleUnit, element?: string): number {
     'huo': 'huo_kangxing',
     'tu': 'tu_kangxing',
   };
-  
+
   const key = resistanceMap[element];
   return key ? (unit.currentAttrs[key] as number) || 0 : 0;
 }

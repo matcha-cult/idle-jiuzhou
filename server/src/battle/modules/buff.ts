@@ -74,6 +74,10 @@ function calculateBuffStrengthScore(buff: ActiveBuff): number {
     score += Math.abs(buff.delayedBurst.damage);
   }
 
+  if (buff.dodgeNext) {
+    score += Math.max(1, buff.stacks);
+  }
+
   if (buff.nextSkillBonus) {
     score += Math.abs(buff.nextSkillBonus.rate);
   }
@@ -167,10 +171,10 @@ export function addBuff(
 ): { added: boolean; refreshed: boolean } {
   // 查找已存在的同ID Buff
   const existingIndex = unit.buffs.findIndex(b => b.buffDefId === buff.buffDefId);
-  
+
   if (existingIndex >= 0) {
     const existing = unit.buffs[existingIndex];
-    
+
     // 刷新持续时间
     existing.remainingDuration = Math.max(existing.remainingDuration, duration);
 
@@ -184,6 +188,7 @@ export function addBuff(
     existing.hot = buff.hot;
     existing.reflectDamage = buff.reflectDamage;
     existing.delayedBurst = buff.delayedBurst;
+    existing.dodgeNext = buff.dodgeNext;
     existing.nextSkillBonus = buff.nextSkillBonus;
     existing.healForbidden = buff.healForbidden;
     existing.aura = buff.aura;
@@ -199,22 +204,22 @@ export function addBuff(
     }
 
     recalculateUnitAttrs(unit);
-    
+
     return { added: false, refreshed: true };
   }
-  
+
   // 添加新Buff
   const newBuff: ActiveBuff = {
     ...buff,
     remainingDuration: duration,
     stacks: Math.min(stacks, buff.maxStacks),
   };
-  
+
   unit.buffs.push(newBuff);
-  
+
   // 重新计算属性
   recalculateUnitAttrs(unit);
-  
+
   return { added: true, refreshed: false };
 }
 
@@ -224,11 +229,56 @@ export function addBuff(
 export function removeBuff(unit: BattleUnit, buffId: string): boolean {
   const index = unit.buffs.findIndex(b => b.id === buffId);
   if (index < 0) return false;
-  
+
   unit.buffs.splice(index, 1);
   recalculateUnitAttrs(unit);
-  
+
   return true;
+}
+
+function resolveNextDodgeBuffScore(buff: ActiveBuff): number {
+  const finiteDuration = buff.remainingDuration === -1 ? Number.MAX_SAFE_INTEGER : buff.remainingDuration;
+  return finiteDuration * 1000 + Math.max(1, buff.stacks);
+}
+
+/**
+ * 消耗“下一次闪避”类 Buff。
+ *
+ * 作用：
+ * 1. 统一管理一次性闪避 Buff 的查找、减层与移除，避免伤害模块直接操作 buffs 数组。
+ * 2. 优先消耗更早过期的 Buff，减少长时效 Buff 被短时效 Buff 抢先吞掉。
+ *
+ * 输入/输出：
+ * - 输入：受击方 BattleUnit。
+ * - 输出：是否成功消费到一个下一次闪避效果。
+ *
+ * 数据流：
+ * - damage.ts 在直接伤害命中判定前调用本函数。
+ * - 命中前若消费成功，则本次直接判定 miss，并同步更新 Buff 层数/属性快照。
+ *
+ * 关键边界条件与坑点：
+ * 1. stacks > 1 时只能减 1 层，不能整条 Buff 一次删掉，否则升级后的“双闪”会被错误吃光。
+ * 2. 这里只处理显式 dodgeNext 运行时效果；DOT/HOT/反伤等不经过命中判定的伤害不应误触发。
+ */
+export function consumeNextDodgeBuff(unit: BattleUnit): boolean {
+  let selectedBuff: ActiveBuff | null = null;
+
+  for (const buff of unit.buffs) {
+    if (!buff.dodgeNext) continue;
+    if (!selectedBuff || resolveNextDodgeBuffScore(buff) < resolveNextDodgeBuffScore(selectedBuff)) {
+      selectedBuff = buff;
+    }
+  }
+
+  if (!selectedBuff) return false;
+
+  if (selectedBuff.stacks > 1) {
+    selectedBuff.stacks -= 1;
+    recalculateUnitAttrs(unit);
+    return true;
+  }
+
+  return removeBuff(unit, selectedBuff.id);
 }
 
 /**
@@ -248,7 +298,7 @@ export function addShield(
     id: `shield-${sourceSkillId}-${Date.now()}-${unit.shields.length}`,
     sourceSkillId,
   };
-  
+
   unit.shields.push(newShield);
 }
 
@@ -261,7 +311,7 @@ export function processRoundStartEffects(
 ): BattleLogEntry[] {
   const logs: BattleLogEntry[] = [];
   const effectiveBuffs = collectEffectiveBuffs(unit.buffs);
-  
+
   for (const buff of effectiveBuffs) {
     if (buff.delayedBurst) {
       if (buff.delayedBurst.remainingRounds > 1) {
@@ -284,7 +334,7 @@ export function processRoundStartEffects(
     if (buff.dot) {
       const dotDamage = calculateDotDamage(buff.dot, unit);
       const { actualDamage } = applyDamage(state, unit, dotDamage, buff.dot.damageType);
-      
+
       logs.push({
         type: 'dot',
         round: state.roundCount,
@@ -293,7 +343,7 @@ export function processRoundStartEffects(
         buffName: buff.name,
         damage: actualDamage,
       });
-      
+
       // 检查死亡
       if (!unit.isAlive) {
         logs.push({
@@ -304,12 +354,12 @@ export function processRoundStartEffects(
         });
       }
     }
-    
+
     // HOT治疗
     if (buff.hot && unit.isAlive && !isHealingForbidden(unit)) {
       const hotHeal = calculateHotHeal(buff.hot, unit);
       const actualHeal = applyHealing(unit, hotHeal);
-      
+
       if (actualHeal > 0) {
         logs.push({
           type: 'hot',
@@ -330,7 +380,7 @@ export function processRoundStartEffects(
       }
     }
   }
-  
+
   return logs;
 }
 
@@ -342,7 +392,7 @@ export function processRoundEndBuffs(
   unit: BattleUnit
 ): BattleLogEntry[] {
   const logs: BattleLogEntry[] = [];
-  
+
   // Buff持续时间递减（remainingDuration === -1 为永久 buff，如光环，跳过递减）
   unit.buffs = unit.buffs.filter(buff => {
     if (buff.remainingDuration === -1) return true;
@@ -360,17 +410,17 @@ export function processRoundEndBuffs(
     }
     return true;
   });
-  
+
   // 护盾持续时间递减
   unit.shields = unit.shields.filter(shield => {
     if (shield.duration === -1) return true;  // 永久护盾
     shield.duration--;
     return shield.duration > 0;
   });
-  
+
   // 重新计算属性
   recalculateUnitAttrs(unit);
-  
+
   return logs;
 }
 
@@ -384,12 +434,12 @@ function calculateDotDamage(dot: DotEffect, target: BattleUnit): number {
   if (dot.bonusTargetMaxQixueRate && dot.bonusTargetMaxQixueRate > 0) {
     damage += target.currentAttrs.max_qixue * dot.bonusTargetMaxQixueRate;
   }
-  
+
   if (dot.element && dot.element !== 'none') {
     const resistance = getElementResistanceForDot(target, dot.element);
     damage *= (1 - resistance);
   }
-  
+
   return Math.floor(Math.max(1, damage));
 }
 
@@ -398,11 +448,11 @@ function calculateDotDamage(dot: DotEffect, target: BattleUnit): number {
  */
 function calculateHotHeal(hot: HotEffect, target: BattleUnit): number {
   let heal = hot.heal;
-  
+
   // 受减疗影响
   const healReduction = Math.min(target.currentAttrs.jianliao, BATTLE_CONSTANTS.MAX_HEAL_REDUCTION);
   heal *= (1 - healReduction);
-  
+
   return Math.floor(Math.max(1, heal));
 }
 
@@ -643,21 +693,21 @@ function recalculateUnitAttrs(unit: BattleUnit): void {
   // 从基础属性开始
   unit.currentAttrs = { ...unit.baseAttrs };
   const effectiveBuffs = collectEffectiveBuffs(unit.buffs);
-  
+
   // 收集所有属性修正
   const flatMods: Partial<Record<keyof BattleAttrs, number>> = {};
   const percentMods: Partial<Record<keyof BattleAttrs, number>> = {};
-  
+
   for (const buff of effectiveBuffs) {
     if (!buff.attrModifiers) continue;
-    
+
     for (const mod of buff.attrModifiers) {
       const attr = mod.attr as keyof BattleAttrs;
       // 跳过非数值属性（realm、element 等字符串字段）
       if (typeof unit.currentAttrs[attr] !== 'number') continue;
 
       const value = mod.value * buff.stacks;
-      
+
       if (mod.mode === 'flat') {
         flatMods[attr] = ((flatMods[attr] ?? 0)) + value;
       } else {
@@ -665,7 +715,7 @@ function recalculateUnitAttrs(unit: BattleUnit): void {
       }
     }
   }
-  
+
   // 应用固定值修正
   for (const [attr, value] of Object.entries(flatMods) as [string, number][]) {
     const key = attr as keyof BattleAttrs;
@@ -673,7 +723,7 @@ function recalculateUnitAttrs(unit: BattleUnit): void {
       (unit.currentAttrs[key] as number) += value;
     }
   }
-  
+
   // 应用百分比修正
   for (const [attr, value] of Object.entries(percentMods) as [string, number][]) {
     const key = attr as keyof BattleAttrs;
@@ -684,7 +734,7 @@ function recalculateUnitAttrs(unit: BattleUnit): void {
         : Math.floor(nextValue);
     }
   }
-  
+
   // 确保属性不为负
   unit.currentAttrs.max_qixue = Math.max(1, unit.currentAttrs.max_qixue);
   unit.currentAttrs.wugong = Math.max(0, unit.currentAttrs.wugong);
@@ -705,7 +755,7 @@ function getElementResistanceForDot(unit: BattleUnit, element: string): number {
     'huo': 'huo_kangxing',
     'tu': 'tu_kangxing',
   };
-  
+
   const key = resistanceMap[element];
   return key ? (unit.currentAttrs[key] as number) || 0 : 0;
 }

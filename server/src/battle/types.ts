@@ -46,26 +46,26 @@ export interface BattleUnit {
   sourceId: number | string;  // 原始数据ID（角色ID/怪物定义ID）
   monthCardActive?: boolean;
   avatar?: string | null;
-  
+
   // 基础属性快照（战斗开始时从数据库读取）
   baseAttrs: BattleAttrs;
   // 当前属性（含Buff修正）
   currentAttrs: BattleAttrs;
-  
+
   // 当前状态
   qixue: number;
   lingqi: number;
-  
+
   // 护盾
   shields: Shield[];
-  
+
   // Buff/Debuff
   buffs: ActiveBuff[];
   // 战斗印记（如：虚蚀印记）
   marks?: ActiveMark[];
   // 战斗势能（施法者侧连招资源）
   momentum?: ActiveMomentum | null;
-  
+
   // 技能与冷却
   skills: BattleSkill[];
   skillCooldowns: Record<string, number>;
@@ -84,14 +84,14 @@ export interface BattleUnit {
   // 召唤关系（用于结算口径）
   isSummon?: boolean;
   summonerId?: string;
-  
+
   // 控制递减（PVP用）
   controlDiminishing: Record<string, ControlDiminishing>;
-  
+
   // 状态
   isAlive: boolean;
   canAct: boolean;
-  
+
   // 战斗统计
   stats: BattleStats;
 }
@@ -183,16 +183,17 @@ export interface ActiveBuff {
   type: 'buff' | 'debuff';
   category: string;
   sourceUnitId: string;
-  
+
   remainingDuration: number;
   stacks: number;
   maxStacks: number;
-  
+
   attrModifiers?: AttrModifier[];
   dot?: DotEffect;
   hot?: HotEffect;
   reflectDamage?: ReflectDamageEffect;
   delayedBurst?: DelayedBurstEffect;
+  dodgeNext?: DodgeNextEffect;
   nextSkillBonus?: NextSkillBonusEffect;
   healForbidden?: boolean;
   aura?: AuraEffect;
@@ -228,6 +229,10 @@ export interface DelayedBurstEffect {
   damageType: 'physical' | 'magic' | 'true';
   element?: string;
   remainingRounds: number;
+}
+
+export interface DodgeNextEffect {
+  guaranteedMiss: true;
 }
 
 export interface NextSkillBonusEffect {
@@ -282,50 +287,50 @@ export interface BattleSkill {
   name: string;
   source: 'innate' | 'technique' | 'equipment' | 'item';
   sourceId?: string;
-  
+
   cost: SkillCostValue;
   cooldown: number;
-  
+
   targetType: SkillTargetType;
   targetCount: number;
-  
+
   damageType?: 'physical' | 'magic' | 'true';
   element: string;
-  
+
   effects: SkillEffect[];
   conditions?: SkillConditions;
-  
+
   triggerType: 'active' | 'passive' | 'counter' | 'chase';
   aiPriority: number;
 }
 
-type SkillTargetType = 
-  | 'self' 
-  | 'single_enemy' 
-  | 'single_ally' 
-  | 'all_enemy' 
-  | 'all_ally' 
+type SkillTargetType =
+  | 'self'
+  | 'single_enemy'
+  | 'single_ally'
+  | 'all_enemy'
+  | 'all_ally'
   | 'random_enemy'
   | 'random_ally';
 
 export interface SkillEffect {
   type:
-    | 'damage'
-    | 'heal'
-    | 'shield'
-    | 'buff'
-    | 'debuff'
-    | 'dispel'
-    | 'resource'
-    | 'restore_lingqi'
-    | 'cleanse'
-    | 'cleanse_control'
-    | 'lifesteal'
-    | 'control'
-    | 'mark'
-    | 'momentum'
-    | 'delayed_burst'
-    | 'fate_swap';
+  | 'damage'
+  | 'heal'
+  | 'shield'
+  | 'buff'
+  | 'debuff'
+  | 'dispel'
+  | 'resource'
+  | 'restore_lingqi'
+  | 'cleanse'
+  | 'cleanse_control'
+  | 'lifesteal'
+  | 'control'
+  | 'mark'
+  | 'momentum'
+  | 'delayed_burst'
+  | 'fate_swap';
   value?: number;
   valueType?: 'flat' | 'percent' | 'scale' | 'combined';
   baseValue?: number;  // 固定基础值（用于 combined 模式）
@@ -408,12 +413,12 @@ export interface BattleState {
    * - self_action_end: 新口径，单位行动结束后仅推进自身冷却
    */
   cooldownTimingMode?: 'round_start' | 'self_action_end';
-  
+
   teams: {
     attacker: BattleTeam;
     defender: BattleTeam;
   };
-  
+
   roundCount: number;
   currentTeam: 'attacker' | 'defender';
   /**
@@ -423,12 +428,12 @@ export interface BattleState {
    */
   currentUnitId: string | null;
   phase: 'roundStart' | 'action' | 'roundEnd' | 'finished';
-  
+
   firstMover: 'attacker' | 'defender';
-  
+
   result?: 'attacker_win' | 'defender_win' | 'draw';
   rewards?: BattleRewards;
-  
+
   // 防作弊：服务端随机种子
   randomSeed: number;
   randomIndex: number;
@@ -599,34 +604,34 @@ export interface DamageResult {
 export const BATTLE_CONSTANTS = {
   MAX_ROUNDS_PVE: 100,
   MAX_ROUNDS_PVP: 100,
-  
+
   MIN_HIT_RATE: 0.2,
   MAX_HIT_RATE: 1,
   MAX_DODGE_RATE: 0.8,
   MAX_PARRY_RATE: 0.6,
   PARRY_REDUCTION: 0.7,
-  
+
   MAX_CRIT_RATE: 1,
   MAX_CRIT_DAMAGE: 3,
   MAX_CRIT_RESIST: 0.8,
-  
+
   MAX_DAMAGE_BONUS: 1,
   MAX_HEAL_BONUS: 1,
   MAX_HEAL_REDUCTION: 0.8,
   HEAL_CAP_PERCENT: 0.5,
-  
+
   MAX_LIFESTEAL: 0.5,
   MAX_CONTROL_RESIST: 0.8,
   CONTROL_DIMINISHING_RESET: 5,
-  
+
   ELEMENT_COUNTER_BONUS: 0.15,
   MAX_ELEMENT_RESIST: 0.8,
-  
+
   BASE_LINGQI_REGEN: 10,
 
   // 防御结算常量：最终伤害倍率 = K / (防御 + K)
   DEFENSE_DAMAGE_K: 1200,
-  
+
   ELEMENT_COUNTER: {
     'jin': 'mu',
     'mu': 'tu',

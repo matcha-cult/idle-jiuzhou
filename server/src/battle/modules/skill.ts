@@ -12,6 +12,7 @@ import type {
   AuraSubEffect,
   AuraTargetType,
   DelayedBurstEffect,
+  DodgeNextEffect,
   DotEffect,
   HotEffect,
   NextSkillBonusEffect,
@@ -88,6 +89,7 @@ type BuffRuntimeData = {
   hot?: HotEffect;
   reflectDamage?: ReflectDamageEffect;
   delayedBurst?: DelayedBurstEffect;
+  dodgeNext?: DodgeNextEffect;
   nextSkillBonus?: NextSkillBonusEffect;
   healForbidden?: boolean;
   aura?: AuraEffect;
@@ -108,6 +110,7 @@ function hasBuffRuntimeData(data: BuffRuntimeData): boolean {
     || data.hot
     || data.reflectDamage
     || data.delayedBurst
+    || data.dodgeNext
     || data.nextSkillBonus
     || data.healForbidden
     || data.aura
@@ -372,9 +375,8 @@ function buildBuffRuntimeData(
   }
 
   if (buffKind === 'dodge_next') {
-    const stacks = Math.max(1, Math.floor(toFiniteNumber(effect.stacks, 1)));
     return {
-      attrModifiers: [{ attr: 'shanbi', value: 1 * stacks, mode: 'flat' }],
+      dodgeNext: { guaranteedMiss: true },
     };
   }
 
@@ -688,7 +690,7 @@ export function executeSkill(
   if (!canUseSkill(caster, skill.damageType)) {
     return { success: false, error: '被控制无法使用技能' };
   }
-  
+
   // 检查沉默/缴械
   if (skill.damageType === 'magic' && isSilenced(caster)) {
     return { success: false, error: '被沉默无法使用法术' };
@@ -696,13 +698,13 @@ export function executeSkill(
   if (skill.damageType === 'physical' && isDisarmed(caster)) {
     return { success: false, error: '被缴械无法使用物理技能' };
   }
-  
+
   // 检查冷却
   const cooldownMessage = getSkillCooldownBlockedMessage(caster, skill.id);
   if (cooldownMessage) {
     return { success: false, error: cooldownMessage };
   }
-  
+
   // 检查消耗
   const cost = resolveCasterSkillCost(caster, skill);
   if (cost.totalLingqi > 0 && caster.lingqi < cost.totalLingqi) {
@@ -711,7 +713,7 @@ export function executeSkill(
   if (cost.totalQixue > 0 && caster.qixue <= cost.totalQixue) {
     return { success: false, error: '气血不足' };
   }
-  
+
   // 扣除消耗
   if (cost.totalLingqi > 0) {
     caster.lingqi -= cost.totalLingqi;
@@ -719,12 +721,12 @@ export function executeSkill(
   if (cost.totalQixue > 0) {
     caster.qixue -= cost.totalQixue;
   }
-  
+
   // 设置冷却
   if (skill.cooldown > 0) {
     applySkillCooldownAfterCast(caster, skill.id, skill.cooldown);
   }
-  
+
   // 解析目标
   const targets = resolveTargets(state, caster, skill, selectedTargetIds);
   if (targets.length === 0) {
@@ -732,7 +734,7 @@ export function executeSkill(
   }
 
   const context = createSkillExecutionContext();
-  
+
   // 先落主动作日志，再按触发时机追加触发日志，保证日志顺序符合战斗时序
   const targetResults: TargetResult[] = [];
   const log: ActionLog = {
@@ -751,7 +753,7 @@ export function executeSkill(
 
   processMomentumEffectsByOperation(state, caster, skill, context, 'consume');
   consumeNextSkillBonusBuffs(caster, context);
-  
+
   for (const target of targets) {
     const result = executeSkillOnTarget(state, caster, target, skill, context);
     targetResults.push(result);
@@ -768,7 +770,7 @@ export function executeSkill(
       targetResults[0].momentumGained = [...context.momentumGained];
     }
   }
-  
+
   return { success: true, log };
 }
 
@@ -816,10 +818,10 @@ function executeSkillOnTarget(
     if (effect.type !== 'control' && typeof effect.chance === 'number' && !rollChance(state, effect.chance)) {
       continue;
     }
-    
+
     executeEffect(state, caster, target, skill, effect, result, context);
   }
-  
+
   return result;
 }
 
@@ -839,24 +841,24 @@ function executeEffect(
     case 'damage':
       // 伤害效果在 executeSkillOnTarget 中统一执行
       break;
-      
+
     case 'heal':
       executeHealEffect(state, caster, target, skill, effect, result, context);
       break;
-      
+
     case 'shield':
       executeShieldEffect(caster, target, skill, effect, result, context);
       break;
-      
+
     case 'buff':
     case 'debuff':
       executeBuffEffect(caster, target, skill, effect as BuffOrDebuffEffect, result);
       break;
-      
+
     case 'dispel':
       executeDispelEffect(target, effect, result);
       break;
-      
+
     case 'resource':
       executeResourceEffect(target, effect, result, context);
       break;
@@ -1015,15 +1017,15 @@ function executeHealEffect(
     ? Math.floor(target.currentAttrs.max_qixue * toFiniteNumber(effect.value, 0))
     : resolveEffectValue(caster, skill, effect, 'fagong');
   healValue = applyContextBonus(healValue, context.momentumBonusRateByType.heal);
-  
+
   // 治疗加成
   const healBonus = Math.min(caster.currentAttrs.zhiliao, BATTLE_CONSTANTS.MAX_HEAL_BONUS);
   healValue = Math.floor(healValue * (1 + healBonus));
-  
+
   // 减疗
   const healReduction = Math.min(target.currentAttrs.jianliao, BATTLE_CONSTANTS.MAX_HEAL_REDUCTION);
   healValue = Math.floor(healValue * (1 - healReduction));
-  
+
   const actualHeal = applyHealing(target, healValue);
   result.heal = actualHeal;
   caster.stats.healingDone += actualHeal;
@@ -1055,7 +1057,7 @@ function executeShieldEffect(
     ),
   );
   const duration = Math.max(1, Math.floor(toFiniteNumber(effect.duration, 2)));
-  
+
   addShield(target, {
     value: shieldValue,
     maxValue: shieldValue,
@@ -1064,7 +1066,7 @@ function executeShieldEffect(
     priority: 1,
     sourceSkillId: '',
   }, '');
-  
+
   result.buffsApplied?.push('护盾');
 }
 
@@ -1080,7 +1082,7 @@ function executeBuffEffect(
 ): void {
   const buffDefId = resolveBuffEffectKey(effect);
   if (!buffDefId) return;
-  
+
   const buffType = effect.type === 'buff' ? 'buff' : 'debuff';
   const stacks = Math.max(1, Math.floor(toFiniteNumber(effect.stacks, 1)));
   const isAura = normalizeBuffKind(effect.buffKind) === 'aura';
@@ -1102,6 +1104,7 @@ function executeBuffEffect(
     hot: runtimeData.hot,
     reflectDamage: runtimeData.reflectDamage,
     delayedBurst: runtimeData.delayedBurst,
+    dodgeNext: runtimeData.dodgeNext,
     nextSkillBonus: runtimeData.nextSkillBonus,
     healForbidden: runtimeData.healForbidden,
     aura: runtimeData.aura,
@@ -1210,6 +1213,7 @@ function executeFateSwapEffect(
       hot: buff.hot,
       reflectDamage: buff.reflectDamage,
       delayedBurst: buff.delayedBurst,
+      dodgeNext: buff.dodgeNext,
       nextSkillBonus: buff.nextSkillBonus,
       healForbidden: buff.healForbidden,
       control: buff.control,
@@ -1325,7 +1329,7 @@ function executeControlEffect(
     controlRate,
     controlDuration
   );
-  
+
   if (controlResult.success) {
     result.controlApplied = controlType;
   } else if (controlResult.resisted) {
@@ -1369,7 +1373,7 @@ function executeResourceEffect(
     ? applySoulShackleRecoveryReduction(rawValue, target)
     : rawValue;
   if (value === 0) return;
-  
+
   if (effect.resourceType === 'lingqi') {
     target.lingqi = Math.min(
       target.lingqi + value,
@@ -1389,10 +1393,10 @@ function executeResourceEffect(
  * 获取普通攻击技能
  */
 export function getNormalAttack(unit: BattleUnit): BattleSkill {
-  const damageType = unit.currentAttrs.fagong > unit.currentAttrs.wugong 
-    ? 'magic' 
+  const damageType = unit.currentAttrs.fagong > unit.currentAttrs.wugong
+    ? 'magic'
     : 'physical';
-  
+
   return {
     id: 'skill-normal-attack',
     name: '普通攻击',
@@ -1421,15 +1425,15 @@ export function getAvailableSkills(unit: BattleUnit): BattleSkill[] {
   return unit.skills.filter(skill => {
     // 检查冷却
     if (getSkillCooldownRemainingRounds(unit, skill.id) > 0) return false;
-    
+
     // 检查消耗
     const cost = resolveCasterSkillCost(unit, skill);
     if (cost.totalLingqi > 0 && unit.lingqi < cost.totalLingqi) return false;
     if (cost.totalQixue > 0 && unit.qixue <= cost.totalQixue) return false;
-    
+
     // 检查触发类型
     if (skill.triggerType !== 'active') return false;
-    
+
     return true;
   });
 }
