@@ -101,13 +101,13 @@ test('failed 未查看时应映射为失败结果红点', () => {
     buildInput({
       status: 'failed',
       finishedAt: '2026-03-07T10:01:00.000Z',
-      errorMessage: 'AI 生成异常，已自动退款',
+      errorMessage: 'AI 生成异常，已自动退款 对应返还已通过邮件发放，请前往邮箱领取。',
     }),
   );
 
   assert.equal(state.hasUnreadResult, true);
   assert.equal(state.resultStatus, 'failed');
-  assert.equal(state.currentJob?.errorMessage, 'AI 生成异常，已自动退款');
+  assert.equal(state.currentJob?.errorMessage, 'AI 生成异常，已自动退款 对应返还已通过邮件发放，请前往邮箱领取。');
 });
 
 test('refunded 未查看时也应视为失败结果待查看', () => {
@@ -115,7 +115,7 @@ test('refunded 未查看时也应视为失败结果待查看', () => {
     buildInput({
       status: 'refunded',
       finishedAt: '2026-03-07T10:01:00.000Z',
-      errorMessage: '草稿已过期，系统自动退款',
+      errorMessage: '草稿已过期，系统已通过邮件返还一半功法残页，请重新领悟',
     }),
   );
 

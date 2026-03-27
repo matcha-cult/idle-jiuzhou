@@ -701,7 +701,7 @@ const TechniqueModal: React.FC<TechniqueModalProps> = ({ open, onClose, onResear
 
     modal.confirm({
       title: '确认放弃当前洞府研修？',
-      content: '放弃后这次研修草稿会立即作废，并按过期规则返还一半功法残页，同时继续保留本次研修冷却。',
+      content: '放弃后这次研修草稿会立即作废，并按过期规则通过邮件返还一半功法残页，同时继续保留本次研修冷却。',
       okText: '确认放弃',
       cancelText: '继续抄写',
       okButtonProps: { danger: true },

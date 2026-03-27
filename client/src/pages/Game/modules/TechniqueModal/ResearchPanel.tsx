@@ -166,7 +166,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
           <div>1. 洞府研修需境界达到 {status?.unlockRealm ?? '--'} 后开启，未达门槛时无法开始领悟。</div>
           <div>2. 每次开始领悟固定消耗 {status ? currentFragmentCost : '--'} 页功法残页，残页会从背包与仓库中统一扣除。</div>
           <div>3. {cooldownDisplay.ruleText}</div>
-          <div>4. 草稿过期未抄写时，只返还本次消耗的一半功法残页。</div>
+          <div>4. 草稿过期未抄写时，会通过邮件返还本次消耗的一半功法残页。</div>
           <div>5. 结果进入研修页后即视为已查看，抄写前仍可在此处查看草稿详情。</div>
           {hasCooldownBypassCapability && status ? (
             <div>6. {status.cooldownBypassTokenItemName}仅对当前这次推演生效，每次启用都会额外消耗 {status.cooldownBypassTokenCost} 枚。</div>

@@ -24,6 +24,7 @@ import { Transactional } from '../decorators/transactional.js';
 import type { SkillTriggerType } from '../shared/skillTriggerType.js';
 import { addItemToInventory } from './inventory/index.js';
 import { consumeMaterialByDefId } from './inventory/shared/consume.js';
+import { mailService } from './mailService.js';
 import { getItemDefinitionById, getTechniqueDefinitions, refreshGeneratedTechniqueSnapshots } from './staticConfigLoader.js';
 import { resolveQualityRankFromName } from './shared/itemQuality.js';
 import { buildTechniqueResearchJobState } from './shared/techniqueResearchJobShared.js';
@@ -247,7 +248,27 @@ const DRAFT_EXPIRE_HOURS = 24;
 const GENERATED_TECHNIQUE_BOOK_ITEM_DEF_ID = 'book-generated-technique';
 const DEFAULT_GENERATED_SKILL_ICON = '/assets/skills/icon_skill_44.png';
 const TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID = 'mat-gongfa-canye';
-const TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE = '草稿已过期，系统已自动返还一半功法残页';
+const TECHNIQUE_RESEARCH_REFUND_MAIL_TITLE = '洞府研修退款通知';
+const TECHNIQUE_RESEARCH_REFUND_HINT = '对应返还已通过邮件发放，请前往邮箱领取。';
+const TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE = '草稿已过期，系统已通过邮件返还一半功法残页，请重新领悟';
+
+const buildTechniqueResearchRefundMailContent = (reason: string): string => {
+  const lines = [
+    '本次洞府研修未能成法，系统已将本次返还通过邮件发放。',
+  ];
+  const normalizedReason = reason.trim();
+  if (normalizedReason) {
+    lines.push(`结算原因：${normalizedReason}`);
+  }
+  return lines.join('\n');
+};
+
+export const appendTechniqueResearchRefundHint = (reason: string): string => {
+  const normalizedReason = reason.trim();
+  if (!normalizedReason) return TECHNIQUE_RESEARCH_REFUND_HINT;
+  if (normalizedReason.includes(TECHNIQUE_RESEARCH_REFUND_HINT)) return normalizedReason;
+  return `${normalizedReason} ${TECHNIQUE_RESEARCH_REFUND_HINT}`;
+};
 
 const QUALITY_MAX_LAYER: Record<TechniqueQuality, number> = {
   黄: 3,
@@ -593,10 +614,7 @@ class TechniqueGenerationService {
     return toIsoString(row.created_at);
   }
 
-  private async refundFragmentsToInventoryTx(characterId: number, qty: number, obtainedFrom: string): Promise<void> {
-    const refundQty = Math.max(0, Math.floor(asNumber(qty, 0)));
-    if (refundQty <= 0) return;
-
+  private async loadCharacterUserId(characterId: number): Promise<number | null> {
     const characterRes = await query(
       `
         SELECT user_id
@@ -607,28 +625,59 @@ class TechniqueGenerationService {
       [characterId],
     );
     const userId = Math.floor(asNumber((characterRes.rows[0] as Record<string, unknown> | undefined)?.user_id, 0));
-    if (userId <= 0) {
-      throw new Error('退款失败：角色不存在');
+    return userId > 0 ? userId : null;
+  }
+
+  private async refundFragmentsByMailTx(characterId: number, generationId: string, qty: number, reason: string): Promise<void> {
+    const refundQty = Math.max(0, Math.floor(asNumber(qty, 0)));
+    if (refundQty <= 0) return;
+
+    const userId = await this.loadCharacterUserId(characterId);
+    if (!userId) {
+      throw new Error('退款邮件发送失败：角色不存在');
     }
 
-    const addRes = await addItemToInventory(characterId, userId, TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID, refundQty, {
-      obtainedFrom,
+    const refundMailResult = await mailService.sendMail({
+      recipientUserId: userId,
+      recipientCharacterId: characterId,
+      senderType: 'system',
+      senderName: '系统',
+      mailType: 'reward',
+      title: TECHNIQUE_RESEARCH_REFUND_MAIL_TITLE,
+      content: buildTechniqueResearchRefundMailContent(reason),
+      attachRewards: {
+        items: [
+          {
+            itemDefId: TECHNIQUE_RESEARCH_FRAGMENT_ITEM_DEF_ID,
+            quantity: refundQty,
+          },
+        ],
+      },
+      expireDays: 30,
+      source: 'technique_research_refund',
+      sourceRefId: generationId,
+      metadata: {
+        generationId,
+        refundFragments: refundQty,
+        reason,
+      },
     });
-    if (!addRes.success) {
-      throw new Error(addRes.message || '退款失败：功法残页回退失败');
+    if (!refundMailResult.success) {
+      throw new Error(refundMailResult.message || '退款邮件发送失败');
     }
   }
 
   private async applyGenerationFragmentRefundTx(
     characterId: number,
-    refundEntries: Array<{ generationId: string; refundFragments: number }>,
+    refundEntries: Array<{ generationId: string; refundFragments: number; reason: string }>,
   ): Promise<void> {
     const refundableEntries = refundEntries.filter((entry) => entry.generationId && entry.refundFragments > 0);
     for (const entry of refundableEntries) {
-      await this.refundFragmentsToInventoryTx(
+      await this.refundFragmentsByMailTx(
         characterId,
+        entry.generationId,
         entry.refundFragments,
-        `technique_research_refund:${entry.generationId}`,
+        entry.reason,
       );
     }
   }
@@ -658,6 +707,7 @@ class TechniqueGenerationService {
           asNumber(row.cost_points, 0),
           TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE,
         ),
+        reason: TECHNIQUE_RESEARCH_EXPIRED_DRAFT_MESSAGE,
       })),
     );
 
@@ -1167,10 +1217,12 @@ class TechniqueGenerationService {
     const costPoints = Math.max(0, Math.floor(asNumber(row.cost_points, 0)));
     if (status === 'refunded' || status === 'failed' || status === 'published') return;
 
+    const refundErrorMessage = appendTechniqueResearchRefundHint(reason);
     await this.applyGenerationFragmentRefundTx(characterId, [
       {
         generationId,
         refundFragments: resolveTechniqueResearchRefundFragments(costPoints, refundRate),
+        reason: refundErrorMessage,
       },
     ]);
 
@@ -1185,7 +1237,7 @@ class TechniqueGenerationService {
             updated_at = NOW()
         WHERE id = $1
       `,
-      [generationId, nextStatus, errorCode, reason],
+      [generationId, nextStatus, errorCode, refundErrorMessage],
     );
   }
 
@@ -1246,15 +1298,16 @@ class TechniqueGenerationService {
 
       if (!saveRes.success || !saveRes.data) {
         const reason = saveRes.message || '草稿落库失败，已自动退款';
+        const errorMessage = appendTechniqueResearchRefundHint(reason);
         await this.refundGenerationJobTx(characterId, generationId, reason, 'failed', saveRes.code || 'GENERATION_FAILED');
         return {
           success: true,
-          message: reason,
+          message: errorMessage,
           data: {
             generationId,
             status: 'failed',
             preview: null,
-            errorMessage: reason,
+            errorMessage,
           },
         };
       }
@@ -1271,24 +1324,25 @@ class TechniqueGenerationService {
       };
     } catch (error) {
       const reason = `AI生成异常，已自动退款：${error instanceof Error ? error.message : '未知异常'}`;
+      const errorMessage = appendTechniqueResearchRefundHint(reason);
       if (!(error instanceof TechniqueGenerationExhaustedError)) {
         logTechniqueGenerationTaskFailure({
           generationId,
           characterId,
           quality,
           attemptCount: 0,
-          reason,
+          reason: errorMessage,
         });
       }
       await this.refundGenerationJobTx(characterId, generationId, reason, 'failed', 'GENERATION_FAILED');
       return {
         success: true,
-        message: reason,
+        message: errorMessage,
         data: {
           generationId,
           status: 'failed',
           preview: null,
-          errorMessage: reason,
+          errorMessage,
         },
       };
     }

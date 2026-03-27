@@ -29,7 +29,7 @@ describe('researchNaming', () => {
     expect(resolveTechniqueResearchPublishErrorMessage('NAME_CONFLICT')).toBe('名称已存在，请更换');
     expect(resolveTechniqueResearchPublishErrorMessage('NAME_SENSITIVE')).toBe('名称包含敏感内容，请重填');
     expect(resolveTechniqueResearchPublishErrorMessage('NAME_INVALID')).toBe('名称不符合格式规则');
-    expect(resolveTechniqueResearchPublishErrorMessage('GENERATION_EXPIRED')).toBe('草稿已过期，系统仅返还一半功法残页，请重新领悟');
+    expect(resolveTechniqueResearchPublishErrorMessage('GENERATION_EXPIRED')).toBe('草稿已过期，系统已通过邮件返还一半功法残页，请重新领悟');
   });
 
   it('isTechniqueResearchPublishNameErrorCode: 只应识别命名类错误', () => {

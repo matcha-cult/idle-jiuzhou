@@ -26,6 +26,7 @@ import { getCharacterUserId } from './sect/db.js';
 import { isGeneratedTechniqueType } from './shared/techniqueGenerationConstraints.js';
 import { notifyTechniqueResearchStatus } from './techniqueResearchPush.js';
 import {
+  appendTechniqueResearchRefundHint,
   techniqueGenerationService,
   type TechniqueQuality,
 } from './techniqueGenerationService.js';
@@ -79,13 +80,14 @@ class TechniqueGenerationJobRunner {
       await techniqueGenerationService.failPendingGenerationJob(params.characterId, params.generationId, reason);
       const userId = params.userId ?? await getCharacterUserId(params.characterId);
       if (!userId) return;
+      const errorMessage = appendTechniqueResearchRefundHint(reason);
       getGameServer().emitToUser(userId, 'techniqueResearchResult', {
         characterId: params.characterId,
         generationId: params.generationId,
         status: 'failed',
         hasUnreadResult: true,
         message: '洞府推演失败，请前往功法查看',
-        errorMessage: reason,
+        errorMessage,
       });
       await notifyTechniqueResearchStatus(params.characterId, userId);
     };

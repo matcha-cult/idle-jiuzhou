@@ -7,7 +7,7 @@
  * 3. 不做什么：不连接真实数据库、不覆盖前端按钮渲染，也不验证自然过期扫描任务。
  *
  * 输入/输出：
- * - 输入：数据库查询 mock、背包入包 mock，以及角色 ID / 生成任务 ID。
+ * - 输入：数据库查询 mock、邮件发放 mock，以及角色 ID / 生成任务 ID。
  * - 输出：放弃接口返回结果与任务表更新参数。
  *
  * 数据流/状态流：
@@ -23,6 +23,7 @@ import type { PoolClient, QueryResult, QueryResultRow } from 'pg';
 
 import * as database from '../../config/database.js';
 import { redis } from '../../config/redis.js';
+import { mailService } from '../mailService.js';
 import { techniqueGenerationService, type ServiceResult } from '../techniqueGenerationService.js';
 
 type SqlValue = boolean | Date | number | string | null;
@@ -96,6 +97,12 @@ test('discardGeneratedTechniqueDraft: 主动放弃草稿应按过期规则半额
   redis.disconnect();
 
   const updateCalls: Array<{ sql: string; params: unknown[] | undefined }> = [];
+  const sentMailPayloads: unknown[] = [];
+
+  t.mock.method(mailService, 'sendMail', async (options: unknown) => {
+    sentMailPayloads.push(options);
+    return { success: true, mailId: 1001, message: '邮件发送成功' };
+  });
 
   t.mock.method(
     database.pool,
@@ -122,6 +129,10 @@ test('discardGeneratedTechniqueDraft: 主动放弃草稿应按过期规则半额
         ]);
       }
 
+      if (sql.includes('SELECT user_id') && sql.includes('FROM characters')) {
+        return createQueryResult([{ user_id: 9527 }]);
+      }
+
       if (sql.includes('UPDATE technique_generation_job') && sql.includes('SET status = $2')) {
         updateCalls.push({ sql, params: params as unknown[] | undefined });
         return createQueryResult([]);
@@ -136,11 +147,37 @@ test('discardGeneratedTechniqueDraft: 主动放弃草稿应按过期规则半额
 
   assert.equal(result.success, true);
   assert.equal(result.data?.generationId, 'research-job-1');
+  assert.equal(sentMailPayloads.length, 1);
+  assert.deepEqual(sentMailPayloads[0], {
+    recipientUserId: 9527,
+    recipientCharacterId: 2712,
+    senderType: 'system',
+    senderName: '系统',
+    mailType: 'reward',
+    title: '洞府研修退款通知',
+    content: '本次洞府研修未能成法，系统已将本次返还通过邮件发放。\n结算原因：草稿已过期，系统已通过邮件返还一半功法残页，请重新领悟 对应返还已通过邮件发放，请前往邮箱领取。',
+    attachRewards: {
+      items: [
+        {
+          itemDefId: 'mat-gongfa-canye',
+          quantity: 1,
+        },
+      ],
+    },
+    expireDays: 30,
+    source: 'technique_research_refund',
+    sourceRefId: 'research-job-1',
+    metadata: {
+      generationId: 'research-job-1',
+      refundFragments: 1,
+      reason: '草稿已过期，系统已通过邮件返还一半功法残页，请重新领悟 对应返还已通过邮件发放，请前往邮箱领取。',
+    },
+  });
   assert.equal(updateCalls.length, 1);
   assert.deepEqual(updateCalls[0]?.params, [
     'research-job-1',
     'refunded',
     'GENERATION_EXPIRED',
-    '草稿已过期，系统已自动返还一半功法残页',
+    '草稿已过期，系统已通过邮件返还一半功法残页，请重新领悟 对应返还已通过邮件发放，请前往邮箱领取。',
   ]);
 });

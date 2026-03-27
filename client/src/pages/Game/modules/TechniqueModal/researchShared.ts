@@ -95,7 +95,7 @@ export const resolveTechniqueResearchPanelView = (
     return {
       kind: 'failed',
       job,
-      errorMessage: job.errorMessage || '洞府推演未能成法，本次结果已按规则结算。',
+      errorMessage: job.errorMessage || '洞府推演未能成法，对应返还已通过邮件发放，请前往邮箱领取。',
     };
   }
   return { kind: 'empty' };
