@@ -25,6 +25,7 @@ import {
   clearBattleLogStream,
   consumeBattleLogDelta,
 } from "../../../battle/logStream.js";
+import { runWithDatabaseAccessAllowed } from "../../../config/database.js";
 import { canUseSkill, isFeared, isStunned } from "../../../battle/modules/control.js";
 import { getNormalAttack } from "../../../battle/modules/skill.js";
 import { getSkillCooldownRemainingRounds } from "../../../battle/utils/cooldown.js";
@@ -182,9 +183,11 @@ export async function emitBattleProgressUpdate(
 
   clearPlayerTurnTimeoutState(battleId);
   clearWaitingPlayerTurnState(battleId);
-  const { finishBattle, getBattleMonsters } = await import("../settlement.js");
-  const monsters = await getBattleMonsters(engine);
-  await finishBattle(battleId, engine, monsters);
+  await runWithDatabaseAccessAllowed(async () => {
+    const { finishBattle, getBattleMonsters } = await import("../settlement.js");
+    const monsters = await getBattleMonsters(engine);
+    await finishBattle(battleId, engine, monsters);
+  });
   stopBattleTicker(battleId);
 }
 

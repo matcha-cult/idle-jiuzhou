@@ -23,6 +23,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import * as databaseModule from "../../config/database.js";
 import { BattleEngine } from "../../battle/battleEngine.js";
 import * as gameServerModule from "../../game/gameServer.js";
 import * as settlementModule from "../battle/settlement.js";
@@ -99,4 +100,40 @@ test("emitBattleProgressUpdate: 终态应直接走结算，不再额外广播 ba
   assert.deepEqual(monsterLookups, [battleId]);
   assert.deepEqual(finishCalls, [battleId]);
   assert.deepEqual(emitted, []);
+});
+
+test("emitBattleProgressUpdate: 禁 DB 调用链中的终态结算应切到允许 DB 上下文", async (t) => {
+  const battleId = "battle-progress-update-finished-db-allowed";
+  const finishedState = {
+    ...createState({
+      attacker: [createUnit({ id: "player-1", name: "主角" })],
+      defender: [createUnit({ id: "monster-1", name: "妖兽", type: "monster" })],
+    }),
+    battleId,
+    phase: "finished" as const,
+    result: "attacker_win" as const,
+  };
+  const engine = new BattleEngine(finishedState);
+
+  battleParticipants.set(battleId, [1]);
+  t.after(() => {
+    battleParticipants.delete(battleId);
+  });
+
+  t.mock.method(settlementModule, "getBattleMonsters", async () => []);
+  t.mock.method(settlementModule, "finishBattle", async () => {
+    assert.equal(databaseModule.isDatabaseAccessForbidden(), false);
+    return {
+      success: true,
+      message: "战斗胜利",
+    };
+  });
+
+  await databaseModule.runWithDatabaseAccessForbidden(
+    "test/battle-session-advance",
+    async () => {
+      assert.equal(databaseModule.isDatabaseAccessForbidden(), true);
+      await emitBattleProgressUpdate(battleId, engine);
+    },
+  );
 });
