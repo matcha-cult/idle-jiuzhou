@@ -24,6 +24,7 @@ export {
   getBattleSessionDetailByBattleId,
   markBattleSessionAbandoned,
   markBattleSessionFinished,
+  recoverBattleSessionsFromProjection,
   removeBattleSessionParticipantUser,
   startDungeonBattleSession,
   startPVEBattleSession,

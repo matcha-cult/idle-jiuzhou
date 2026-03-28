@@ -50,6 +50,7 @@ import {
   deleteBattleSessionRecord,
   getBattleSessionRecord,
   getBattleSessionSnapshotByBattleId,
+  hydrateBattleSessionRecord,
   listBattleSessionRecords,
   updateBattleSessionRecord,
   toBattleSessionSnapshot,
@@ -74,6 +75,12 @@ import {
   createSlowOperationLogger,
   type SlowLogFields,
 } from '../../utils/slowOperationLogger.js';
+import {
+  getOnlineBattleSessionProjection,
+  getOnlineBattleSessionProjectionByBattleId,
+  listOnlineBattleSessionProjections,
+  type OnlineBattleSessionSnapshot,
+} from '../onlineBattleProjectionService.js';
 
 const battleSessionLogger = createScopedLogger('battle.session');
 
@@ -254,6 +261,131 @@ const createRunningSession = (params: {
     lastResult: null,
     context: params.context,
   });
+};
+
+const isBattleSessionRuntimeActive = (
+  session: BattleSessionRecord | BattleSessionSnapshot | OnlineBattleSessionSnapshot,
+): boolean => {
+  return session.status === 'running' || session.status === 'waiting_transition';
+};
+
+const shouldScheduleDungeonAutoAdvance = (
+  session: BattleSessionRecord | BattleSessionSnapshot | OnlineBattleSessionSnapshot,
+): boolean => {
+  return (
+    session.type === 'dungeon'
+    && session.status === 'waiting_transition'
+    && session.nextAction === 'advance'
+    && session.canAdvance
+  );
+};
+
+/**
+ * 在线战斗 session 投影回填为 BattleSession runtime 记录。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把 Redis/投影里的权威 session 快照恢复成 BattleSession runtime 记录，统一服务启动恢复与查询期懒回填。
+ * 2. 做什么：在秘境 `waiting_transition` 且仍可继续时重建自动推进定时器，避免服务重启后卡死在中间态。
+ * 3. 不做什么：不改写投影来源，不做权限判断，也不直接返回 battle state。
+ *
+ * 输入/输出：
+ * - 输入：一条在线战斗 session 投影。
+ * - 输出：已回填到 runtime 的 BattleSession 记录；若投影已失活则返回 null。
+ *
+ * 数据流/状态流：
+ * - startup/query miss -> 读取在线战斗投影 -> 本函数回填 runtime -> 后续 BattleSession API 正常读取。
+ *
+ * 复用设计说明：
+ * - 服务启动恢复、按 sessionId 查询、按 battleId 查询、当前会话查询都需要相同的“projection -> runtime”转换。
+ * - 把回填和秘境自动推进重建集中在这里，能避免四条调用链各自散落 if 判断。
+ * - `waiting_transition` 的推进策略是秘境高频变化点，因此定时器重建必须跟 session 回填放在同一入口。
+ *
+ * 关键边界条件与坑点：
+ * 1. 已完成/失败/放弃的 session 不能重新挂回 runtime，否则会把终态残留重新暴露给前端。
+ * 2. 只有秘境 `waiting_transition + advance` 需要重建自动推进；其他类型或 `return_to_map` 绝不能误挂定时器。
+ */
+const restoreBattleSessionRecordFromProjection = (
+  projection: OnlineBattleSessionSnapshot,
+): BattleSessionRecord | null => {
+  if (!isBattleSessionRuntimeActive(projection)) {
+    return null;
+  }
+
+  const existing = getBattleSessionRecord(projection.sessionId);
+  if (existing) {
+    if (shouldScheduleDungeonAutoAdvance(existing)) {
+      scheduleDungeonSessionAutoAdvance(existing.sessionId);
+    }
+    return existing;
+  }
+
+  const restored = hydrateBattleSessionRecord({
+    sessionId: projection.sessionId,
+    type: projection.type,
+    ownerUserId: projection.ownerUserId,
+    participantUserIds: normalizeParticipantUserIds(
+      projection.participantUserIds,
+      projection.ownerUserId,
+    ),
+    currentBattleId: projection.currentBattleId,
+    status: projection.status,
+    nextAction: projection.nextAction,
+    canAdvance: projection.canAdvance,
+    lastResult: projection.lastResult,
+    context: projection.context,
+    createdAt: projection.createdAt,
+    updatedAt: projection.updatedAt,
+  });
+
+  if (shouldScheduleDungeonAutoAdvance(restored)) {
+    scheduleDungeonSessionAutoAdvance(restored.sessionId);
+  }
+  return restored;
+};
+
+const ensureBattleSessionRecordBySessionId = async (
+  sessionId: string,
+): Promise<BattleSessionRecord | null> => {
+  const runtimeSession = getBattleSessionRecord(sessionId);
+  if (runtimeSession) {
+    return runtimeSession;
+  }
+  const projection = await getOnlineBattleSessionProjection(sessionId);
+  if (!projection) {
+    return null;
+  }
+  return restoreBattleSessionRecordFromProjection(projection);
+};
+
+const ensureBattleSessionRecordByBattleId = async (
+  battleId: string,
+): Promise<BattleSessionRecord | null> => {
+  const snapshot = getBattleSessionSnapshotByBattleId(battleId);
+  if (snapshot) {
+    return ensureBattleSessionRecordBySessionId(snapshot.sessionId);
+  }
+  const projection = await getOnlineBattleSessionProjectionByBattleId(battleId);
+  if (!projection) {
+    return null;
+  }
+  return restoreBattleSessionRecordFromProjection(projection);
+};
+
+const listRestoredActiveSessionsForUser = async (
+  userId: number,
+): Promise<BattleSessionRecord[]> => {
+  const projections = await listOnlineBattleSessionProjections();
+  const sessions: BattleSessionRecord[] = [];
+
+  for (const projection of projections) {
+    const restored = restoreBattleSessionRecordFromProjection(projection);
+    if (!restored) continue;
+    if (!ensureSessionAccess(userId, restored)) continue;
+    if (!isBattleSessionRuntimeActive(restored)) continue;
+    sessions.push(restored);
+  }
+
+  return sessions.sort((a, b) => b.updatedAt - a.updatedAt);
 };
 
 /**
@@ -766,7 +898,7 @@ export const getBattleSessionDetail = async (
   userId: number,
   sessionId: string,
 ): Promise<BattleSessionResponse> => {
-  const session = getBattleSessionRecord(sessionId);
+  const session = await ensureBattleSessionRecordBySessionId(sessionId);
   if (!ensureSessionAccess(userId, session)) {
     return { success: false, message: '战斗会话不存在或无权访问' };
   }
@@ -790,24 +922,27 @@ export const getBattleSessionDetailByBattleId = async (
   userId: number,
   battleId: string,
 ): Promise<BattleSessionResponse> => {
-  const snapshot = getBattleSessionSnapshotByBattleId(battleId);
-  if (!snapshot) {
+  const session = await ensureBattleSessionRecordByBattleId(battleId);
+  if (!session) {
     return { success: false, message: '战斗会话不存在' };
   }
-  const session = getBattleSessionRecord(snapshot.sessionId);
   if (!ensureSessionAccess(userId, session)) {
     return { success: false, message: '战斗会话不存在或无权访问' };
   }
-  return getBattleSessionDetail(userId, snapshot.sessionId);
+  return getBattleSessionDetail(userId, session.sessionId);
 };
 
 export const getCurrentBattleSessionDetail = async (
   userId: number,
 ): Promise<BattleSessionResponse | { success: true; data: { session: null } }> => {
-  const session = listBattleSessionRecords()
+  let session = listBattleSessionRecords()
     .filter((candidate) => ensureSessionAccess(userId, candidate))
     .filter((candidate) => candidate.status === 'running' || candidate.status === 'waiting_transition')
     .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
+
+  if (!session) {
+    session = (await listRestoredActiveSessionsForUser(userId))[0] ?? null;
+  }
 
   if (!session) {
     const resumeIntent = await getPveResumeIntentByUserId(userId);
@@ -836,6 +971,44 @@ export const getCurrentBattleSessionDetail = async (
   }
 
   return getBattleSessionDetail(userId, session.sessionId);
+};
+
+/**
+ * 从在线战斗投影恢复 BattleSession runtime。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：在服务启动后把 Redis 中仍存活的 session 投影重新挂回 BattleSession runtime，修复进程重启后秘境/塔/PVP 会话整体丢失的问题。
+ * 2. 做什么：让秘境 `waiting_transition` 在恢复后立即重建自动推进任务，保证下一波仍由服务端权威推进。
+ * 3. 不做什么：不恢复单场 battle engine；battle engine 仍由 battle lifecycle 自己的 Redis 恢复链负责。
+ *
+ * 输入/输出：
+ * - 输入：无。
+ * - 输出：本次成功回填到 runtime 的 session 数量。
+ *
+ * 数据流/状态流：
+ * - startup pipeline -> 在线战斗 session 投影列表 -> 本函数回填 runtime / 重建秘境自动推进 -> BattleSession API 正常可读。
+ *
+ * 关键边界条件与坑点：
+ * 1. 只恢复 `running / waiting_transition`；终态 session 若残留在投影里也不能重新挂回。
+ * 2. 启动恢复与查询期懒回填共用同一 `restoreBattleSessionRecordFromProjection`，避免两套规则漂移。
+ */
+export const recoverBattleSessionsFromProjection = async (): Promise<number> => {
+  const projections = await listOnlineBattleSessionProjections();
+  let recoveredCount = 0;
+
+  for (const projection of projections) {
+    if (!isBattleSessionRuntimeActive(projection)) {
+      continue;
+    }
+    const existed = getBattleSessionRecord(projection.sessionId);
+    const restored = restoreBattleSessionRecordFromProjection(projection);
+    if (!restored || existed) {
+      continue;
+    }
+    recoveredCount += 1;
+  }
+
+  return recoveredCount;
 };
 
 const completeSessionReturnToMap = async (

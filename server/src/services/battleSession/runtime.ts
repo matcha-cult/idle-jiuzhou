@@ -84,6 +84,45 @@ export const createBattleSessionRecord = (
   return created;
 };
 
+/**
+ * BattleSession 投影回填到运行时内存索引。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：把 Redis/在线战斗投影中的 session 记录重新装回 BattleSession runtime，供重启恢复与查询期懒回填共用。
+ * 2. 做什么：统一维护 `sessionId -> record` 与 `battleId -> sessionId` 两层索引，避免启动恢复、按 battleId 查询各自手写一套 Map 回填。
+ * 3. 不做什么：不回写 Redis、不生成新 sessionId，也不修改业务字段；调用方必须提供权威快照。
+ *
+ * 输入/输出：
+ * - 输入：一条已经完整归一化的 BattleSessionRecord。
+ * - 输出：写入 runtime 后的同一条记录。
+ *
+ * 数据流/状态流：
+ * - online battle session projection -> 本函数回填 runtime Map -> BattleSession service 正常读取/推进。
+ *
+ * 复用设计说明：
+ * - 启动恢复与查询期懒回填都需要把同一份 session 投影重新挂回内存索引。
+ * - 把这段索引维护收口到 runtime，能避免 service 层重复写“删旧 battleId / 写新 battleId”的细节。
+ * - BattleSession 的高频变化点是 `currentBattleId` 换绑，因此索引维护必须集中在这里。
+ *
+ * 关键边界条件与坑点：
+ * 1. 旧记录若绑定了不同 `currentBattleId`，必须先移除旧 battle 索引，否则同一 session 会同时指向两场 battle。
+ * 2. 回填只覆盖 runtime 内存，不主动刷新 Redis；否则会把“恢复”误做成一次新的权威写入。
+ */
+export const hydrateBattleSessionRecord = (
+  session: BattleSessionRecord,
+): BattleSessionRecord => {
+  const current = battleSessionById.get(session.sessionId) ?? null;
+  if (current?.currentBattleId && current.currentBattleId !== session.currentBattleId) {
+    battleSessionIdByBattleId.delete(current.currentBattleId);
+  }
+
+  battleSessionById.set(session.sessionId, session);
+  if (session.currentBattleId) {
+    battleSessionIdByBattleId.set(session.currentBattleId, session.sessionId);
+  }
+  return session;
+};
+
 export const updateBattleSessionRecord = (
   sessionId: string,
   patch: Partial<Omit<BattleSessionRecord, 'sessionId' | 'createdAt'>>,

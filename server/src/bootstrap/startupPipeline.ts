@@ -51,6 +51,9 @@ import {
 import {
   warmupOnlineBattleProjectionService,
 } from "../services/onlineBattleProjectionService.js";
+import {
+  recoverBattleSessionsFromProjection,
+} from "../services/battleSession/index.js";
 import { warmupFrozenTowerPoolCache } from "../services/tower/frozenPool.js";
 import { dungeonExpiredInstanceCleanupService } from "../services/dungeonExpiredInstanceCleanupService.js";
 import {
@@ -175,6 +178,10 @@ export const startServerWithPipeline = async (
     await runStartupStep("战斗状态恢复", async () => {
       console.log("正在恢复战斗状态...");
       await recoverBattlesFromRedis();
+    });
+    await runStartupStep("战斗会话恢复", async () => {
+      const recoveredSessionCount = await recoverBattleSessionsFromProjection();
+      console.log(`✓ 已恢复 ${recoveredSessionCount} 条战斗会话`);
     });
   }
 

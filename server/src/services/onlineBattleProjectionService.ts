@@ -2253,6 +2253,42 @@ export const getOnlineBattleSessionProjectionByBattleId = async (
   return getOnlineBattleSessionProjection(redisSessionId);
 };
 
+/**
+ * 读取全部在线战斗 session 投影。
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：统一从 Redis session 索引批量读取当前仍存活的 BattleSession 投影，供服务启动恢复与 BattleSession 懒回填复用。
+ * 2. 做什么：优先复用已在内存中的 session 投影，减少重复 Redis 读取；缺失部分再按 sessionId 精准补齐。
+ * 3. 不做什么：不做业务过滤，不判断权限，也不把结果写回 BattleSession runtime。
+ *
+ * 输入/输出：
+ * - 输入：无。
+ * - 输出：当前索引下全部可读取的在线战斗 session 投影列表。
+ *
+ * 数据流/状态流：
+ * - startup/query -> 本函数读取 session projection -> BattleSession service 决定是否回填 runtime。
+ *
+ * 关键边界条件与坑点：
+ * 1. Redis index 可能残留无效 sessionId，读取为空时必须过滤掉，不能把空洞条目当成有效会话。
+ * 2. 内存缓存与 Redis index 需要合并去重，避免同一个 session 被重复返回两次。
+ */
+export const listOnlineBattleSessionProjections = async (): Promise<OnlineBattleSessionSnapshot[]> => {
+  requireOnlineBattleProjectionReady();
+  const redisSessionIds = await redis.smembers(SESSION_INDEX_KEY);
+  const sessionIds = new Set<string>([
+    ...sessionProjectionBySessionId.keys(),
+    ...redisSessionIds,
+  ]);
+  if (sessionIds.size <= 0) {
+    return [];
+  }
+
+  const projections = await Promise.all(
+    [...sessionIds].map(async (sessionId) => await getOnlineBattleSessionProjection(sessionId)),
+  );
+  return projections.filter((projection): projection is OnlineBattleSessionSnapshot => projection !== null);
+};
+
 export const getArenaProjection = async (
   characterId: number,
 ): Promise<ArenaProjectionRecord | null> => {
