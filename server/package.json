@@ -14,6 +14,7 @@
     "test:model:technique": "tsx scripts/test-technique-model.ts",
     "simulate:equipment-cost": "tsx scripts/simulate-equipment-costs.ts",
     "simulate:defense-reduction": "tsx scripts/simulate-defense-reduction.ts",
+    "stats:realm-attrs": "tsx scripts/calc-realm-avg-attrs.ts",
     "db:generate": "node scripts/prismaCli.mjs generate",
     "db:pull": "node scripts/prismaCli.mjs db pull --schema prisma/schema.prisma",
     "db:push": "node scripts/prismaCli.mjs db push --schema prisma/schema.prisma",
