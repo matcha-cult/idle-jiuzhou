@@ -57,6 +57,7 @@ export type PartnerRow = {
   character_id: number;
   partner_def_id: string;
   nickname: string;
+  description: string | null;
   avatar: string | null;
   level: number;
   progress_exp: number;
@@ -807,7 +808,7 @@ export const buildPartnerDisplay = (params: {
     partnerDefId: definition.id,
     nickname: normalizeText(row.nickname) || normalizeText(definition.name),
     name: normalizeText(definition.name) || definition.id,
-    description: normalizeText(definition.description),
+    description: normalizeText(row.description) || normalizeText(definition.description),
     avatar: normalizeText(row.avatar) || normalizeText(definition.avatar) || null,
     element,
     role: normalizeText(definition.role) || '伙伴',

@@ -320,6 +320,7 @@ model character_partner {
   character_id                Int
   partner_def_id              String                      @db.VarChar(64)
   nickname                    String                      @db.VarChar(64)
+  description                 String?                     @db.VarChar(80)
   avatar                      String?                     @db.VarChar(255)
   level                       BigInt                      @default(1)
   progress_exp                BigInt                      @default(0)

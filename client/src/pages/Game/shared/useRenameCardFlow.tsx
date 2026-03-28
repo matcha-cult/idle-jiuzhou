@@ -4,10 +4,11 @@
  * 作用（做什么 / 不做什么）：
  * 1. 做什么：集中管理“打开改名弹窗 -> 提交接口 -> 成功提示 -> 刷新背包/业务数据”的通用流程，供角色与伙伴改名共用。
  * 2. 做什么：把提交中态、统一错误提示与弹窗渲染收口，避免多个入口各复制一套 state 和副作用。
- * 3. 不做什么：不决定改名对象的服务端接口，也不识别哪个道具是易名符。
+ * 3. 做什么：按需把伙伴实例描述字段挂到共享弹窗上，避免伙伴页单独再造一套编辑表单。
+ * 4. 不做什么：不决定改名对象的服务端接口，也不识别哪个道具是易名符。
  *
  * 输入/输出：
- * - 输入：当前名字、弹窗文案、改名请求函数，以及成功后的刷新回调。
+ * - 输入：当前名字、弹窗文案、可选头像/描述配置、改名请求函数，以及成功后的刷新回调。
  * - 输出：打开改名弹窗的方法、提交中状态，以及可直接渲染的弹窗节点。
  *
  * 数据流/状态流：
@@ -26,6 +27,7 @@ import {
 } from '../../../services/api';
 import CharacterRenameModal, {
   type CharacterRenameAvatarConfig,
+  type CharacterRenameDescriptionFieldConfig,
   type CharacterRenameSubmitPayload,
 } from './CharacterRenameModal';
 
@@ -47,6 +49,7 @@ interface RenameCardFlowCopy {
 interface UseRenameCardFlowOptions {
   currentName: string;
   avatarConfig?: CharacterRenameAvatarConfig;
+  descriptionFieldConfig?: CharacterRenameDescriptionFieldConfig;
   copy: RenameCardFlowCopy;
   refresh: () => Promise<void>;
   requestRename: (
@@ -60,6 +63,7 @@ interface UseRenameCardFlowOptions {
 export const useRenameCardFlow = ({
   currentName,
   avatarConfig,
+  descriptionFieldConfig,
   copy,
   refresh,
   requestRename,
@@ -116,6 +120,7 @@ export const useRenameCardFlow = ({
         submitText={copy.submitText}
         initialName={currentName}
         avatarConfig={avatarConfig}
+        descriptionFieldConfig={descriptionFieldConfig}
         submitting={renameSubmitting}
         onCancel={closeRename}
         onSubmit={handleSubmitRename}

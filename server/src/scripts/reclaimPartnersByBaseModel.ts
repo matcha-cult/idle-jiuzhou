@@ -106,6 +106,7 @@ type TargetPartnerRow = {
     partner_id: number;
     partner_def_id: string;
     partner_nickname: string;
+    partner_description: string | null;
     partner_avatar: string | null;
     partner_level: number;
     partner_progress_exp: number;
@@ -495,6 +496,7 @@ const loadTargetPartners = async (baseModels: string[]): Promise<TargetPartnerRo
         cp.id AS partner_id,
         cp.partner_def_id,
         cp.nickname AS partner_nickname,
+        cp.description AS partner_description,
         cp.avatar AS partner_avatar,
         cp.level AS partner_level,
         cp.progress_exp AS partner_progress_exp,
@@ -563,6 +565,7 @@ const loadTargetPartnersByIds = async (partnerIds: number[]): Promise<TargetPart
         cp.id AS partner_id,
         cp.partner_def_id,
         cp.nickname AS partner_nickname,
+        cp.description AS partner_description,
         cp.avatar AS partner_avatar,
         cp.level AS partner_level,
         cp.progress_exp AS partner_progress_exp,
@@ -803,6 +806,7 @@ const toPartnerDisplayRow = (row: TargetPartnerRow): PartnerRow => {
         character_id: row.owner_character_id,
         partner_def_id: row.partner_def_id,
         nickname: row.partner_nickname,
+        description: row.partner_description,
         avatar: row.partner_avatar,
         level: row.partner_level,
         progress_exp: row.partner_progress_exp,

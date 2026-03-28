@@ -2,7 +2,7 @@
  * 伙伴易名符改名流程 Hook
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：把伙伴总览页的“点击编辑图标 -> 消耗易名符改名 -> 刷新伙伴总览”流程收敛成单入口。
+ * 1. 做什么：把伙伴总览页的“点击编辑图标 -> 消耗易名符改名/改描述 -> 刷新伙伴总览”流程收敛成单入口。
  * 2. 做什么：复用共享改名弹窗与提交流程，避免伙伴页再复制一套提交状态和错误提示逻辑。
  * 3. 不做什么：不负责决定按钮是否可点，也不自行修改伙伴列表本地状态。
  *
@@ -21,6 +21,7 @@ import type { ReactNode } from 'react';
 
 import { renamePartnerWithCard, uploadAvatarAsset, type PartnerDetailDto } from '../../../../services/api';
 import { dispatchPartnerChangedEvent } from '../../shared/partnerTradeEvents';
+import { PARTNER_DESCRIPTION_MAX_LENGTH } from '../../shared/partnerDescriptionShared';
 import { useRenameCardFlow, type RenameCardContext } from '../../shared/useRenameCardFlow';
 import { getPartnerDisplayName, resolvePartnerAvatar } from '../../shared/partnerDisplay';
 
@@ -50,12 +51,18 @@ export const usePartnerRenameCardFlow = ({
       resolvePreviewUrl: resolvePartnerAvatar,
       helperText: '上传后的头像会在本次改名确认时一并保存',
     } : undefined,
+    descriptionFieldConfig: partner ? {
+      label: '伙伴描述',
+      placeholder: '请输入新的伙伴描述',
+      initialValue: partner.description,
+      maxLength: PARTNER_DESCRIPTION_MAX_LENGTH,
+    } : undefined,
     copy: {
       title: '伙伴改名',
       inputLabel: '新伙伴名',
       inputPlaceholder: '请输入新的伙伴名',
       submitText: '确认改名',
-      buildDescription: (itemName) => `消耗 1 张【${itemName}】后，立即将当前伙伴名称改为新的名称。`,
+      buildDescription: (itemName) => `消耗 1 张【${itemName}】后，立即将当前伙伴名称、头像与实例描述更新为新的内容。`,
       successFallbackMessage: '伙伴改名成功',
       failureFallbackMessage: '伙伴改名失败',
     },
@@ -69,6 +76,7 @@ export const usePartnerRenameCardFlow = ({
         itemInstanceId: context.itemInstanceId,
         nickname: payload.name,
         avatar: payload.avatar,
+        description: payload.description,
       }, requestConfig);
     },
     onAfterSuccess: () => {

@@ -90,6 +90,7 @@ import {
 } from './shared/partnerLevelLimit.js';
 import { resolveTechniqueBookLearning } from './shared/techniqueBookRules.js';
 import { consumeRenameCardItemInstance } from './shared/characterRenameCard.js';
+import { validatePartnerDescription } from './shared/partnerDescriptionRules.js';
 import { validatePartnerName } from './shared/partnerNameRules.js';
 import {
   getItemMetaMap,
@@ -1294,6 +1295,7 @@ class PartnerService {
     partnerId: number,
     itemInstanceId: number,
     nickname: string,
+    description?: string | null,
     avatar?: string | null,
   ): Promise<PartnerResult<PartnerRenameResultDto>> {
     try {
@@ -1319,8 +1321,19 @@ class PartnerService {
       if (!nicknameValidation.success) {
         return { success: false, message: nicknameValidation.message };
       }
+      const descriptionValidation = description === undefined
+        ? {
+            success: true as const,
+            description: partnerRow.description,
+          }
+        : validatePartnerDescription(description);
+      if (!descriptionValidation.success) {
+        return { success: false, message: descriptionValidation.message };
+      }
 
-      const normalizedAvatar = normalizeManagedAvatarValue(avatar);
+      const normalizedAvatar = avatar === undefined
+        ? undefined
+        : normalizeManagedAvatarValue(avatar);
       if (normalizedAvatar && !isValidManagedAvatarUrl(normalizedAvatar)) {
         return { success: false, message: '头像地址不合法' };
       }
@@ -1334,14 +1347,23 @@ class PartnerService {
         `
           UPDATE character_partner
           SET nickname = $2,
-              avatar = $3,
+              description = $3,
+              avatar = $4,
               updated_at = NOW()
           WHERE id = $1
         `,
-        [partnerId, nicknameValidation.nickname, normalizedAvatar],
+        [
+          partnerId,
+          nicknameValidation.nickname,
+          descriptionValidation.description,
+          normalizedAvatar === undefined ? partnerRow.avatar : normalizedAvatar,
+        ],
       );
 
-      await deleteManagedAvatarIfReplaced(partnerRow.avatar, normalizedAvatar);
+      await deleteManagedAvatarIfReplaced(
+        partnerRow.avatar,
+        normalizedAvatar === undefined ? partnerRow.avatar : normalizedAvatar,
+      );
 
       const refreshedPartner = await loadSinglePartnerRow(characterId, partnerId, false);
       if (!refreshedPartner) {

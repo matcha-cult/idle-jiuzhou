@@ -514,6 +514,7 @@ export const renamePartnerWithCard = (
     partnerId: number;
     itemInstanceId: number;
     nickname: string;
+    description?: string | null;
     avatar?: string | null;
   },
   requestConfig?: AxiosRequestConfig,
@@ -522,6 +523,7 @@ export const renamePartnerWithCard = (
     partnerId: params.partnerId,
     itemInstanceId: params.itemInstanceId,
     nickname: params.nickname,
+    description: params.description,
     avatar: params.avatar,
   }, requestConfig);
 };

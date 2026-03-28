@@ -299,7 +299,8 @@ router.post('/renameWithCard', asyncHandler(async (req, res) => {
   const partnerId = parsePositiveInt(req.body?.partnerId);
   const itemInstanceId = parsePositiveInt(req.body?.itemInstanceId ?? req.body?.itemId);
   const nickname = normalizePartnerNameInput(String(req.body?.nickname || ''));
-  const avatar = normalizeManagedAvatarValue(req.body?.avatar);
+  const descriptionRaw = req.body?.description;
+  const avatarRaw = req.body?.avatar;
   if (!partnerId) {
     return sendResult(res, { success: false, message: 'partnerId 参数无效' });
   }
@@ -309,8 +310,22 @@ router.post('/renameWithCard', asyncHandler(async (req, res) => {
   if (!nickname) {
     return sendResult(res, { success: false, message: '伙伴名不能为空' });
   }
+  if (descriptionRaw !== undefined && typeof descriptionRaw !== 'string' && descriptionRaw !== null) {
+    return sendResult(res, { success: false, message: 'description 参数无效' });
+  }
+  if (avatarRaw !== undefined && avatarRaw !== null && typeof avatarRaw !== 'string') {
+    return sendResult(res, { success: false, message: 'avatar 参数无效' });
+  }
+  const avatar = avatarRaw === undefined ? undefined : normalizeManagedAvatarValue(avatarRaw);
 
-  const result = await partnerService.renameWithCard(characterId, partnerId, itemInstanceId, nickname, avatar);
+  const result = await partnerService.renameWithCard(
+    characterId,
+    partnerId,
+    itemInstanceId,
+    nickname,
+    descriptionRaw,
+    avatar,
+  );
   if (result.success) {
     await safePushCharacterUpdate(userId);
   }
