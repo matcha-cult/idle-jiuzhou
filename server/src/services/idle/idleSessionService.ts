@@ -105,6 +105,61 @@ function normalizeCharacterIds(characterIds: number[]): number[] {
 }
 
 /**
+ * 收敛“同一角色存在多条 active/stopping 会话”的异常状态。
+ *
+ * 作用：
+ *   历史竞态可能为同一角色写出多条活跃会话；这里统一保留最新一条，
+ *   其余全部改为 interrupted，避免多个执行循环持续争抢同一角色的背包互斥锁。
+ *
+ * 边界条件：
+ *   1. 仅处理 `status IN ('active', 'stopping')` 的重复会话，不触碰历史会话。
+ *   2. 保留规则固定为 `started_at DESC, id DESC` 的第一条，确保所有调用点口径一致。
+ */
+async function collapseDuplicateActiveSessions(characterIds: number[]): Promise<void> {
+  const normalizedCharacterIds = normalizeCharacterIds(characterIds);
+  if (normalizedCharacterIds.length === 0) {
+    return;
+  }
+
+  const res = await query(
+    `
+      WITH ranked_sessions AS (
+        SELECT
+          id,
+          character_id,
+          ROW_NUMBER() OVER (
+            PARTITION BY character_id
+            ORDER BY started_at DESC, id DESC
+          ) AS rn
+        FROM idle_sessions
+        WHERE character_id = ANY($1::int[])
+          AND status IN ('active', 'stopping')
+      )
+      SELECT id, rn
+      FROM ranked_sessions
+      WHERE rn > 1
+    `,
+    [normalizedCharacterIds],
+  );
+
+  const duplicatedSessionIds = res.rows.map((row) => String(row.id));
+  if (duplicatedSessionIds.length === 0) {
+    return;
+  }
+
+  await query(
+    `
+      UPDATE idle_sessions
+      SET status = 'interrupted',
+          ended_at = NOW(),
+          updated_at = NOW()
+      WHERE id = ANY($1::uuid[])
+    `,
+    [duplicatedSessionIds],
+  );
+}
+
+/**
  * 收敛没有执行循环承接的 stopping 会话。
  *
  * 作用：
@@ -120,6 +175,8 @@ async function settleOrphanStoppingSessions(characterIds: number[]): Promise<voi
   if (normalizedCharacterIds.length === 0) {
     return;
   }
+
+  await collapseDuplicateActiveSessions(normalizedCharacterIds);
 
   const res = await query(
     `SELECT id, character_id, status
@@ -280,21 +337,7 @@ class IdleSessionService {
       if (existingSessionId) {
         return { success: false, error: '已有活跃挂机会话', existingSessionId };
       }
-
-      // 无活跃会话但拿不到锁：判定为陈旧锁，先做 compare-and-del 再重试一次。
-      const currentLockValue = await redis.get(lockKey);
-      if (currentLockValue) {
-        await compareAndDeleteLock(lockKey, currentLockValue);
-      }
-
-      lockAcquired = await tryAcquireStartLock(lockKey, lockToken, lockTtlSeconds);
-      if (!lockAcquired) {
-        const raceSessionId = await findActiveSessionId(characterId);
-        if (raceSessionId) {
-          return { success: false, error: '已有活跃挂机会话', existingSessionId: raceSessionId };
-        }
-        return { success: false, error: '挂机会话正在初始化，请稍后重试' };
-      }
+      return { success: false, error: '挂机会话正在初始化，请稍后重试' };
     }
 
     // 2. 快照构建放在事务外，避免长事务占用连接与行锁。
@@ -331,6 +374,25 @@ class IdleSessionService {
       if (charRes.rows.length === 0) {
         await releaseStartLock(lockKey, lockToken);
         return { success: false, error: '角色不存在' };
+      }
+
+      // 角色行锁到手后再次复检活跃会话，彻底堵住同角色并发 start 写出多条 active 的竞态。
+      const activeSessionRes = await query(
+        `SELECT id
+         FROM idle_sessions
+         WHERE character_id = $1
+           AND status IN ('active', 'stopping')
+         ORDER BY started_at DESC, id DESC
+         LIMIT 1`,
+        [characterId],
+      );
+      if (activeSessionRes.rows.length > 0) {
+        await releaseStartLock(lockKey, lockToken);
+        return {
+          success: false,
+          error: '已有活跃挂机会话',
+          existingSessionId: String(activeSessionRes.rows[0]?.id),
+        };
       }
 
       // 4. 写入 idle_sessions
@@ -440,6 +502,29 @@ class IdleSessionService {
     }
 
     return activeIdleCharacterIdSet;
+  }
+
+  /**
+   * 收敛全量活跃挂机会话中的重复角色。
+   *
+   * 作用：
+   *   给服务启动恢复链路提供统一自愈入口，避免历史脏数据在重启后再次恢复出多条执行循环。
+   *
+   * 边界条件：
+   *   1. 仅处理当前仍是 active/stopping 的角色集合，空集合直接返回。
+   *   2. 这里只做会话状态收敛，不负责执行循环的启动与停止。
+   */
+  async settleAllDuplicateActiveSessions(): Promise<void> {
+    const res = await query<{ character_id: number | string }>(
+      `
+        SELECT DISTINCT character_id
+        FROM idle_sessions
+        WHERE status IN ('active', 'stopping')
+      `,
+    );
+    await collapseDuplicateActiveSessions(
+      res.rows.map((row) => Number(row.character_id)),
+    );
   }
 
   /**

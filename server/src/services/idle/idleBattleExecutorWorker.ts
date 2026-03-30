@@ -614,6 +614,8 @@ async function checkTerminationConditions(
  * 服务启动时恢复所有活跃挂机会话
  */
 export async function recoverActiveIdleSessions(): Promise<void> {
+  await idleSessionService.settleAllDuplicateActiveSessions();
+
   const res = await query(
     `SELECT * FROM idle_sessions WHERE status IN ('active', 'stopping')`,
     [],
