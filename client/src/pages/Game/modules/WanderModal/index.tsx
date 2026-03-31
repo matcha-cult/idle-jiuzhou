@@ -268,7 +268,6 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
                 {storyForHistory ? (
                   <>
                     <div className="wander-story-premise">{storyForHistory.premise}</div>
-                    <div className="wander-story-summary">{storyForHistory.summary}</div>
                     <div className="wander-history-list">
                       {storyForHistory.episodes.map((episode) => (
                         <div key={episode.id} className="wander-history-card">

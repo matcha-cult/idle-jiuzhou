@@ -94,6 +94,9 @@ type WanderAiPromptRuleSet = {
     storyThemeLengthRange: string;
     storyThemeStyleRule: string;
     storyThemeExample: string;
+    storyPremiseLengthRange: string;
+    storyPremiseStyleRule: string;
+    storyPremiseExample: string;
     optionCount: number;
     optionStyleRule: string;
     optionExample: [string, string, string];
@@ -103,6 +106,8 @@ type WanderAiPromptRuleSet = {
     openingStyleRule: string;
     openingExample: string;
     summaryLengthRange: string;
+    summaryStyleRule: string;
+    summaryExample: string;
     rewardTitleNameLengthRange: string;
     rewardTitleDescLengthRange: string;
     endingTypeValues: WanderEndingType[];
@@ -127,10 +132,14 @@ const WANDER_OPTION_EXAMPLE: [string, string, string] = [
 ];
 const WANDER_STORY_THEME_EXAMPLE = '雨夜借灯';
 const WANDER_STORY_THEME_STYLE_RULE = 'storyTheme 必须是 24 字内主题短词，只概括这一幕或这条故事线的意象母题，像“雨夜借灯”“荒祠问卜”，禁止把剧情摘要直接写进 storyTheme，也不要写完整事件经过或长句解释。';
+const WANDER_STORY_PREMISE_EXAMPLE = '你循着残留血迹误入谷口深处，才觉今夜盘踞此地的异物并非寻常山兽。';
+const WANDER_STORY_PREMISE_STYLE_RULE = 'storyPremise 必须是 8 到 120 字的故事引子，只概括整条奇遇当前的起势、缘由或悬念，像一句前情提要；禁止把整幕 opening 原样压缩，也不要写成标题、角色独白或过长剧情摘要。';
 const WANDER_OPTION_STYLE_RULE = 'optionTexts 必须是长度恰好为 3 的字符串数组，每个元素都必须是非空短句，禁止返回空字符串、null、对象、嵌套数组或把三个选项拼成一个字符串。';
 const WANDER_EPISODE_TITLE_STYLE_RULE = 'episodeTitle 必须是 24字内中文短标题，像“雨夜借灯”“断桥问剑”，禁止句子式长标题、标点堆砌和副标题。';
 const WANDER_OPENING_STYLE_RULE = 'opening 必须是一段 80 到 420 字的完整正文，要交代当下场景、人物动作与异样征兆，禁止只写一句过短摘要、提纲句或纯背景说明。';
 const WANDER_OPENING_EXAMPLE = '夜雨压桥，河雾顺着石栏缓缓爬起，你才在破庙檐下收住衣角，便见对岸灯影摇成一线。那人披着旧蓑衣，手里提灯不前不后，只隔着雨幕望来，像是在等谁认出他的来意；桥下水声却忽然沉了一拍，仿佛另有什么东西正贴着桥墩缓缓游过。';
+const WANDER_SUMMARY_STYLE_RULE = 'summary 必须是 20 到 160 字的结果摘要，要概括这一幕的遭遇、转折或悬念收束，禁止只写标题式短语、口号句或过短结论。';
+const WANDER_SUMMARY_EXAMPLE = '你借灯试探来意，却先察觉桥下有异物潜行，雨夜中的来客与暗潮都未露真身，这一幕因此落在试探与提防之间。';
 
 const buildWanderAiEndingRuleText = (endingMode: WanderAiEndingMode): string => {
   if (endingMode === 'must_continue') {
@@ -151,11 +160,15 @@ export const buildWanderAiPromptRuleSet = (endingMode: WanderAiEndingMode): Wand
       '每次只写一幕剧情，正文需要留有抉择空间，但不能替玩家做选择。',
       WANDER_STORY_THEME_STYLE_RULE,
       `storyTheme 示例：${WANDER_STORY_THEME_EXAMPLE}`,
+      WANDER_STORY_PREMISE_STYLE_RULE,
+      `storyPremise 示例：${WANDER_STORY_PREMISE_EXAMPLE}`,
       WANDER_OPTION_STYLE_RULE,
       `optionTexts 示例：${JSON.stringify(WANDER_OPTION_EXAMPLE)}`,
       WANDER_EPISODE_TITLE_STYLE_RULE,
       WANDER_OPENING_STYLE_RULE,
       `opening 示例：${WANDER_OPENING_EXAMPLE}`,
+      WANDER_SUMMARY_STYLE_RULE,
+      `summary 示例：${WANDER_SUMMARY_EXAMPLE}`,
       buildWanderAiEndingRuleText(endingMode),
       '三条选项都必须可执行、方向明确、互相有差异，不能只换措辞。',
     ],
@@ -163,6 +176,9 @@ export const buildWanderAiPromptRuleSet = (endingMode: WanderAiEndingMode): Wand
       storyThemeLengthRange: '2-24',
       storyThemeStyleRule: WANDER_STORY_THEME_STYLE_RULE,
       storyThemeExample: WANDER_STORY_THEME_EXAMPLE,
+      storyPremiseLengthRange: '8-120',
+      storyPremiseStyleRule: WANDER_STORY_PREMISE_STYLE_RULE,
+      storyPremiseExample: WANDER_STORY_PREMISE_EXAMPLE,
       optionCount: WANDER_OPTION_COUNT,
       optionStyleRule: WANDER_OPTION_STYLE_RULE,
       optionExample: WANDER_OPTION_EXAMPLE,
@@ -172,6 +188,8 @@ export const buildWanderAiPromptRuleSet = (endingMode: WanderAiEndingMode): Wand
       openingStyleRule: WANDER_OPENING_STYLE_RULE,
       openingExample: WANDER_OPENING_EXAMPLE,
       summaryLengthRange: '20-160',
+      summaryStyleRule: WANDER_SUMMARY_STYLE_RULE,
+      summaryExample: WANDER_SUMMARY_EXAMPLE,
       rewardTitleNameLengthRange: '2-8',
       rewardTitleDescLengthRange: '8-40',
       endingTypeValues: WANDER_ENDING_TYPE_VALUES,

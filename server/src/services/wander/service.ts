@@ -24,6 +24,7 @@ import { Transactional } from '../../decorators/transactional.js';
 import { getMapDefinitions } from '../staticConfigLoader.js';
 import { grantPermanentTitleTx } from '../achievement/titleOwnership.js';
 import { generateWanderAiEpisodeDraft, isWanderAiAvailable, type WanderAiPreviousEpisodeContext } from './ai.js';
+import { resolveWanderTargetEpisodeCount } from './episodePlan.js';
 import { buildDateKey, resolveWanderGenerationDayKey, shouldBypassWanderDailyLimit } from './rules.js';
 import type {
   WanderChooseResultDto,
@@ -110,8 +111,6 @@ type WanderGenerationJobRow = {
 };
 
 const WANDER_MAX_CONTEXT_EPISODES = 5;
-const WANDER_MAX_EPISODE_INDEX = 15;
-const WANDER_MIN_ENDING_EPISODE_INDEX = 5;
 const WANDER_SOURCE_TYPE = 'wander_story';
 
 const toIsoString = (value: Date | string | null): string | null => {
@@ -575,6 +574,8 @@ class WanderService {
     const activeStory = await this.loadActiveStoryRow(characterId);
     const previousEpisodes = activeStory ? await this.loadRecentEpisodeContext(activeStory.id) : [];
     const nextEpisodeIndex = activeStory ? activeStory.episode_count + 1 : 1;
+    const storySeed = activeStory?.story_seed ?? Math.max(1, Math.floor(Date.now() % 2_147_483_647));
+    const targetEpisodeCount = resolveWanderTargetEpisodeCount(storySeed);
     const aiDraft = await generateWanderAiEpisodeDraft({
       nickname: character.nickname,
       realm: buildRealmText(character.realm, character.sub_realm),
@@ -584,20 +585,19 @@ class WanderService {
       activePremise: activeStory?.story_premise ?? null,
       storySummary: activeStory?.story_summary ?? null,
       nextEpisodeIndex,
-      maxEpisodeIndex: WANDER_MAX_EPISODE_INDEX,
-      canEndThisEpisode: nextEpisodeIndex >= WANDER_MIN_ENDING_EPISODE_INDEX,
+      maxEpisodeIndex: targetEpisodeCount,
+      canEndThisEpisode: nextEpisodeIndex >= targetEpisodeCount,
       previousEpisodes,
     });
 
-    if (nextEpisodeIndex < WANDER_MIN_ENDING_EPISODE_INDEX && aiDraft.isEnding) {
-      throw new Error('云游奇遇模型过早结束剧情');
+    if (nextEpisodeIndex < targetEpisodeCount && aiDraft.isEnding) {
+      throw new Error('云游奇遇模型未按既定总幕数继续推进剧情');
     }
-    if (nextEpisodeIndex >= WANDER_MAX_EPISODE_INDEX && !aiDraft.isEnding) {
-      throw new Error('云游奇遇模型未按上限收束剧情');
+    if (nextEpisodeIndex >= targetEpisodeCount && !aiDraft.isEnding) {
+      throw new Error('云游奇遇模型未按既定总幕数收束剧情');
     }
 
     const storyId = activeStory?.id ?? buildStoryId();
-    const storySeed = activeStory?.story_seed ?? Math.max(1, Math.floor(Date.now() % 2_147_483_647));
     const episodeId = buildEpisodeId();
 
     if (!activeStory) {
