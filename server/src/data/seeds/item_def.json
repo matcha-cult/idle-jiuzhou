@@ -138,7 +138,7 @@
       "stack_max": 9999,
       "bind_type": "pickup",
       "tradeable": false,
-      "icon": "/assets/items/pill/zhu_ji_dan.png",
+      "icon": "/assets/items/zhu_ji_dan.webp",
       "description": "珍贵丹药，服用后获得大量经验",
       "long_desc": "筑基丹乃修士突破境界之宝丹，服用可获得1000经验。",
       "tags": [
