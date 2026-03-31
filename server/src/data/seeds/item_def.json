@@ -2243,7 +2243,7 @@
       "stack_max": 9999,
       "bind_type": "none",
       "tradeable": true,
-      "icon": "/assets/items/xinmo_jinghua.png",
+      "icon": "/assets/items/xin_mo_jing_hua.webp",
       "description": "斩灭心魔后凝结的纯净道念精华，用于高阶功法突破。",
       "long_desc": "原为杂乱心念，被道心熔炼后化为可控精华，蕴含罕见的心神稳定效应。",
       "tags": [
