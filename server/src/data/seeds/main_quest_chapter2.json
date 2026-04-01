@@ -244,7 +244,7 @@
       "section_num": 6,
       "name": "心魔初试",
       "description": "按照守墓人指引，完成心魔幻境首次试炼。",
-      "brief": "通关心魔幻境（普通）1 次。",
+      "brief": "通关心魔幻境 1 次。",
       "npc_id": "npc-youming-guardian",
       "map_id": "map-youming-valley",
       "room_id": "room-youming-palace-front",
@@ -254,11 +254,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关心魔幻境（普通）",
+          "text": "通关心魔幻境",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianqi-xinmo-huanjing",
-            "difficulty_id": "dd-lianqi-xinmo-n"
+            "dungeon_id": "dungeon-lianqi-xinmo-huanjing"
           }
         }
       ],
@@ -328,7 +327,7 @@
       "section_num": 8,
       "name": "矿渊探索",
       "description": "深入灵脉矿渊，获取稳固心境与突破所需矿材。",
-      "brief": "通关灵脉矿渊（普通）1 次。",
+      "brief": "通关灵脉矿渊 1 次。",
       "npc_id": "npc-kuangmai-explorer",
       "map_id": "map-nanhai-coast",
       "room_id": "room-nanhai-mine-entrance",
@@ -338,11 +337,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关灵脉矿渊（普通）",
+          "text": "通关灵脉矿渊",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianqi-lingmai-kuangyuan",
-            "difficulty_id": "dd-lianqi-lingmai-n"
+            "dungeon_id": "dungeon-lianqi-lingmai-kuangyuan"
           }
         }
       ],
@@ -368,8 +366,8 @@
       "chapter_id": "mq-chapter-2",
       "section_num": 9,
       "name": "心魔再临",
-      "description": "携矿渊所得重返幽冥谷，在更高强度幻境中斩断执念。",
-      "brief": "通关心魔幻境（困难）1 次。",
+      "description": "携矿渊所得重返幽冥谷，再次斩断执念。",
+      "brief": "通关心魔幻境 1 次。",
       "npc_id": "npc-youming-guardian",
       "map_id": "map-youming-valley",
       "room_id": "room-youming-palace-front",
@@ -379,11 +377,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关心魔幻境（困难）",
+          "text": "通关心魔幻境",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianqi-xinmo-huanjing",
-            "difficulty_id": "dd-lianqi-xinmo-h"
+            "dungeon_id": "dungeon-lianqi-xinmo-huanjing"
           }
         }
       ],

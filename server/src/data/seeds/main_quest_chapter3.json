@@ -217,7 +217,7 @@
       "section_num": 5,
       "name": "裂渊初探",
       "description": "法阵初稳后，你第一次进入炎霜裂渊，测试可控区间。",
-      "brief": "通关炎霜裂渊（普通）1 次。",
+      "brief": "通关炎霜裂渊 1 次。",
       "npc_id": "npc-yanbing-watcher",
       "map_id": "map-yanbing-rift",
       "room_id": "room-yanbing-rift-gate",
@@ -227,11 +227,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关炎霜裂渊（普通）",
+          "text": "通关炎霜裂渊",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianqi-yanshuang-lieyuan",
-            "difficulty_id": "dd-lianqi-yanshuang-n"
+            "dungeon_id": "dungeon-lianqi-yanshuang-lieyuan"
           }
         }
       ],
@@ -257,8 +256,8 @@
       "chapter_id": "mq-chapter-3",
       "section_num": 6,
       "name": "寒炎复压",
-      "description": "裂渊二次暴走，你需在更高强度中完成压制并带回核心样本。",
-      "brief": "通关炎霜裂渊（困难）并收集心魔精华。",
+      "description": "裂渊二次暴走，你需完成压制并带回核心样本。",
+      "brief": "通关炎霜裂渊并收集心魔精华。",
       "npc_id": "npc-yanbing-watcher",
       "map_id": "map-yanbing-rift",
       "room_id": "room-yanbing-rift-gate",
@@ -268,11 +267,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关炎霜裂渊（困难）",
+          "text": "通关炎霜裂渊",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianqi-yanshuang-lieyuan",
-            "difficulty_id": "dd-lianqi-yanshuang-h"
+            "dungeon_id": "dungeon-lianqi-yanshuang-lieyuan"
           }
         },
         {

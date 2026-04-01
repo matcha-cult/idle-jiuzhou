@@ -128,8 +128,8 @@
       "chapter_id": "mq-chapter-7",
       "section_num": 3,
       "name": "玄宫试律",
-      "description": "进入玄鉴司天宫完成一次普通问律试炼，验证自身能否承受镜律反照。",
-      "brief": "通关玄鉴司天宫（普通）1次。",
+      "description": "进入玄鉴司天宫完成一次问律试炼，验证自身能否承受镜律反照。",
+      "brief": "通关玄鉴司天宫 1 次。",
       "npc_id": "npc-jingxu-lawkeeper",
       "map_id": "map-dadao-jingxu",
       "room_id": "room-jingxu-sitian-gate",
@@ -139,11 +139,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关玄鉴司天宫（普通）",
+          "text": "通关玄鉴司天宫",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianshen-xuanjian-sitian-gong",
-            "difficulty_id": "dd-jingxu-sitian-n"
+            "dungeon_id": "dungeon-lianshen-xuanjian-sitian-gong"
           }
         }
       ],
@@ -218,8 +217,8 @@
       "chapter_id": "mq-chapter-7",
       "section_num": 5,
       "name": "司天破镜",
-      "description": "连续完成困难问律试炼，并击败玄鉴真君，压住镜界的最高反照潮。",
-      "brief": "通关玄鉴司天宫困难2次，并击败玄鉴真君1次。",
+      "description": "连续完成问律试炼，并击败玄鉴真君，压住镜界的最高反照潮。",
+      "brief": "通关玄鉴司天宫 2 次，并击败玄鉴真君 1 次。",
       "npc_id": "npc-jingxu-lawkeeper",
       "map_id": "map-dadao-jingxu",
       "room_id": "room-jingxu-sitian-gate",
@@ -229,11 +228,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关玄鉴司天宫（困难）",
+          "text": "通关玄鉴司天宫",
           "target": 2,
           "params": {
-            "dungeon_id": "dungeon-lianshen-xuanjian-sitian-gong",
-            "difficulty_id": "dd-jingxu-sitian-h"
+            "dungeon_id": "dungeon-lianshen-xuanjian-sitian-gong"
           }
         },
         {

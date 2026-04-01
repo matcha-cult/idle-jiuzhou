@@ -222,8 +222,8 @@
       "chapter_id": "mq-chapter-4",
       "section_num": 5,
       "name": "宫阙初试",
-      "description": "在隐修者的指引下完成九台宫阙普通试炼，熟悉阵核节奏。",
-      "brief": "通关九台宫阙（普通）1 次。",
+      "description": "在隐修者的指引下完成九台宫阙试炼，熟悉阵核节奏。",
+      "brief": "通关九台宫阙 1 次。",
       "npc_id": "npc-jiutai-hermit",
       "map_id": "map-jiutai-sanctum",
       "room_id": "room-jiutai-outer-gate",
@@ -233,11 +233,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关九台宫阙（普通）",
+          "text": "通关九台宫阙",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianqi-jiutai-gongque",
-            "difficulty_id": "dd-lianqi-jiutai-n"
+            "dungeon_id": "dungeon-lianqi-jiutai-gongque"
           }
         }
       ],
@@ -298,8 +297,8 @@
       "chapter_id": "mq-chapter-4",
       "section_num": 7,
       "name": "宫阙压测",
-      "description": "在困难强度下稳定宫阙阵核，验证你是否具备冲击结胎的资格。",
-      "brief": "通关九台宫阙（困难）1 次。",
+      "description": "稳定宫阙阵核，验证你是否具备冲击结胎的资格。",
+      "brief": "通关九台宫阙 1 次。",
       "npc_id": "npc-jiutai-hermit",
       "map_id": "map-jiutai-sanctum",
       "room_id": "room-jiutai-core-hall",
@@ -309,11 +308,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关九台宫阙（困难）",
+          "text": "通关九台宫阙",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianqi-jiutai-gongque",
-            "difficulty_id": "dd-lianqi-jiutai-h"
+            "dungeon_id": "dungeon-lianqi-jiutai-gongque"
           }
         }
       ],

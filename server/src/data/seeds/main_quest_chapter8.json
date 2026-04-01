@@ -177,8 +177,8 @@
       "chapter_id": "mq-chapter-8",
       "section_num": 4,
       "name": "道宫初问",
-      "description": "进入万法道宫完成一次普通问律，验证你是否能承受证道前的基础法则审照。",
-      "brief": "通关万法道宫（普通）1次。",
+      "description": "进入万法道宫完成一次问律，验证你是否能承受证道前的基础法则审照。",
+      "brief": "通关万法道宫 1 次。",
       "npc_id": "npc-tianque-zhilv-tianguan",
       "map_id": "map-wanfa-tianque",
       "room_id": "room-tianque-daogong-gate",
@@ -188,11 +188,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关万法道宫（普通）",
+          "text": "通关万法道宫",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianxu-wanfa-daogong",
-            "difficulty_id": "dd-wanfa-daogong-n"
+            "dungeon_id": "dungeon-lianxu-wanfa-daogong"
           }
         }
       ],
@@ -267,8 +266,8 @@
       "chapter_id": "mq-chapter-8",
       "section_num": 6,
       "name": "道宫再问",
-      "description": "完成两轮高压问律，让法印在困难法宫中真正压实。",
-      "brief": "通关万法道宫（困难）2次。",
+      "description": "完成两轮道宫问律，让法印真正压实。",
+      "brief": "通关万法道宫 2 次。",
       "npc_id": "npc-tianque-zhilv-tianguan",
       "map_id": "map-wanfa-tianque",
       "room_id": "room-tianque-daogong-gate",
@@ -278,11 +277,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关万法道宫（困难）",
+          "text": "通关万法道宫",
           "target": 2,
           "params": {
-            "dungeon_id": "dungeon-lianxu-wanfa-daogong",
-            "difficulty_id": "dd-wanfa-daogong-h"
+            "dungeon_id": "dungeon-lianxu-wanfa-daogong"
           }
         }
       ],

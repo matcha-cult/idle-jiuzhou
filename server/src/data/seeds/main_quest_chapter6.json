@@ -128,8 +128,8 @@
       "chapter_id": "mq-chapter-6",
       "section_num": 3,
       "name": "天台试锋",
-      "description": "在还虚天台完成一次普通试炼，验证裂界承压能力。",
-      "brief": "通关还虚天台（普通）1次。",
+      "description": "在还虚天台完成一次试炼，验证裂界承压能力。",
+      "brief": "通关还虚天台 1 次。",
       "npc_id": "npc-huixu-guide",
       "map_id": "map-huixu-rift",
       "room_id": "room-huixu-tiantai-gate",
@@ -139,11 +139,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关还虚天台（普通）",
+          "text": "通关还虚天台",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianshen-huixu-tiantai",
-            "difficulty_id": "dd-huixu-tiantai-n"
+            "dungeon_id": "dungeon-lianshen-huixu-tiantai"
           }
         }
       ],
@@ -217,9 +216,9 @@
       "id": "main-6-005",
       "chapter_id": "mq-chapter-6",
       "section_num": 5,
-      "name": "困难镇界",
-      "description": "连续完成困难试炼并击败归墟领主。",
-      "brief": "通关还虚天台困难2次，并击败归墟领主1次。",
+      "name": "镇界试炼",
+      "description": "连续完成还虚天台试炼并击败归墟领主。",
+      "brief": "通关还虚天台 2 次，并击败归墟领主 1 次。",
       "npc_id": "npc-huixu-guide",
       "map_id": "map-huixu-rift",
       "room_id": "room-huixu-tiantai-gate",
@@ -229,11 +228,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关还虚天台（困难）",
+          "text": "通关还虚天台",
           "target": 2,
           "params": {
-            "dungeon_id": "dungeon-lianshen-huixu-tiantai",
-            "difficulty_id": "dd-huixu-tiantai-h"
+            "dungeon_id": "dungeon-lianshen-huixu-tiantai"
           }
         },
         {

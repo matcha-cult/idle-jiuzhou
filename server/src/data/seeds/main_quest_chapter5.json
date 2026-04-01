@@ -111,8 +111,8 @@
       "chapter_id": "mq-chapter-5",
       "section_num": 3,
       "name": "神殿证道",
-      "description": "进入虚灵神殿，通关普通难度以证明你已具备养神的资质。",
-      "brief": "通关虚灵神殿（普通难度）。",
+      "description": "进入虚灵神殿，完成一次试炼以证明你已具备养神的资质。",
+      "brief": "通关虚灵神殿 1 次。",
       "npc_id": "npc-shenshi-guide",
       "map_id": "map-shenshi-wasteland",
       "room_id": "room-shenshi-temple-gate",
@@ -122,11 +122,10 @@
         {
           "id": "obj-1",
           "type": "dungeon_clear",
-          "text": "通关虚灵神殿（普通）",
+          "text": "通关虚灵神殿",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianshen-xuling-shendian",
-            "difficulty_id": "dd-lianshen-xuling-n"
+            "dungeon_id": "dungeon-lianshen-xuling-shendian"
           }
         }
       ],

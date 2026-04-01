@@ -1086,7 +1086,7 @@
       "category": "event",
       "title": "周常：宫阙连战",
       "realm": "炼炁化神·采药期",
-      "description": "在九台宫阙完成多轮清剿与困难挑战。",
+      "description": "在九台宫阙完成多轮清剿。",
       "giver_npc_id": "npc-jiutai-hermit",
       "map_id": "map-jiutai-sanctum",
       "room_id": "room-jiutai-outer-gate",
@@ -1103,11 +1103,10 @@
         {
           "id": "obj-002",
           "type": "dungeon_clear",
-          "text": "通关九台宫阙（困难）1 次",
+          "text": "通关九台宫阙 1 次",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianqi-jiutai-gongque",
-            "difficulty_id": "dd-lianqi-jiutai-h"
+            "dungeon_id": "dungeon-lianqi-jiutai-gongque"
           }
         }
       ],
@@ -1598,9 +1597,9 @@
     {
       "id": "task-huanxu-daily-005",
       "category": "daily",
-      "title": "困难巡检",
+      "title": "天台巡检",
       "realm": "炼神返虚·养神期",
-      "description": "完成一次困难难度还虚天台巡检。",
+      "description": "完成一次还虚天台巡检。",
       "giver_npc_id": "npc-huixu-guide",
       "map_id": "map-huixu-rift",
       "room_id": "room-huixu-tiantai-gate",
@@ -1608,11 +1607,10 @@
         {
           "id": "obj-001",
           "type": "dungeon_clear",
-          "text": "通关还虚天台（困难）1次",
+          "text": "通关还虚天台 1 次",
           "target": 1,
           "params": {
-            "dungeon_id": "dungeon-lianshen-huixu-tiantai",
-            "difficulty_id": "dd-huixu-tiantai-h"
+            "dungeon_id": "dungeon-lianshen-huixu-tiantai"
           }
         }
       ],
@@ -1640,7 +1638,7 @@
       "category": "event",
       "title": "周常：天台轮战",
       "realm": "炼神返虚·养神期",
-      "description": "多次完成困难还虚天台并击败归墟领主。",
+      "description": "多次完成还虚天台并击败归墟领主。",
       "giver_npc_id": "npc-huixu-guide",
       "map_id": "map-huixu-rift",
       "room_id": "room-huixu-tiantai-gate",
@@ -1648,11 +1646,10 @@
         {
           "id": "obj-001",
           "type": "dungeon_clear",
-          "text": "通关还虚天台（困难）3次",
+          "text": "通关还虚天台 3 次",
           "target": 3,
           "params": {
-            "dungeon_id": "dungeon-lianshen-huixu-tiantai",
-            "difficulty_id": "dd-huixu-tiantai-h"
+            "dungeon_id": "dungeon-lianshen-huixu-tiantai"
           }
         },
         {
@@ -1778,7 +1775,7 @@
       "category": "event",
       "title": "周常：司天轮照",
       "realm": "炼神返虚·合道期",
-      "description": "多次完成困难玄鉴司天宫并击败玄鉴真君，验证问律承压上限。",
+      "description": "多次完成玄鉴司天宫并击败玄鉴真君，验证问律承压上限。",
       "giver_npc_id": "npc-jingxu-lawkeeper",
       "map_id": "map-dadao-jingxu",
       "room_id": "room-jingxu-sitian-gate",
@@ -1786,11 +1783,10 @@
         {
           "id": "obj-001",
           "type": "dungeon_clear",
-          "text": "通关玄鉴司天宫（困难）3次",
+          "text": "通关玄鉴司天宫 3 次",
           "target": 3,
           "params": {
-            "dungeon_id": "dungeon-lianshen-xuanjian-sitian-gong",
-            "difficulty_id": "dd-jingxu-sitian-h"
+            "dungeon_id": "dungeon-lianshen-xuanjian-sitian-gong"
           }
         }
       ],
@@ -1885,7 +1881,7 @@
       "category": "event",
       "title": "周常：道宫问律",
       "realm": "炼神返虚·合道期",
-      "description": "完成多轮高压问律，收集灵砂与法印，验证证道前的整体承压能力。",
+      "description": "完成多轮道宫问律，收集灵砂与法印，验证证道前的整体承压能力。",
       "giver_npc_id": "npc-tianque-zhilv-tianguan",
       "map_id": "map-wanfa-tianque",
       "room_id": "room-tianque-daogong-gate",
@@ -1893,11 +1889,10 @@
         {
           "id": "obj-001",
           "type": "dungeon_clear",
-          "text": "通关万法道宫（困难）3次",
+          "text": "通关万法道宫 3 次",
           "target": 3,
           "params": {
-            "dungeon_id": "dungeon-lianxu-wanfa-daogong",
-            "difficulty_id": "dd-wanfa-daogong-h"
+            "dungeon_id": "dungeon-lianxu-wanfa-daogong"
           }
         },
         {

@@ -3,7 +3,7 @@
  *
  * 作用（做什么 / 不做什么）：
  * 1. 做什么：锁定“同一次特定秘境通关应同时命中多条任务”的筛选规则，防止只推进其中一条 recurring 任务。
- * 2. 做什么：覆盖困难秘境同时命中“同副本普通要求 + 困难要求”的边界，避免后续把难度过滤写窄。
+ * 2. 做什么：覆盖困难秘境也会命中“同副本任意难度要求”的边界，避免后续把难度过滤写窄。
  * 3. 不做什么：不连数据库，不验证 `character_task_progress` 持久化，也不跑完整任务服务流程。
  *
  * 输入/输出：
@@ -16,7 +16,7 @@
  * -> 断言同一次事件能覆盖所有预期任务。
  *
  * 关键边界条件与坑点：
- * 1. 困难秘境通关既要命中带 `difficulty_id` 的困难任务，也要命中同副本但不限制难度的普通任务。
+ * 1. 周常/日常副本目标现在统一不限制难度，因此普通与困难通关都必须命中同一批任务。
  * 2. 这里断言的是“必须包含哪些任务”，不把跨境界通用的“任意秘境”任务硬编码进精确集合，避免和现有高境界兼容策略互相绑死。
  */
 import assert from 'node:assert/strict';
@@ -91,7 +91,7 @@ test('collectMatchedRecurringTaskIds: 采药期通关九台宫阙时，应同时
   ]);
 });
 
-test('collectMatchedRecurringTaskIds: 养神期通关困难还虚天台时，应同时命中日常困难与周常困难', () => {
+test('collectMatchedRecurringTaskIds: 养神期通关困难还虚天台时，应同时命中同副本日常与周常', () => {
   const characterRealmState: CharacterTaskRealmState = {
     realm: '炼神返虚',
     subRealm: '养神期',
@@ -115,30 +115,29 @@ test('collectMatchedRecurringTaskIds: 养神期通关困难还虚天台时，应
   ]);
 });
 
-test('objectiveMatchesTaskEvent: 困难目标不应被普通难度通关误推进', () => {
-  const hardDungeonObjective: TaskObjectiveLike = {
-    id: 'obj-hard',
+test('objectiveMatchesTaskEvent: 未限制难度的副本目标应被普通与困难通关同时推进', () => {
+  const flexibleDungeonObjective: TaskObjectiveLike = {
+    id: 'obj-flexible',
     type: 'dungeon_clear',
-    text: '通关还虚天台（困难）1次',
+    text: '通关还虚天台 1次',
     target: 1,
     params: {
       dungeon_id: 'dungeon-lianshen-huixu-tiantai',
-      difficulty_id: 'dd-huixu-tiantai-h',
     },
   };
 
-  const normalResult = objectiveMatchesTaskEvent(hardDungeonObjective, {
+  const normalResult = objectiveMatchesTaskEvent(flexibleDungeonObjective, {
     type: 'dungeon_clear',
     dungeonId: 'dungeon-lianshen-huixu-tiantai',
     count: 1,
   });
-  const hardResult = objectiveMatchesTaskEvent(hardDungeonObjective, {
+  const hardResult = objectiveMatchesTaskEvent(flexibleDungeonObjective, {
     type: 'dungeon_clear',
     dungeonId: 'dungeon-lianshen-huixu-tiantai',
     difficultyId: 'dd-huixu-tiantai-h',
     count: 1,
   });
 
-  assert.deepEqual(normalResult, { matched: false, delta: 0 });
+  assert.deepEqual(normalResult, { matched: true, delta: 1 });
   assert.deepEqual(hardResult, { matched: true, delta: 1 });
 });
