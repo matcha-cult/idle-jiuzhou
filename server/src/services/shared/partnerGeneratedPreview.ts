@@ -39,6 +39,7 @@ import {
   buildPartnerRecruitResponseFormat,
   fillPartnerRecruitBaseAttrs,
   getPartnerRecruitTechniqueMaxLayer,
+  rollPartnerRecruitPrimaryAttackGrowthTarget,
   type PartnerRecruitBaseAttrs,
   type PartnerRecruitCombatStyle,
   type PartnerRecruitDraft,
@@ -346,6 +347,7 @@ export const buildGeneratedPartnerTextModelRequest = (params: {
     seed,
     requestedBaseModel: params.requestedBaseModel,
   });
+  const primaryAttackGrowthTarget = rollPartnerRecruitPrimaryAttackGrowthTarget(params.quality, seed);
   const timeoutMs = 300_000;
 
   return {
@@ -355,6 +357,7 @@ export const buildGeneratedPartnerTextModelRequest = (params: {
       baseModel: baseModelSelection.baseModel,
       isPlayerProvidedBaseModel: baseModelSelection.requestedBaseModel !== null,
       promptNoiseHash,
+      primaryAttackGrowthTarget,
       fusionReferencePartners: params.fusionReferencePartners,
     })),
     seed,

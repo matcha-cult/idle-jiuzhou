@@ -266,6 +266,18 @@ test('buildTechniqueGenerationRetryPromptContext: 升级项把 scaleRate 写在 
     ),
     true,
   );
+  assert.equal(
+    retryGuidance?.correctionRules?.includes(
+      '错误示例：{"layer":3,"changes":{"scaleRate":1.8}}',
+    ),
+    true,
+  );
+  assert.equal(
+    retryGuidance?.correctionRules?.includes(
+      '正确示例：{"layer":3,"changes":{"effects":[{"type":"damage","valueType":"scale","scaleAttr":"wugong","scaleRate":1.8,"damageType":"physical","element":"none","hit_count":1}]}}',
+    ),
+    true,
+  );
 });
 
 test('buildTechniqueGenerationRetryPromptContext: 升级项超预算总伤害倍率应注入定向纠偏约束', () => {

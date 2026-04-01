@@ -25,6 +25,7 @@ import {
   buildPartnerRecruitPromptInput,
   buildPartnerRecruitResponseFormat,
   fillPartnerRecruitBaseAttrs,
+  rollPartnerRecruitPrimaryAttackGrowthTarget,
   resolvePartnerRecruitGeneratedNonHeavenCountAfterSuccess,
   resolvePartnerRecruitHeavenGuaranteeState,
   resolvePartnerRecruitQualityRateEntries,
@@ -345,7 +346,19 @@ test('buildPartnerRecruitPromptInput: 应放开 role 枚举并要求显式提供
   );
   assert.equal(
     promptInput.constraints?.includes(
-      '当前 quality=黄，结果应与 referencePartnerExample.partner（青木小偶）处于同一正常黄品量级，不得明显弱于该黄品参考模板',
+      '在不突破当前 quality 全部字段约束、passiveValueGuideByKey 与 schema 上限的前提下，默认按该品质的偏强档生成，核心战斗面板与天生功法收益优先落在该品质常规可接受区间的上半区，不要只给刚好及格的保守低值',
+    ),
+    true,
+  );
+  assert.equal(
+    promptInput.constraints?.includes(
+      '强度提升应优先集中在 combatStyle 对应的主攻属性、max_qixue、双防、sudu 与匹配的 innateTechniques 收益上，形成清晰但不过分平均的强势轮廓；禁止把大量核心属性长期留在接近零增益的弱档',
+    ),
+    true,
+  );
+  assert.equal(
+    promptInput.constraints?.includes(
+      '当前 quality=黄，结果应与 referencePartnerExample.partner（青木小偶）处于同一正常黄品量级，建议略强于该黄品参考模板并靠近正常黄品中的偏强档，但不得越到玄品量级',
     ),
     true,
   );
@@ -374,6 +387,7 @@ test('buildPartnerRecruitPromptInput: 应放开 role 枚举并要求显式提供
 test('buildPartnerRecruitPromptInput: 天品应被要求明显强于黄品参考模板', () => {
   const promptInput = buildPartnerRecruitPromptInput('天', {
     baseModel: DEFAULT_BASE_MODEL,
+    primaryAttackGrowthTarget: 41,
   }) as {
     constraints?: string[];
   };
@@ -381,6 +395,102 @@ test('buildPartnerRecruitPromptInput: 天品应被要求明显强于黄品参考
   assert.equal(
     promptInput.constraints?.includes(
       '当前 quality=天，结果必须明显强于 referencePartnerExample.partner（青木小偶）这个黄品基线；除流派偏科允许的非主攻项外，不得出现核心基础属性或每级成长反而弱于该黄品参考模板',
+    ),
+    true,
+  );
+});
+
+test('rollPartnerRecruitPrimaryAttackGrowthTarget: 应按品质与 seed 稳定摇出主攻成长目标值', () => {
+  const first = rollPartnerRecruitPrimaryAttackGrowthTarget('地', 20260401);
+  const second = rollPartnerRecruitPrimaryAttackGrowthTarget('地', 20260401);
+  const another = rollPartnerRecruitPrimaryAttackGrowthTarget('地', 20260402);
+
+  assert.equal(first, second);
+  assert.equal(first >= 20 && first <= 40, true);
+  assert.equal(another >= 20 && another <= 40, true);
+});
+
+test('rollPartnerRecruitPrimaryAttackGrowthTarget: 高值出现概率应低于低值', () => {
+  const min = 20;
+  const max = 40;
+  const midpoint = Math.floor((min + max) / 2);
+  let lowBucketCount = 0;
+  let highBucketCount = 0;
+  let total = 0;
+
+  for (let seed = 20260000; seed < 20262000; seed += 1) {
+    const value = rollPartnerRecruitPrimaryAttackGrowthTarget('地', seed);
+    total += value;
+    if (value <= midpoint) {
+      lowBucketCount += 1;
+    } else {
+      highBucketCount += 1;
+    }
+  }
+
+  assert.equal(lowBucketCount > highBucketCount, true);
+  assert.equal(total / 2000 < 30, true);
+});
+
+test('rollPartnerRecruitPrimaryAttackGrowthTarget: 天级最低值不应形成过高陡峰', () => {
+  let count25 = 0;
+  let count26 = 0;
+  let count50 = 0;
+
+  for (let seed = 20260000; seed < 20262000; seed += 1) {
+    const value = rollPartnerRecruitPrimaryAttackGrowthTarget('天', seed);
+    if (value === 25) count25 += 1;
+    if (value === 26) count26 += 1;
+    if (value === 50) count50 += 1;
+  }
+
+  assert.equal(count25 / 2000 < 0.12, true);
+  assert.equal(count25 > count50, true);
+  assert.equal(Math.abs(count25 - count26) / 2000 < 0.05, true);
+});
+
+test('buildPartnerRecruitPromptInput: 应注入程序随机出的主攻成长目标值，并让 AI 决定落到物攻或法攻', () => {
+  const expectedTargetByQuality = {
+    黄: 18,
+    玄: 24,
+    地: 37,
+    天: 41,
+  } as const;
+
+  (Object.entries(expectedTargetByQuality) as Array<[keyof typeof expectedTargetByQuality, number]>).forEach(([quality, target]) => {
+    const promptInput = buildPartnerRecruitPromptInput(quality, {
+      baseModel: DEFAULT_BASE_MODEL,
+      primaryAttackGrowthTarget: target,
+    }) as {
+      primaryAttackGrowthTarget?: number;
+      constraints?: string[];
+    };
+
+    assert.equal(promptInput.primaryAttackGrowthTarget, target);
+    assert.equal(
+      promptInput.constraints?.includes(
+        `本次程序已为当前 quality=${quality} 稳定随机出主攻成长目标值 primaryAttackGrowthTarget=${target}；该值只用于双攻中的主攻项，不代表双攻都取这个值`,
+      ),
+      true,
+    );
+    assert.equal(
+      promptInput.constraints?.includes(
+        `由你自行判断 partner.combatStyle；若最终 combatStyle=physical，则 levelAttrGains.wugong 必须精确等于 ${target}，levelAttrGains.fagong 由你按定位自行推断且不得高于 ${target}；若最终 combatStyle=magic，则 levelAttrGains.fagong 必须精确等于 ${target}，levelAttrGains.wugong 由你按定位自行推断且不得高于 ${target}`,
+      ),
+      true,
+    );
+  });
+
+  const earthPromptInput = buildPartnerRecruitPromptInput('地', {
+    baseModel: DEFAULT_BASE_MODEL,
+    primaryAttackGrowthTarget: 33,
+  }) as {
+    constraints?: string[];
+  };
+
+  assert.equal(
+    earthPromptInput.constraints?.includes(
+      '除主攻成长目标值外，max_qixue、max_lingqi、双防、sudu、回复与副攻成长等其他属性全部由 AI 按 role、attributeElement、description 与 combatStyle 自行推断，但综合强度必须与当前品质匹配，不能出现主攻成长确定后其余核心面板明显塌陷',
     ),
     true,
   );

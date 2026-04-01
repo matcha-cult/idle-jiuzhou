@@ -33,6 +33,7 @@ import {
   TECHNIQUE_EFFECT_TYPE_LIST,
   TECHNIQUE_EFFECT_UNSUPPORTED_FIELDS,
   TECHNIQUE_PROMPT_EFFECT_COMMON_FIELDS,
+  TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE,
   TECHNIQUE_PROMPT_SYSTEM_MESSAGE,
   TECHNIQUE_SKILL_COUNT_RANGE_BY_QUALITY,
   isSupportedTechniquePassiveKey,
@@ -99,6 +100,23 @@ type CandidateValidationResult =
 type TechniqueGenerationRetryGuidance = {
   previousFailureReason: string;
   correctionRules: string[];
+};
+
+type RetryPromptJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | RetryPromptJsonObject
+  | RetryPromptJsonValue[];
+
+type RetryPromptJsonObject = {
+  [key: string]: RetryPromptJsonValue;
+};
+
+type UpgradeUnsupportedFieldRetryExample = {
+  invalid: RetryPromptJsonObject;
+  valid: RetryPromptJsonObject;
 };
 
 type TechniqueCandidateSanitizeResult =
@@ -284,6 +302,131 @@ const normalizeTechniqueLayerSkillIds = (
 const DUPLICATE_EFFECT_FAILURE_TOKEN = '不允许包含重复 effect';
 const UPGRADE_UNSUPPORTED_FIELD_REASON_PATTERN = /upgrades\.changes 包含未支持字段：([A-Za-z0-9_]+)/;
 const UPGRADE_DAMAGE_TOTAL_SCALE_FAILURE_TOKEN = 'scaleRate × hit_count 不能大于';
+const UPGRADE_UNSUPPORTED_FIELD_RETRY_EXAMPLE_BY_FIELD = {
+  scaleRate: {
+    invalid: {
+      layer: 3,
+      changes: {
+        scaleRate: 1.8,
+      },
+    },
+    valid: {
+      layer: 3,
+      changes: {
+        effects: [
+          { ...TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE.damage.defaultTemplate, scaleRate: 1.8 },
+        ],
+      },
+    },
+  },
+  value: {
+    invalid: {
+      layer: 3,
+      changes: {
+        value: 20,
+      },
+    },
+    valid: {
+      layer: 3,
+      changes: {
+        addEffect: { ...TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE.restore_lingqi.defaultTemplate, value: 20 },
+      },
+    },
+  },
+  baseValue: {
+    invalid: {
+      layer: 3,
+      changes: {
+        baseValue: 40,
+      },
+    },
+    valid: {
+      layer: 3,
+      changes: {
+        effects: [
+          {
+            ...TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE.damage.defaultTemplate,
+            valueType: 'combined',
+            baseValue: 40,
+          },
+        ],
+      },
+    },
+  },
+  valueType: {
+    invalid: {
+      layer: 3,
+      changes: {
+        valueType: 'scale',
+      },
+    },
+    valid: {
+      layer: 3,
+      changes: {
+        effects: [
+          { ...TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE.damage.defaultTemplate, valueType: 'scale' },
+        ],
+      },
+    },
+  },
+  scaleAttr: {
+    invalid: {
+      layer: 3,
+      changes: {
+        scaleAttr: 'wugong',
+      },
+    },
+    valid: {
+      layer: 3,
+      changes: {
+        effects: [
+          { ...TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE.damage.defaultTemplate, scaleAttr: 'wugong' },
+        ],
+      },
+    },
+  },
+  duration: {
+    invalid: {
+      layer: 4,
+      changes: {
+        duration: 2,
+      },
+    },
+    valid: {
+      layer: 4,
+      changes: {
+        addEffect: { ...TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE.control.defaultTemplate, duration: 2 },
+      },
+    },
+  },
+  chance: {
+    invalid: {
+      layer: 4,
+      changes: {
+        chance: 0.2,
+      },
+    },
+    valid: {
+      layer: 4,
+      changes: {
+        addEffect: { ...TECHNIQUE_PROMPT_EFFECT_SCHEMA_BY_TYPE.control.defaultTemplate, chance: 0.2 },
+      },
+    },
+  },
+} as const satisfies Partial<Record<keyof typeof TECHNIQUE_PROMPT_EFFECT_COMMON_FIELDS, UpgradeUnsupportedFieldRetryExample>>;
+
+const buildUpgradeUnsupportedFieldRetryExampleRules = (unsupportedField: string): string[] => {
+  const example = UPGRADE_UNSUPPORTED_FIELD_RETRY_EXAMPLE_BY_FIELD[
+    unsupportedField as keyof typeof UPGRADE_UNSUPPORTED_FIELD_RETRY_EXAMPLE_BY_FIELD
+  ];
+  if (!example) {
+    return [];
+  }
+  return [
+    `错误示例：${JSON.stringify(example.invalid)}`,
+    `正确示例：${JSON.stringify(example.valid)}`,
+  ];
+};
 
 const buildTechniqueGenerationRetryCorrectionRules = (reason: string): string[] => {
   const rules = [
@@ -313,6 +456,7 @@ const buildTechniqueGenerationRetryCorrectionRules = (reason: string): string[] 
       `upgrades.changes 不能直接写 ${unsupportedField}；它属于单个 effect 的内部字段，不属于升级改动顶层键。`,
       `如果要修改已有效果中的 ${unsupportedField}，必须改写 changes.effects，提供完整 effects 数组；不要返回 changes.${unsupportedField}。`,
       '如果只是新增一个效果，请使用 changes.addEffect，并把该 effect 的全部字段写在 addEffect 对象内部。',
+      ...buildUpgradeUnsupportedFieldRetryExampleRules(unsupportedField),
     );
   }
 

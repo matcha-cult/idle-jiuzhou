@@ -24,6 +24,7 @@ import {
 } from '../partnerRecruitService.js';
 import {
   buildPartnerRecruitPromptNoiseHash,
+  rollPartnerRecruitPrimaryAttackGrowthTarget,
 } from '../shared/partnerRecruitRules.js';
 import {
   resolvePartnerRecruitBaseModelBySeed,
@@ -38,6 +39,7 @@ test('buildPartnerRecruitTextModelRequest: 应显式传入 seed 并在 prompt �
   const parsedUserMessage = JSON.parse(request.userMessage) as {
     quality?: string;
     promptNoiseHash?: string;
+    primaryAttackGrowthTarget?: number;
     baseModel?: string;
     constraints?: string[];
   };
@@ -45,11 +47,18 @@ test('buildPartnerRecruitTextModelRequest: 应显式传入 seed 并在 prompt �
   assert.equal(request.seed, seed);
   assert.equal(parsedUserMessage.quality, '黄');
   assert.equal(parsedUserMessage.promptNoiseHash, buildPartnerRecruitPromptNoiseHash(seed));
+  assert.equal(parsedUserMessage.primaryAttackGrowthTarget, rollPartnerRecruitPrimaryAttackGrowthTarget('黄', seed));
   assert.equal(request.baseModel, resolvePartnerRecruitBaseModelBySeed(seed));
   assert.equal(parsedUserMessage.baseModel, resolvePartnerRecruitBaseModelBySeed(seed));
   assert.equal(
     parsedUserMessage.constraints?.some((rule) => rule.includes('仅作为伙伴主体形态、种族特征、气质与文风倾向参考')) ?? false,
     false,
+  );
+  assert.equal(
+    parsedUserMessage.constraints?.includes(
+      `本次程序已为当前 quality=黄 稳定随机出主攻成长目标值 primaryAttackGrowthTarget=${rollPartnerRecruitPrimaryAttackGrowthTarget('黄', seed)}；该值只用于双攻中的主攻项，不代表双攻都取这个值`,
+    ),
+    true,
   );
 });
 
