@@ -22,7 +22,9 @@ import { randomUUID } from 'crypto';
 import { query } from '../../config/database.js';
 import { Transactional } from '../../decorators/transactional.js';
 import { getMapDefinitions } from '../staticConfigLoader.js';
+import { normalizeTitleEffects } from '../achievement/shared.js';
 import { grantPermanentTitleTx } from '../achievement/titleOwnership.js';
+import { lockWanderGenerationCreationMutex } from '../shared/characterOperationMutex.js';
 import { generateWanderAiEpisodeDraft, isWanderAiAvailable, type WanderAiPreviousEpisodeContext } from './ai.js';
 import { resolveWanderTargetEpisodeCount } from './episodePlan.js';
 import {
@@ -39,6 +41,7 @@ import type {
   WanderGenerationJobDto,
   WanderGenerationJobStatus,
   WanderGeneratedTitleDto,
+  WanderAiEpisodeDraft,
   WanderOverviewDto,
   WanderStoryDto,
   WanderStoryStatus,
@@ -90,6 +93,8 @@ type WanderEpisodeRow = {
   ending_type: string;
   reward_title_name: string | null;
   reward_title_desc: string | null;
+  reward_title_color: string | null;
+  reward_title_effects: Record<string, number> | null;
   created_at: Date | string;
   chosen_at: Date | string | null;
 };
@@ -136,6 +141,7 @@ const buildStoryId = (): string => `wander-story-${Date.now().toString(36)}-${ra
 const buildEpisodeId = (): string => `wander-episode-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 const buildGeneratedTitleId = (): string => `title-wander-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 const buildGenerationId = (): string => `wander-job-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
 
 const normalizeEndingType = (value: string): WanderEndingType => {
   if (value === 'good' || value === 'neutral' || value === 'tragic' || value === 'bizarre') {
@@ -158,28 +164,16 @@ const getMapName = (mapId: string | null): string => {
   return (map?.name ?? '').trim() || normalizedMapId;
 };
 
-const resolveGeneratedTitleColor = (endingType: WanderEndingType): string => {
-  if (endingType === 'good') return '#faad14';
-  if (endingType === 'neutral') return '#4dabf7';
-  if (endingType === 'tragic') return '#ff7875';
-  if (endingType === 'bizarre') return '#b37feb';
-  return '#d9d9d9';
+const normalizeGeneratedTitleColor = (color: string | null): string | null => {
+  const normalized = (color ?? '').trim();
+  if (!normalized) return null;
+  return HEX_COLOR_REGEX.test(normalized) ? normalized : null;
 };
 
-const resolveGeneratedTitleEffects = (endingType: WanderEndingType): Record<string, number> => {
-  if (endingType === 'good') {
-    return { max_qixue: 60, wugong: 5 };
-  }
-  if (endingType === 'neutral') {
-    return { max_lingqi: 60, fagong: 5 };
-  }
-  if (endingType === 'tragic') {
-    return { wufang: 6, fafang: 6 };
-  }
-  if (endingType === 'bizarre') {
-    return { sudu: 4, max_lingqi: 30 };
-  }
-  return { max_qixue: 30 };
+const normalizeGeneratedTitleEffects = (
+  effects: Record<string, number> | null,
+): Record<string, number> => {
+  return normalizeTitleEffects(effects);
 };
 
 const buildEpisodeDto = (row: WanderEpisodeRow): WanderEpisodeDto => {
@@ -295,7 +289,7 @@ class WanderService {
       `
         SELECT id, story_id, character_id, day_key, day_index, episode_title, opening, option_texts,
                chosen_option_index, chosen_option_text, episode_summary, is_ending, ending_type,
-               reward_title_name, reward_title_desc, created_at, chosen_at
+               reward_title_name, reward_title_desc, reward_title_color, reward_title_effects, created_at, chosen_at
         FROM character_wander_story_episode
         WHERE character_id = $1
           AND day_key = $2::date
@@ -311,13 +305,27 @@ class WanderService {
       `
         SELECT id, story_id, character_id, day_key, day_index, episode_title, opening, option_texts,
                chosen_option_index, chosen_option_text, episode_summary, is_ending, ending_type,
-               reward_title_name, reward_title_desc, created_at, chosen_at
+               reward_title_name, reward_title_desc, reward_title_color, reward_title_effects, created_at, chosen_at
         FROM character_wander_story_episode
         WHERE character_id = $1
         ORDER BY day_key DESC, day_index DESC, created_at DESC
         LIMIT 1
       `,
       [characterId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async loadStoryRowById(storyId: string): Promise<WanderStoryRow | null> {
+    const result = await query<WanderStoryRow>(
+      `
+        SELECT id, character_id, status, story_theme, story_premise, story_summary, episode_count,
+               story_seed, reward_title_id, finished_at, created_at, updated_at
+        FROM character_wander_story
+        WHERE id = $1
+        LIMIT 1
+      `,
+      [storyId],
     );
     return result.rows[0] ?? null;
   }
@@ -359,7 +367,7 @@ class WanderService {
       `
         SELECT id, story_id, character_id, day_key, day_index, episode_title, opening, option_texts,
                chosen_option_index, chosen_option_text, episode_summary, is_ending, ending_type,
-               reward_title_name, reward_title_desc, created_at, chosen_at
+               reward_title_name, reward_title_desc, reward_title_color, reward_title_effects, created_at, chosen_at
         FROM character_wander_story_episode
         WHERE story_id = $1
         ORDER BY day_index ASC
@@ -448,7 +456,7 @@ class WanderService {
       `
         SELECT id, story_id, character_id, day_key, day_index, episode_title, opening, option_texts,
                chosen_option_index, chosen_option_text, episode_summary, is_ending, ending_type,
-               reward_title_name, reward_title_desc, created_at, chosen_at
+               reward_title_name, reward_title_desc, reward_title_color, reward_title_effects, created_at, chosen_at
         FROM character_wander_story_episode
         WHERE story_id = $1
           AND chosen_option_index IS NOT NULL
@@ -473,6 +481,31 @@ class WanderService {
     if (!story) return null;
     const episodeRows = await this.loadEpisodeRowsByStoryId(story.id);
     return buildStoryDto(story, episodeRows);
+  }
+
+  private async buildEpisodeResultFromExistingEpisode(
+    existingEpisode: WanderEpisodeRow,
+    missingStoryMessage: string,
+    invalidStateMessage: string,
+  ): Promise<ServiceResult<{ story: WanderStoryDto; episode: WanderEpisodeDto }>> {
+    const storyRow = await this.loadStoryRowById(existingEpisode.story_id);
+    if (!storyRow) {
+      return { success: false, message: missingStoryMessage };
+    }
+
+    const story = await this.buildStoryDtoOrNull(storyRow);
+    if (!story) {
+      return { success: false, message: invalidStateMessage };
+    }
+
+    return {
+      success: true,
+      message: 'ok',
+      data: {
+        story,
+        episode: buildEpisodeDto(existingEpisode),
+      },
+    };
   }
 
   async getOverview(characterId: number): Promise<ServiceResult<WanderOverviewDto>> {
@@ -537,25 +570,11 @@ class WanderService {
       if (existingEpisode.chosen_option_index !== null) {
         return { success: false, message: '当前奇遇已完成，请等待下一次冷却结束' };
       }
-
-      const activeStory = await this.loadActiveStoryRow(characterId);
-      if (!activeStory) {
-        return { success: false, message: '当前奇遇状态异常，请稍后重试' };
-      }
-
-      const storyDto = await this.buildStoryDtoOrNull(activeStory);
-      if (!storyDto) {
-        return { success: false, message: '当前奇遇状态异常，请稍后重试' };
-      }
-
-      return {
-        success: true,
-        message: 'ok',
-        data: {
-          story: storyDto,
-          episode: buildEpisodeDto(existingEpisode),
-        },
-      };
+      return this.buildEpisodeResultFromExistingEpisode(
+        existingEpisode,
+        '当前奇遇状态异常，请稍后重试',
+        '当前奇遇状态异常，请稍后重试',
+      );
     }
 
     const character = await this.loadCharacterContext(characterId);
@@ -589,6 +608,35 @@ class WanderService {
       throw new Error('云游奇遇模型未按既定总幕数收束剧情');
     }
 
+    return this.persistEpisodeForDayKeyTx({
+      characterId,
+      dayKey,
+      aiDraft,
+      storySeed,
+    });
+  }
+
+  @Transactional
+  private async persistEpisodeForDayKeyTx(params: {
+    characterId: number;
+    dayKey: string;
+    aiDraft: WanderAiEpisodeDraft;
+    storySeed: number;
+  }): Promise<ServiceResult<{ story: WanderStoryDto; episode: WanderEpisodeDto }>> {
+    const { characterId, dayKey, aiDraft, storySeed } = params;
+    await lockWanderGenerationCreationMutex(characterId);
+
+    const existingEpisode = await this.loadEpisodeRowByDayKey(characterId, dayKey);
+    if (existingEpisode) {
+      return this.buildEpisodeResultFromExistingEpisode(
+        existingEpisode,
+        '生成奇遇后读取故事失败',
+        '生成奇遇后读取状态失败',
+      );
+    }
+
+    const activeStory = await this.loadActiveStoryRow(characterId);
+    const nextEpisodeIndex = activeStory ? activeStory.episode_count + 1 : 1;
     const storyId = activeStory?.id ?? buildStoryId();
     const episodeId = buildEpisodeId();
 
@@ -623,11 +671,11 @@ class WanderService {
         INSERT INTO character_wander_story_episode (
           id, story_id, character_id, day_key, day_index, episode_title, opening, option_texts,
           chosen_option_index, chosen_option_text, episode_summary, is_ending, ending_type,
-          reward_title_name, reward_title_desc, created_at, chosen_at
+          reward_title_name, reward_title_desc, reward_title_color, reward_title_effects, created_at, chosen_at
         )
         VALUES (
           $1, $2, $3, $4::date, $5, $6, $7, $8::jsonb,
-          NULL, NULL, $9, $10, $11, $12, $13, NOW(), NULL
+          NULL, NULL, $9, $10, $11, $12, $13, $14, $15::jsonb, NOW(), NULL
         )
       `,
       [
@@ -644,24 +692,17 @@ class WanderService {
         aiDraft.endingType,
         aiDraft.rewardTitleName || null,
         aiDraft.rewardTitleDesc || null,
+        aiDraft.rewardTitleColor || null,
+        JSON.stringify(aiDraft.rewardTitleEffects),
       ],
     );
 
-    const latestStory = await this.buildStoryDtoOrNull({
-      id: storyId,
-      character_id: characterId,
-      status: 'active',
-      story_theme: aiDraft.storyTheme,
-      story_premise: aiDraft.storyPremise,
-      story_summary: aiDraft.summary,
-      episode_count: nextEpisodeIndex,
-      story_seed: storySeed,
-      reward_title_id: null,
-      finished_at: null,
-      created_at: new Date(),
-      updated_at: new Date(),
-    });
-    const currentStory = latestStory ?? (await this.buildStoryDtoOrNull((await this.loadActiveStoryRow(characterId))));
+    const storyRow = await this.loadStoryRowById(storyId);
+    if (!storyRow) {
+      return { success: false, message: '生成奇遇后读取故事失败' };
+    }
+
+    const currentStory = await this.buildStoryDtoOrNull(storyRow);
     if (!currentStory) {
       return { success: false, message: '生成奇遇后读取状态失败' };
     }
@@ -681,7 +722,10 @@ class WanderService {
     };
   }
 
-  async createGenerationJob(characterId: number): Promise<ServiceResult<WanderGenerateQueueResultDto>> {
+  @Transactional
+  private async createGenerationJobTx(characterId: number): Promise<ServiceResult<WanderGenerateQueueResultDto>> {
+    await lockWanderGenerationCreationMutex(characterId);
+
     if (!isWanderAiAvailable()) {
       return { success: false, message: '未配置 AI 文本模型，无法生成云游奇遇' };
     }
@@ -746,6 +790,10 @@ class WanderService {
         },
       },
     };
+  }
+
+  async createGenerationJob(characterId: number): Promise<ServiceResult<WanderGenerateQueueResultDto>> {
+    return this.createGenerationJobTx(characterId);
   }
 
   async markGenerationJobFailed(characterId: number, generationId: string, errorMessage: string): Promise<void> {
@@ -847,7 +895,7 @@ class WanderService {
       `
         SELECT id, story_id, character_id, day_key, day_index, episode_title, opening, option_texts,
                chosen_option_index, chosen_option_text, episode_summary, is_ending, ending_type,
-               reward_title_name, reward_title_desc, created_at, chosen_at
+               reward_title_name, reward_title_desc, reward_title_color, reward_title_effects, created_at, chosen_at
         FROM character_wander_story_episode
         WHERE id = $1
           AND character_id = $2
@@ -885,15 +933,15 @@ class WanderService {
     let rewardTitleId: string | null = null;
 
     if (episode.is_ending) {
-      const endingType = normalizeEndingType(episode.ending_type);
       const rewardTitleName = (episode.reward_title_name ?? '').trim();
       const rewardTitleDesc = (episode.reward_title_desc ?? '').trim();
-      if (!rewardTitleName || !rewardTitleDesc) {
+      const rewardTitleColor = normalizeGeneratedTitleColor(episode.reward_title_color);
+      const effects = normalizeGeneratedTitleEffects(episode.reward_title_effects);
+      if (!rewardTitleName || !rewardTitleDesc || !rewardTitleColor || Object.keys(effects).length <= 0) {
         return { success: false, message: '结局称号数据缺失' };
       }
       const titleId = buildGeneratedTitleId();
       rewardTitleId = titleId;
-      const effects = resolveGeneratedTitleEffects(endingType);
 
       await query(
         `
@@ -906,7 +954,7 @@ class WanderService {
           titleId,
           rewardTitleName,
           rewardTitleDesc,
-          resolveGeneratedTitleColor(endingType),
+          rewardTitleColor,
           JSON.stringify(effects),
           WANDER_SOURCE_TYPE,
           episode.story_id,
@@ -919,7 +967,7 @@ class WanderService {
         id: titleId,
         name: rewardTitleName,
         description: rewardTitleDesc,
-        color: resolveGeneratedTitleColor(endingType),
+        color: rewardTitleColor,
         effects,
         isEquipped: false,
         obtainedAt: new Date().toISOString(),

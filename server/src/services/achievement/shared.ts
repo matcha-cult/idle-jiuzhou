@@ -8,7 +8,7 @@ import type {
   AchievementTrackType,
   CharacterAchievementRow,
 } from './types.js';
-import { TITLE_EFFECT_KEYS } from '../shared/characterAttrRegistry.js';
+import { CHARACTER_RATIO_ATTR_KEY_SET, TITLE_EFFECT_KEYS } from '../shared/characterAttrRegistry.js';
 
 const CATEGORY_TO_POINTS_COLUMN: Record<string, 'combat' | 'cultivation' | 'exploration' | 'social' | 'collection' | null> = {
   combat: 'combat',
@@ -24,6 +24,7 @@ const CATEGORY_TO_POINTS_COLUMN: Record<string, 'combat' | 'cultivation' | 'expl
 };
 
 const titleEffectKeySet = new Set<string>(TITLE_EFFECT_KEYS);
+const TITLE_RATIO_EFFECT_PRECISION = 10_000;
 
 export const asNonEmptyString = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
@@ -152,7 +153,9 @@ export const normalizeTitleEffects = (effects: unknown): Record<string, number> 
     if (!titleEffectKeySet.has(key)) continue;
     const value = Number(raw);
     if (!Number.isFinite(value)) continue;
-    const delta = Math.floor(value);
+    const delta = CHARACTER_RATIO_ATTR_KEY_SET.has(key)
+      ? Math.round(value * TITLE_RATIO_EFFECT_PRECISION) / TITLE_RATIO_EFFECT_PRECISION
+      : Math.floor(value);
     if (delta === 0) continue;
     out[key] = delta;
   }

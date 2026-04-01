@@ -1,5 +1,5 @@
 import { App, Button, Modal, Spin, Tag } from 'antd';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   chooseWanderEpisodeOption,
   generateWanderEpisode,
@@ -8,6 +8,7 @@ import {
 } from '../../../../services/api';
 import { SILENT_API_REQUEST_CONFIG } from '../../../../services/api/requestConfig';
 import { formatGameCooldownRemaining } from '../../shared/cooldownText';
+import { buildWanderStoryReaderModel } from './storyReader';
 import './index.scss';
 
 /**
@@ -110,6 +111,12 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
   const activeStory = overview?.activeStory ?? null;
   const latestFinishedStory = overview?.latestFinishedStory ?? null;
   const storyForHistory = activeStory ?? latestFinishedStory;
+  const storyReader = useMemo(() => {
+    if (!storyForHistory) {
+      return null;
+    }
+    return buildWanderStoryReaderModel(storyForHistory);
+  }, [storyForHistory]);
 
   useEffect(() => {
     if (!open || currentGenerationJob?.status !== 'pending') {
@@ -274,26 +281,25 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose }) => {
                   <div className="wander-panel-title">故事回顾</div>
                   {storyForHistory ? <Tag color="default">{storyForHistory.theme}</Tag> : null}
                 </div>
-                {storyForHistory ? (
-                  <>
-                    <div className="wander-story-premise">{storyForHistory.premise}</div>
-                    <div className="wander-history-list">
-                      {storyForHistory.episodes.map((episode) => (
-                        <div key={episode.id} className="wander-history-card">
-                          <div className="wander-history-head">
-                            <span className="wander-history-title">第 {episode.dayIndex} 幕 · {episode.title}</span>
-                            {episode.isEnding ? <Tag color="magenta">终幕</Tag> : null}
+                {storyReader ? (
+                  <div className="wander-story-reader">
+                    <p className="wander-story-premise">{storyReader.premise}</p>
+                    <div className="wander-story-flow">
+                      {storyReader.entries.map((entry) => (
+                        <article key={entry.key} className="wander-story-entry">
+                          <div className="wander-story-entry-head">
+                            <span className="wander-story-entry-label">{entry.chapterLabel}</span>
+                            {entry.isEnding ? <Tag color="magenta">终幕</Tag> : null}
                           </div>
-                          <div className="wander-history-summary">{episode.summary}</div>
-                          {episode.chosenOptionText ? (
-                            <div className="wander-history-choice">选择：{episode.chosenOptionText}</div>
-                          ) : (
-                            <div className="wander-history-choice">尚未作出选择</div>
-                          )}
-                        </div>
+                          <div className="wander-story-entry-title">{entry.title}</div>
+                          <p className="wander-story-paragraph">{entry.content}</p>
+                          <p className={`wander-story-choice-line${entry.isChoicePending ? ' is-pending' : ''}`}>
+                            {entry.choiceLine}
+                          </p>
+                        </article>
                       ))}
                     </div>
-                  </>
+                  </div>
                 ) : (
                   <div className="wander-empty">尚未开启任何云游故事。</div>
                 )}

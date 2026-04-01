@@ -112,4 +112,6 @@ export interface WanderAiEpisodeDraft {
   endingType: WanderEndingType;
   rewardTitleName: string;
   rewardTitleDesc: string;
+  rewardTitleColor: string;
+  rewardTitleEffects: Record<string, number>;
 }

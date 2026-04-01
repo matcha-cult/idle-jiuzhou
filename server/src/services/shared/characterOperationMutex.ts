@@ -12,6 +12,7 @@ import { getTransactionClient, isInTransaction } from '../../config/database.js'
  * 输入/输出：
  * - `lockPartnerRecruitCreationMutex(characterId)`：串行化同一角色的伙伴招募创建。
  * - `lockTechniqueResearchCreationMutex(characterId)`：串行化同一角色的洞府研修创建。
+ * - `lockWanderGenerationCreationMutex(characterId)`：串行化同一角色的云游生成创建与幕次落库。
  * - 均返回 `Promise<void>`，成功即表示当前事务已拿到互斥锁。
  *
  * 数据流/状态流：
@@ -24,6 +25,7 @@ import { getTransactionClient, isInTransaction } from '../../config/database.js'
  */
 const PARTNER_RECRUIT_CREATION_MUTEX_NAMESPACE = 3102;
 const TECHNIQUE_RESEARCH_CREATION_MUTEX_NAMESPACE = 3103;
+const WANDER_GENERATION_CREATION_MUTEX_NAMESPACE = 3104;
 
 type CharacterOperationMutexQueryRunner = Pick<PoolClient, 'query'>;
 
@@ -75,4 +77,15 @@ export const lockTechniqueResearchCreationMutexByClient = async (
 
 export const lockTechniqueResearchCreationMutex = async (characterId: number): Promise<void> => {
   await lockCharacterOperationMutex(TECHNIQUE_RESEARCH_CREATION_MUTEX_NAMESPACE, characterId);
+};
+
+export const lockWanderGenerationCreationMutexByClient = async (
+  client: PoolClient,
+  characterId: number,
+): Promise<void> => {
+  await lockCharacterOperationMutexByClient(client, WANDER_GENERATION_CREATION_MUTEX_NAMESPACE, characterId);
+};
+
+export const lockWanderGenerationCreationMutex = async (characterId: number): Promise<void> => {
+  await lockCharacterOperationMutex(WANDER_GENERATION_CREATION_MUTEX_NAMESPACE, characterId);
 };
