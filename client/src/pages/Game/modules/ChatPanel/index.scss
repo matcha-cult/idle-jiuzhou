@@ -531,6 +531,20 @@
 
   .chat-tabs .ant-tabs-nav-wrap {
     min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    touch-action: pan-x;
+  }
+
+  .chat-tabs .ant-tabs-nav-wrap::-webkit-scrollbar {
+    display: none;
+  }
+
+  .chat-tabs .ant-tabs-nav-list {
+    flex-wrap: nowrap;
   }
 
   .chat-tabs .ant-tabs-extra-content {
