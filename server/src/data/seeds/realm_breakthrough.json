@@ -41,6 +41,9 @@
       ],
       "rewards": {
         "attributePoints": 5,
+        "flat": {
+          "max_qixue": 50
+        },
         "pct": {
           "max_qixue": 0.1,
           "max_lingqi": 0.1
@@ -82,6 +85,9 @@
       ],
       "rewards": {
         "attributePoints": 5,
+        "flat": {
+          "max_qixue": 100
+        },
         "pct": {
           "max_qixue": 0.15,
           "max_lingqi": 0.15,
@@ -126,6 +132,9 @@
       ],
       "rewards": {
         "attributePoints": 10,
+        "flat": {
+          "max_qixue": 150
+        },
         "pct": {
           "max_qixue": 0.15,
           "max_lingqi": 0.15,
@@ -179,6 +188,9 @@
       ],
       "rewards": {
         "attributePoints": 12,
+        "flat": {
+          "max_qixue": 200
+        },
         "pct": {
           "max_qixue": 0.18,
           "max_lingqi": 0.18,
@@ -269,6 +281,9 @@
       ],
       "rewards": {
         "attributePoints": 14,
+        "flat": {
+          "max_qixue": 250
+        },
         "pct": {
           "max_qixue": 0.2,
           "max_lingqi": 0.2,
@@ -352,6 +367,9 @@
       ],
       "rewards": {
         "attributePoints": 20,
+        "flat": {
+          "max_qixue": 300
+        },
         "pct": {
           "max_qixue": 0.23,
           "max_lingqi": 0.23,
@@ -435,6 +453,9 @@
       ],
       "rewards": {
         "attributePoints": 22,
+        "flat": {
+          "max_qixue": 350
+        },
         "pct": {
           "max_qixue": 0.24,
           "max_lingqi": 0.24,
@@ -518,6 +539,9 @@
       ],
       "rewards": {
         "attributePoints": 24,
+        "flat": {
+          "max_qixue": 400
+        },
         "pct": {
           "max_qixue": 0.27,
           "max_lingqi": 0.27,
@@ -607,6 +631,9 @@
       ],
       "rewards": {
         "attributePoints": 30,
+        "flat": {
+          "max_qixue": 450
+        },
         "pct": {
           "max_qixue": 0.28,
           "max_lingqi": 0.28,
@@ -696,6 +723,9 @@
       ],
       "rewards": {
         "attributePoints": 36,
+        "flat": {
+          "max_qixue": 500
+        },
         "pct": {
           "max_qixue": 0.32,
           "max_lingqi": 0.32,
@@ -758,6 +788,9 @@
       ],
       "rewards": {
         "attributePoints": 38,
+        "flat": {
+          "max_qixue": 550
+        },
         "pct": {
           "max_qixue": 0.32,
           "max_lingqi": 0.32,
@@ -820,6 +853,9 @@
       ],
       "rewards": {
         "attributePoints": 45,
+        "flat": {
+          "max_qixue": 600
+        },
         "pct": {
           "max_qixue": 0.35,
           "max_lingqi": 0.35,

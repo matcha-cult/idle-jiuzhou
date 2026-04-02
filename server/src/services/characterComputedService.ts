@@ -53,6 +53,14 @@ import {
 } from './shared/characterAttrRegistry.js';
 import { listTitleDefinitionsByIds } from './titleDefinitionService.js';
 import { toSafeNonNegativeIntegerStrict } from './shared/safeInteger.js';
+import {
+  BREAKTHROUGH_ADD_PERCENT_REWARD_DEFS,
+  BREAKTHROUGH_NUMERIC_REWARD_DEFS,
+  type BreakthroughAddPercentRewards,
+  type BreakthroughFlatRewards,
+  type BreakthroughPctRewards,
+  type RealmBreakthroughRewardsConfig,
+} from './shared/realmBreakthroughRewards.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -135,26 +143,10 @@ interface StaticAttrsCachePayload {
   primaryAttrs: CharacterPrimaryAttrs;
 }
 
-type BreakthroughPctRewards = Partial<{
-  max_qixue: number;
-  max_lingqi: number;
-  wugong: number;
-  fagong: number;
-  wufang: number;
-  fafang: number;
-}>;
-
-type BreakthroughAddPercentRewards = Partial<{
-  kongzhi_kangxing: number;
-}>;
-
 interface RealmBreakthroughEntry {
   from: string;
   to: string;
-  rewards?: {
-    pct?: BreakthroughPctRewards;
-    addPercent?: BreakthroughAddPercentRewards;
-  };
+  rewards?: RealmBreakthroughRewardsConfig;
 }
 
 interface RealmBreakthroughConfigFile {
@@ -244,7 +236,11 @@ const DEFAULT_ATTRS: CharacterComputedStats = Object.freeze({
 let cachedRealmConfig: RealmBreakthroughConfigFile | null = null;
 let cachedRealmRewardSummaryByRealmText: Map<
   string,
-  { pct: BreakthroughPctRewards; addPercent: BreakthroughAddPercentRewards }
+  {
+    flat: BreakthroughFlatRewards;
+    pct: BreakthroughPctRewards;
+    addPercent: BreakthroughAddPercentRewards;
+  }
 > | null = null;
 let cachedTechniquePassiveLayersSource: readonly ReturnType<typeof getTechniqueLayerDefinitions>[number][] | null = null;
 let cachedTechniquePassiveLayersByTechniqueId: Map<string, Array<{ layer: number; passives: Array<{ key: string; value: number }> }>> | null = null;
@@ -375,7 +371,11 @@ const loadRealmBreakthroughConfig = async (): Promise<RealmBreakthroughConfigFil
 
 const getRealmRewardSummaryByRealmText = async (): Promise<Map<
   string,
-  { pct: BreakthroughPctRewards; addPercent: BreakthroughAddPercentRewards }
+  {
+    flat: BreakthroughFlatRewards;
+    pct: BreakthroughPctRewards;
+    addPercent: BreakthroughAddPercentRewards;
+  }
 >> => {
   if (cachedRealmRewardSummaryByRealmText) {
     return cachedRealmRewardSummaryByRealmText;
@@ -392,8 +392,13 @@ const getRealmRewardSummaryByRealmText = async (): Promise<Map<
 
   const summaryByRealmText = new Map<
     string,
-    { pct: BreakthroughPctRewards; addPercent: BreakthroughAddPercentRewards }
+    {
+      flat: BreakthroughFlatRewards;
+      pct: BreakthroughPctRewards;
+      addPercent: BreakthroughAddPercentRewards;
+    }
   >();
+  const runningFlat: BreakthroughFlatRewards = {};
   const runningPct: BreakthroughPctRewards = {};
   const runningAddPercent: BreakthroughAddPercentRewards = {};
 
@@ -403,22 +408,34 @@ const getRealmRewardSummaryByRealmText = async (): Promise<Map<
       const previousRealmText = cfg.realmOrder[index - 1];
       const entry = rewardByFrom.get(previousRealmText);
       if (entry && String(entry.to || '').trim() === realmText) {
+        const flat = toRecord(entry.rewards?.flat) as BreakthroughFlatRewards;
         const pct = toRecord(entry.rewards?.pct) as BreakthroughPctRewards;
         const addPercent = toRecord(entry.rewards?.addPercent) as BreakthroughAddPercentRewards;
 
-        if (Number.isFinite(pct.max_qixue)) runningPct.max_qixue = (runningPct.max_qixue || 0) + Number(pct.max_qixue);
-        if (Number.isFinite(pct.max_lingqi)) runningPct.max_lingqi = (runningPct.max_lingqi || 0) + Number(pct.max_lingqi);
-        if (Number.isFinite(pct.wugong)) runningPct.wugong = (runningPct.wugong || 0) + Number(pct.wugong);
-        if (Number.isFinite(pct.fagong)) runningPct.fagong = (runningPct.fagong || 0) + Number(pct.fagong);
-        if (Number.isFinite(pct.wufang)) runningPct.wufang = (runningPct.wufang || 0) + Number(pct.wufang);
-        if (Number.isFinite(pct.fafang)) runningPct.fafang = (runningPct.fafang || 0) + Number(pct.fafang);
-        if (Number.isFinite(addPercent.kongzhi_kangxing)) {
-          runningAddPercent.kongzhi_kangxing = (runningAddPercent.kongzhi_kangxing || 0) + Number(addPercent.kongzhi_kangxing);
+        for (const rewardDef of BREAKTHROUGH_NUMERIC_REWARD_DEFS) {
+          const flatValue = Number(flat[rewardDef.key] ?? 0);
+          if (Number.isFinite(flatValue) && flatValue !== 0) {
+            runningFlat[rewardDef.key] = (runningFlat[rewardDef.key] || 0) + flatValue;
+          }
+
+          const pctValue = Number(pct[rewardDef.key] ?? 0);
+          if (Number.isFinite(pctValue) && pctValue !== 0) {
+            runningPct[rewardDef.key] = (runningPct[rewardDef.key] || 0) + pctValue;
+          }
+        }
+
+        for (const rewardDef of BREAKTHROUGH_ADD_PERCENT_REWARD_DEFS) {
+          const addPercentValue = Number(addPercent[rewardDef.key] ?? 0);
+          if (Number.isFinite(addPercentValue) && addPercentValue !== 0) {
+            runningAddPercent[rewardDef.key] =
+              (runningAddPercent[rewardDef.key] || 0) + addPercentValue;
+          }
         }
       }
     }
 
     summaryByRealmText.set(realmText, {
+      flat: { ...runningFlat },
       pct: { ...runningPct },
       addPercent: { ...runningAddPercent },
     });
@@ -657,17 +674,24 @@ const applyRealmRewardsToStats = async (
   const rewardSummary = (await getRealmRewardSummaryByRealmText()).get(realmText);
   if (!rewardSummary) return;
 
-  if (Number.isFinite(rewardSummary.pct.max_qixue)) pctModifiers.max_qixue = (pctModifiers.max_qixue || 0) + Number(rewardSummary.pct.max_qixue);
-  if (Number.isFinite(rewardSummary.pct.max_lingqi)) pctModifiers.max_lingqi = (pctModifiers.max_lingqi || 0) + Number(rewardSummary.pct.max_lingqi);
-  if (Number.isFinite(rewardSummary.pct.wugong)) pctModifiers.wugong = (pctModifiers.wugong || 0) + Number(rewardSummary.pct.wugong);
-  if (Number.isFinite(rewardSummary.pct.fagong)) pctModifiers.fagong = (pctModifiers.fagong || 0) + Number(rewardSummary.pct.fagong);
-  if (Number.isFinite(rewardSummary.pct.wufang)) pctModifiers.wufang = (pctModifiers.wufang || 0) + Number(rewardSummary.pct.wufang);
-  if (Number.isFinite(rewardSummary.pct.fafang)) pctModifiers.fafang = (pctModifiers.fafang || 0) + Number(rewardSummary.pct.fafang);
+  for (const rewardDef of BREAKTHROUGH_NUMERIC_REWARD_DEFS) {
+    const flatValue = Number(rewardSummary.flat[rewardDef.key] ?? 0);
+    if (Number.isFinite(flatValue) && flatValue !== 0) {
+      applyAttrDelta(stats, rewardDef.key, flatValue);
+    }
 
-  if (Number.isFinite(rewardSummary.addPercent.kongzhi_kangxing)) {
-    stats.kongzhi_kangxing = Math.max(
+    const pctValue = Number(rewardSummary.pct[rewardDef.key] ?? 0);
+    if (Number.isFinite(pctValue) && pctValue !== 0) {
+      pctModifiers[rewardDef.key] = (pctModifiers[rewardDef.key] || 0) + pctValue;
+    }
+  }
+
+  for (const rewardDef of BREAKTHROUGH_ADD_PERCENT_REWARD_DEFS) {
+    const addPercentValue = Number(rewardSummary.addPercent[rewardDef.key] ?? 0);
+    if (!Number.isFinite(addPercentValue) || addPercentValue === 0) continue;
+    stats[rewardDef.key] = Math.max(
       0,
-      roundRatio(stats.kongzhi_kangxing + Number(rewardSummary.addPercent.kongzhi_kangxing)),
+      roundRatio(stats[rewardDef.key] + addPercentValue),
     );
   }
 };

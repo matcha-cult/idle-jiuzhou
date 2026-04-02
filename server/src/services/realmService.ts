@@ -14,6 +14,11 @@ import {
   getMainQuestChapterById,
   getTechniqueDefinitions,
 } from "./staticConfigLoader.js";
+import {
+  BREAKTHROUGH_ADD_PERCENT_REWARD_DEFS,
+  BREAKTHROUGH_NUMERIC_REWARD_DEFS,
+  type RealmBreakthroughRewardsConfig,
+} from "./shared/realmBreakthroughRewards.js";
 
 export type RealmRequirementStatus = "done" | "todo" | "unknown";
 
@@ -153,20 +158,7 @@ type BreakthroughCost =
   | CostItems
   | { type: string };
 
-type RewardConfig = {
-  attributePoints?: number;
-  pct?: Partial<{
-    max_qixue: number;
-    max_lingqi: number;
-    wugong: number;
-    fagong: number;
-    wufang: number;
-    fafang: number;
-  }>;
-  addPercent?: Partial<{
-    kongzhi_kangxing: number;
-  }>;
-};
+type RewardConfig = RealmBreakthroughRewardsConfig;
 
 type BreakthroughConfig = {
   from: string;
@@ -1064,11 +1056,26 @@ const buildRewardsView = (rewards?: RewardConfig): RealmRewardView[] => {
   const ap = Math.max(0, Number(r.attributePoints ?? 0) || 0);
   if (ap > 0) out.push({ id: "ap", title: "属性点", detail: `+${ap}` });
 
+  const flat = r.flat || {};
   const pct = r.pct || {};
   const addPercent = r.addPercent || {};
 
+  const addFlatRow = (
+    key: (typeof BREAKTHROUGH_NUMERIC_REWARD_DEFS)[number]["key"],
+    title: string,
+  ) => {
+    const v = Math.round(Number(flat[key] ?? 0) || 0);
+    if (v !== 0) {
+      out.push({
+        id: `flat-${key}`,
+        title,
+        detail: `${v > 0 ? "+" : ""}${v}`,
+      });
+    }
+  };
+
   const addPctRow = (
-    key: keyof NonNullable<RewardConfig["pct"]>,
+    key: (typeof BREAKTHROUGH_NUMERIC_REWARD_DEFS)[number]["key"],
     title: string,
   ) => {
     const v = Number(pct[key] ?? 0) || 0;
@@ -1082,20 +1089,22 @@ const buildRewardsView = (rewards?: RewardConfig): RealmRewardView[] => {
     }
   };
 
-  addPctRow("max_qixue", "最大气血");
-  addPctRow("max_lingqi", "最大灵气");
-  addPctRow("wugong", "物攻");
-  addPctRow("fagong", "法攻");
-  addPctRow("wufang", "物防");
-  addPctRow("fafang", "法防");
+  for (const rewardDef of BREAKTHROUGH_NUMERIC_REWARD_DEFS) {
+    addFlatRow(rewardDef.key, rewardDef.title);
+  }
 
-  const kk = Number(addPercent.kongzhi_kangxing ?? 0) || 0;
-  if (kk !== 0) {
-    const kkText = (kk * 100).toFixed(2).replace(/\.?0+$/, "");
+  for (const rewardDef of BREAKTHROUGH_NUMERIC_REWARD_DEFS) {
+    addPctRow(rewardDef.key, rewardDef.title);
+  }
+
+  for (const rewardDef of BREAKTHROUGH_ADD_PERCENT_REWARD_DEFS) {
+    const v = Number(addPercent[rewardDef.key] ?? 0) || 0;
+    if (v === 0) continue;
+    const pctText = (v * 100).toFixed(2).replace(/\.?0+$/, "");
     out.push({
-      id: "add-kongzhi",
-      title: "控制抗性",
-      detail: `${kk > 0 ? "+" : ""}${kkText}%`,
+      id: `add-percent-${rewardDef.key}`,
+      title: rewardDef.title,
+      detail: `${v > 0 ? "+" : ""}${pctText}%`,
     });
   }
 
