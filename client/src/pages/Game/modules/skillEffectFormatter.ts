@@ -147,7 +147,8 @@ const formatDamageEffect = (effect: Record<string, unknown>, context: SkillEffec
   const typedDamageNoun = element && element !== '无'
     ? `${element}属性${damageNoun}`
     : damageNoun;
-  let text = scaled ? `造成 ${scaled}的${typedDamageNoun}` : `造成${typedDamageNoun}`;
+  const compactScaled = scaled.startsWith('倍率 ') ? scaled.slice('倍率 '.length) : scaled;
+  let text = compactScaled ? `造成 ${compactScaled}的${typedDamageNoun}` : `造成${typedDamageNoun}`;
   if (hitCount > 1) text += `，连击${hitCount}次`;
   return text;
 };
