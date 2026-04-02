@@ -479,7 +479,11 @@ const formatBuffEffect = (
     : targetPrefix
       ? `${targetPrefix}${actionText}：${name}`
       : `${actionText}：${name}`;
-  if (valueText) text += `（${valueText}）`;
+  if (valueText) {
+    text += options.compactValueText && options.omitActionText
+      ? ` ${valueText}`
+      : `（${valueText}）`;
+  }
   // 光环永久存在，不显示外层 duration
   if (duration > 0 && buffKind !== 'aura' && !options.ignoreDuration) text += `，持续${duration}回合`;
   return text;
