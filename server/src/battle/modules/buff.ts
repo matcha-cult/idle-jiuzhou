@@ -449,7 +449,7 @@ function calculateHotHeal(hot: HotEffect, target: BattleUnit): number {
   let heal = hot.heal;
 
   // 受减疗影响
-  const healReduction = Math.min(target.currentAttrs.jianliao, BATTLE_CONSTANTS.MAX_HEAL_REDUCTION);
+  const healReduction = target.currentAttrs.jianliao;
   heal *= (1 - healReduction);
 
   return Math.floor(Math.max(1, heal));

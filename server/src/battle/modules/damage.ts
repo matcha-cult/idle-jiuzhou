@@ -26,7 +26,7 @@ const calculateCritDamageMultiplier = (
 ): number => {
   const reducedCritDamage =
     attacker.currentAttrs.baoshang - defender.currentAttrs.jianbaoshang;
-  return clamp(reducedCritDamage, 1, BATTLE_CONSTANTS.MAX_CRIT_DAMAGE);
+  return Math.max(1, reducedCritDamage);
 };
 
 /**
@@ -101,7 +101,7 @@ export function calculateDamage(
   }
 
   // 6. 增伤加成
-  const damageBonus = Math.min(attacker.currentAttrs.zengshang, BATTLE_CONSTANTS.MAX_DAMAGE_BONUS);
+  const damageBonus = attacker.currentAttrs.zengshang;
   damage *= (1 + damageBonus);
 
   // 6.1 虚蚀印记增伤（按施加者来源隔离）

@@ -3,7 +3,6 @@
  */
 
 import type { BattleUnit } from '../types.js';
-import { BATTLE_CONSTANTS } from '../types.js';
 import { applySoulShackleRecoveryReduction } from './mark.js';
 
 /**
@@ -37,7 +36,7 @@ function calculateLifesteal(
   attacker: BattleUnit,
   damage: number
 ): number {
-  const lifestealRate = Math.min(attacker.currentAttrs.xixue, BATTLE_CONSTANTS.MAX_LIFESTEAL);
+  const lifestealRate = attacker.currentAttrs.xixue;
   return Math.floor(damage * lifestealRate);
 }
 

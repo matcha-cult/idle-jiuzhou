@@ -1227,11 +1227,11 @@ function executeHealEffect(
   healValue = applyContextBonus(healValue, context.momentumBonusRateByType.heal);
 
   // 治疗加成
-  const healBonus = Math.min(caster.currentAttrs.zhiliao, BATTLE_CONSTANTS.MAX_HEAL_BONUS);
+  const healBonus = caster.currentAttrs.zhiliao;
   healValue = Math.floor(healValue * (1 + healBonus));
 
   // 减疗
-  const healReduction = Math.min(target.currentAttrs.jianliao, BATTLE_CONSTANTS.MAX_HEAL_REDUCTION);
+  const healReduction = target.currentAttrs.jianliao;
   healValue = Math.floor(healValue * (1 - healReduction));
 
   const actualHeal = applyHealing(target, healValue);
