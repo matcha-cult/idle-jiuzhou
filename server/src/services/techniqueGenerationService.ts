@@ -51,6 +51,8 @@ import {
   TECHNIQUE_RESEARCH_COOLDOWN_APPLY_JOB_STATUSES,
 } from './shared/techniqueResearchCooldown.js';
 import {
+  TECHNIQUE_RESEARCH_FIRST_DRAFT_GUARANTEE_CONSUMED_JOB_STATUSES,
+  TECHNIQUE_RESEARCH_FIRST_DRAFT_MINIMUM_QUALITY,
   resolveTechniqueResearchHeavenGuaranteeState,
   resolveTechniqueResearchQualityForGeneratedDraftSuccess,
   resolveTechniqueResearchQualityRateEntries,
@@ -108,6 +110,11 @@ export type TechniqueGenerationStatus =
   | 'refunded';
 
 export type TechniqueQuality = TechniqueResearchQuality;
+
+type TechniqueResearchGuaranteeProgress = {
+  generatedNonHeavenCount: number;
+  hasGeneratedDraftHistory: boolean;
+};
 
 export type ServiceResult<T = unknown> = {
   success: boolean;
@@ -300,6 +307,9 @@ const asString = (raw: unknown): string => (typeof raw === 'string' ? raw.trim()
 const asNumber = (raw: unknown, fallback = 0): number => {
   const n = Number(raw);
   return Number.isFinite(n) ? n : fallback;
+};
+const asBoolean = (raw: unknown): boolean => {
+  return raw === true || raw === 'true' || raw === 1 || raw === '1';
 };
 
 const resolveWeekKey = (date: Date): string => {
@@ -568,26 +578,38 @@ class TechniqueGenerationService {
     );
   }
 
-  private async loadTechniqueResearchGeneratedNonHeavenCount(
+  private async loadTechniqueResearchGuaranteeProgress(
     characterId: number,
     forUpdate: boolean,
-  ): Promise<number | null> {
+  ): Promise<TechniqueResearchGuaranteeProgress | null> {
     const lockSql = forUpdate ? 'FOR UPDATE' : '';
     const result = await query(
       `
-        SELECT technique_research_generated_non_heaven_count
-        FROM characters
-        WHERE id = $1
+        SELECT
+          c.technique_research_generated_non_heaven_count,
+          EXISTS (
+            SELECT 1
+            FROM technique_generation_job job
+            WHERE job.character_id = c.id
+              AND job.status = ANY($2::text[])
+            LIMIT 1
+          ) AS has_generated_draft_history
+        FROM characters c
+        WHERE c.id = $1
         LIMIT 1
         ${lockSql}
       `,
-      [characterId],
+      [characterId, [...TECHNIQUE_RESEARCH_FIRST_DRAFT_GUARANTEE_CONSUMED_JOB_STATUSES]],
     );
     if (result.rows.length <= 0) return null;
-    return Math.max(0, Math.floor(asNumber(
-      (result.rows[0] as Record<string, unknown>).technique_research_generated_non_heaven_count,
-      0,
-    )));
+    const row = result.rows[0] as Record<string, unknown>;
+    return {
+      generatedNonHeavenCount: Math.max(0, Math.floor(asNumber(
+        row.technique_research_generated_non_heaven_count,
+        0,
+      ))),
+      hasGeneratedDraftHistory: asBoolean(row.has_generated_draft_history),
+    };
   }
 
   private async loadCooldownBypassTokenAvailableQty(characterId: number, forUpdate: boolean): Promise<number> {
@@ -774,7 +796,7 @@ class TechniqueGenerationService {
       currentJobRes,
       cooldownBypassTokenAvailableQty,
       cooldownStartedAt,
-      generatedNonHeavenCount,
+      guaranteeProgress,
     ] = await Promise.all([
       this.getTechniqueResearchUnlockStateTx(characterId),
       this.getResearchFragmentBalanceTx(characterId),
@@ -858,7 +880,7 @@ class TechniqueGenerationService {
         ),
       this.loadCooldownBypassTokenAvailableQty(characterId, false),
       this.loadLatestResearchCooldownStartedAt(characterId, false),
-      this.loadTechniqueResearchGeneratedNonHeavenCount(characterId, false),
+      this.loadTechniqueResearchGuaranteeProgress(characterId, false),
     ]);
     if (!unlockRes.success) {
       return { success: false, message: unlockRes.message, code: unlockRes.code };
@@ -866,7 +888,7 @@ class TechniqueGenerationService {
     if (!unlockRes.data) {
       return { success: false, message: '获取研修解锁态失败', code: 'RESEARCH_UNLOCK_STATE_INVALID' };
     }
-    if (generatedNonHeavenCount === null) {
+    if (guaranteeProgress === null) {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
 
@@ -912,8 +934,8 @@ class TechniqueGenerationService {
     const cooldownState = buildTechniqueResearchCooldownState(cooldownStartedAt, new Date(), {
       cooldownReductionRate,
     });
-    const guaranteeState = resolveTechniqueResearchHeavenGuaranteeState(generatedNonHeavenCount);
-    const qualityRates = resolveTechniqueResearchQualityRateEntries(generatedNonHeavenCount);
+    const guaranteeState = resolveTechniqueResearchHeavenGuaranteeState(guaranteeProgress.generatedNonHeavenCount);
+    const qualityRates = resolveTechniqueResearchQualityRateEntries(guaranteeProgress.generatedNonHeavenCount);
 
     return {
       success: true,
@@ -1039,11 +1061,18 @@ class TechniqueGenerationService {
     const weekKey = resolveWeekKey(new Date());
 
     const techniqueType = resolveTechniqueTypeByRandom();
-    const generatedNonHeavenCount = await this.loadTechniqueResearchGeneratedNonHeavenCount(characterId, false);
-    if (generatedNonHeavenCount === null) {
+    const guaranteeProgress = await this.loadTechniqueResearchGuaranteeProgress(characterId, false);
+    if (guaranteeProgress === null) {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
-    const quality = resolveTechniqueResearchQualityForGeneratedDraftSuccess(generatedNonHeavenCount);
+    const minimumQuality = guaranteeProgress.hasGeneratedDraftHistory
+      ? '黄'
+      : TECHNIQUE_RESEARCH_FIRST_DRAFT_MINIMUM_QUALITY;
+    const quality = resolveTechniqueResearchQualityForGeneratedDraftSuccess(
+      guaranteeProgress.generatedNonHeavenCount,
+      undefined,
+      minimumQuality,
+    );
     const costPoints = resolveTechniqueResearchFragmentCost(shouldUseCooldownBypassToken);
     const fragmentBalance = await this.getResearchFragmentBalanceTx(characterId);
     if (fragmentBalance < costPoints) {

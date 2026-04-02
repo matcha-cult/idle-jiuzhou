@@ -51,6 +51,9 @@ import {
   applyCooldownReductionSeconds,
   convertCooldownSecondsToHours,
 } from './monthCardBenefits.js';
+import {
+  QUALITY_RANK_MAP,
+} from './itemQuality.js';
 
 export type PartnerRecruitQuality = '黄' | '玄' | '地' | '天';
 export type PartnerRecruitElement = 'jin' | 'mu' | 'shui' | 'huo' | 'tu' | 'none';
@@ -123,6 +126,13 @@ export type PartnerRecruitHeavenGuaranteeState = {
   remainingUntilGuaranteedHeaven: number;
   isGuaranteedHeavenOnNextGeneratedPreview: boolean;
 };
+
+export const PARTNER_RECRUIT_FIRST_PREVIEW_MINIMUM_QUALITY: PartnerRecruitQuality = '玄';
+export const PARTNER_RECRUIT_FIRST_PREVIEW_GUARANTEE_CONSUMED_JOB_STATUSES = [
+  'generated_draft',
+  'accepted',
+  'discarded',
+] as const;
 
 const SECOND_MS = 1_000;
 const MINUTE_SECONDS = 60;
@@ -728,6 +738,16 @@ const normalizePartnerRecruitGeneratedNonHeavenCount = (raw: number): number => 
   return Math.max(0, Math.floor(raw));
 };
 
+const buildPartnerRecruitEffectiveQualityRollTable = (
+  minimumQuality: PartnerRecruitQuality,
+): ReadonlyArray<{ quality: PartnerRecruitQuality; weight: number }> => {
+  const minimumQualityRank = QUALITY_RANK_MAP[minimumQuality];
+  return QUALITY_ROLL_TABLE.map((entry) => ({
+    quality: entry.quality,
+    weight: QUALITY_RANK_MAP[entry.quality] >= minimumQualityRank ? entry.weight : 0,
+  }));
+};
+
 export const resolvePartnerRecruitHeavenGuaranteeState = (
   generatedNonHeavenCount: number,
   nodeEnv: string | undefined = process.env.NODE_ENV,
@@ -751,14 +771,23 @@ export const resolvePartnerRecruitHeavenGuaranteeState = (
   };
 };
 
-export const resolvePartnerRecruitQualityByWeight = (): PartnerRecruitQuality => {
-  const totalWeight = QUALITY_ROLL_TABLE.reduce((sum, entry) => sum + entry.weight, 0);
+export const resolvePartnerRecruitQualityByWeight = (
+  minimumQuality: PartnerRecruitQuality = '黄',
+): PartnerRecruitQuality => {
+  const effectiveRollTable = buildPartnerRecruitEffectiveQualityRollTable(minimumQuality);
+  const totalWeight = effectiveRollTable.reduce((sum, entry) => sum + entry.weight, 0);
+  if (totalWeight <= 0) {
+    return minimumQuality;
+  }
   let rolled = Math.random() * totalWeight;
-  for (const entry of QUALITY_ROLL_TABLE) {
+  for (const entry of effectiveRollTable) {
+    if (entry.weight <= 0) {
+      continue;
+    }
     rolled -= entry.weight;
     if (rolled <= 0) return entry.quality;
   }
-  return '黄';
+  return minimumQuality;
 };
 
 /**
@@ -766,8 +795,8 @@ export const resolvePartnerRecruitQualityByWeight = (): PartnerRecruitQuality =>
  *
  * 作用（做什么 / 不做什么）：
  * 1. 做什么：把伙伴招募当前真实权重转换为可直接展示的结构化概率表，避免前端再写一份常量。
- * 2. 做什么：与 `resolvePartnerRecruitQualityByWeight` 共享同一份权重源，确保展示概率与实际抽取口径一致。
- * 3. 不做什么：不执行随机抽取，也不引入活动/道具等额外修正逻辑。
+ * 2. 做什么：与基础权重表共享同一份来源，确保常规展示与天级保底展示稳定一致。
+ * 3. 不做什么：不执行随机抽取，也不承载“首次成功至少玄级”的隐藏产出门槛；该门槛只在实际品质决策函数里生效。
  *
  * 输入/输出：
  * - 输入：当前角色连续成功生成但未出天的次数。
@@ -777,7 +806,7 @@ export const resolvePartnerRecruitQualityByWeight = (): PartnerRecruitQuality =>
  * QUALITY_ROLL_TABLE -> 本函数 -> 招募状态 DTO -> 前端招募面板。
  *
  * 关键边界条件与坑点：
- * 1. 概率展示必须直接从同一个权重表换算，不能手写 40/30/20/10；保底生效时也必须只在这里统一切成 100% 天级。
+ * 1. 概率展示必须直接从同一个权重表换算，不能手写 40/30/20/10；天级保底生效时也必须只在这里统一切成 100% 天级。
  * 2. `rate` 当前按权重总和换算为百分比整数；若未来引入非整除权重，应只在这里统一定义展示精度。
  */
 export const resolvePartnerRecruitQualityRateEntries = (
@@ -803,12 +832,13 @@ export const resolvePartnerRecruitQualityRateEntries = (
 export const resolvePartnerRecruitQualityForGeneratedPreviewSuccess = (
   generatedNonHeavenCount: number,
   nodeEnv: string | undefined = process.env.NODE_ENV,
+  minimumQuality: PartnerRecruitQuality = '黄',
 ): PartnerRecruitQuality => {
   const guaranteeState = resolvePartnerRecruitHeavenGuaranteeState(generatedNonHeavenCount, nodeEnv);
   if (guaranteeState.isGuaranteedHeavenOnNextGeneratedPreview) {
     return '天';
   }
-  return resolvePartnerRecruitQualityByWeight();
+  return resolvePartnerRecruitQualityByWeight(minimumQuality);
 };
 
 export const resolvePartnerRecruitGeneratedNonHeavenCountAfterSuccess = (

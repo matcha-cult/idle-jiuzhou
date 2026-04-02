@@ -51,6 +51,8 @@ import {
   type PartnerRecruitStatusDto,
 } from './shared/partnerRecruitStatus.js';
 import {
+  PARTNER_RECRUIT_FIRST_PREVIEW_GUARANTEE_CONSUMED_JOB_STATUSES,
+  PARTNER_RECRUIT_FIRST_PREVIEW_MINIMUM_QUALITY,
   buildPartnerRecruitCooldownState,
   buildPartnerRecruitPreviewExpireAt,
   formatPartnerRecruitCooldownRemaining,
@@ -98,6 +100,11 @@ export interface PartnerRecruitConfirmResponse {
   partnerAvatar: string | null;
   activated: boolean;
 }
+
+type PartnerRecruitGuaranteeProgress = {
+  generatedNonHeavenCount: number;
+  hasGeneratedPreviewHistory: boolean;
+};
 
 type RecruitJobRow = {
   generationId: string;
@@ -342,26 +349,38 @@ class PartnerRecruitService {
     return Math.max(0, Math.floor(asNumber((result.rows[0] as Record<string, unknown>).spirit_stones, 0)));
   }
 
-  private async loadPartnerRecruitGeneratedNonHeavenCount(
+  private async loadPartnerRecruitGuaranteeProgress(
     characterId: number,
     forUpdate: boolean,
-  ): Promise<number | null> {
+  ): Promise<PartnerRecruitGuaranteeProgress | null> {
     const lockSql = forUpdate ? 'FOR UPDATE' : '';
     const result = await query(
       `
-        SELECT partner_recruit_generated_non_heaven_count
-        FROM characters
-        WHERE id = $1
+        SELECT
+          c.partner_recruit_generated_non_heaven_count,
+          EXISTS (
+            SELECT 1
+            FROM partner_recruit_job job
+            WHERE job.character_id = c.id
+              AND job.status = ANY($2::text[])
+            LIMIT 1
+          ) AS has_generated_preview_history
+        FROM characters c
+        WHERE c.id = $1
         LIMIT 1
         ${lockSql}
       `,
-      [characterId],
+      [characterId, [...PARTNER_RECRUIT_FIRST_PREVIEW_GUARANTEE_CONSUMED_JOB_STATUSES]],
     );
     if (result.rows.length <= 0) return null;
-    return Math.max(0, Math.floor(asNumber(
-      (result.rows[0] as Record<string, unknown>).partner_recruit_generated_non_heaven_count,
-      0,
-    )));
+    const row = result.rows[0] as Record<string, unknown>;
+    return {
+      generatedNonHeavenCount: Math.max(0, Math.floor(asNumber(
+        row.partner_recruit_generated_non_heaven_count,
+        0,
+      ))),
+      hasGeneratedPreviewHistory: asBoolean(row.has_generated_preview_history),
+    };
   }
 
   private async loadCharacterUserId(characterId: number): Promise<number | null> {
@@ -410,8 +429,8 @@ class PartnerRecruitService {
     }
     const customBaseModelTokenItemName = getPartnerRecruitCustomBaseModelTokenName();
     const customBaseModelTokenAvailableQty = await this.loadCustomBaseModelTokenAvailableQty(characterId, false);
-    const generatedNonHeavenCount = await this.loadPartnerRecruitGeneratedNonHeavenCount(characterId, false);
-    if (generatedNonHeavenCount === null) {
+    const guaranteeProgress = await this.loadPartnerRecruitGuaranteeProgress(characterId, false);
+    if (guaranteeProgress === null) {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
 
@@ -422,8 +441,8 @@ class PartnerRecruitService {
 
     if (!unlockState.data.unlocked) {
       const cooldownState = buildPartnerRecruitCooldownState(null);
-      const guaranteeState = resolvePartnerRecruitHeavenGuaranteeState(generatedNonHeavenCount);
-      const qualityRates = resolvePartnerRecruitQualityRateEntries(generatedNonHeavenCount);
+      const guaranteeState = resolvePartnerRecruitHeavenGuaranteeState(guaranteeProgress.generatedNonHeavenCount);
+      const qualityRates = resolvePartnerRecruitQualityRateEntries(guaranteeProgress.generatedNonHeavenCount);
       return {
         success: true,
         message: '获取成功',
@@ -455,8 +474,8 @@ class PartnerRecruitService {
     const cooldownState = buildPartnerRecruitCooldownState(latestCooldownStartedAt, new Date(), {
       cooldownReductionRate,
     });
-    const guaranteeState = resolvePartnerRecruitHeavenGuaranteeState(generatedNonHeavenCount);
-    const qualityRates = resolvePartnerRecruitQualityRateEntries(generatedNonHeavenCount);
+    const guaranteeState = resolvePartnerRecruitHeavenGuaranteeState(guaranteeProgress.generatedNonHeavenCount);
+    const qualityRates = resolvePartnerRecruitQualityRateEntries(guaranteeProgress.generatedNonHeavenCount);
     const preview = latestJob?.previewPartnerDefId
       ? await buildGeneratedPartnerPreviewByPartnerDefId(latestJob.previewPartnerDefId)
       : null;
@@ -554,8 +573,8 @@ class PartnerRecruitService {
     if (spiritStones === null) {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
-    const generatedNonHeavenCount = await this.loadPartnerRecruitGeneratedNonHeavenCount(characterId, false);
-    if (generatedNonHeavenCount === null) {
+    const guaranteeProgress = await this.loadPartnerRecruitGuaranteeProgress(characterId, false);
+    if (guaranteeProgress === null) {
       return { success: false, message: '角色不存在', code: 'CHARACTER_NOT_FOUND' };
     }
     if (spiritStones < PARTNER_RECRUIT_SPIRIT_STONES_COST) {
@@ -579,7 +598,14 @@ class PartnerRecruitService {
     }
 
     const generationId = buildPartnerRecruitGenerationId();
-    const quality = resolvePartnerRecruitQualityForGeneratedPreviewSuccess(generatedNonHeavenCount);
+    const minimumQuality = guaranteeProgress.hasGeneratedPreviewHistory
+      ? '黄'
+      : PARTNER_RECRUIT_FIRST_PREVIEW_MINIMUM_QUALITY;
+    const quality = resolvePartnerRecruitQualityForGeneratedPreviewSuccess(
+      guaranteeProgress.generatedNonHeavenCount,
+      undefined,
+      minimumQuality,
+    );
     const consumeCurrencyResult = await consumeCharacterCurrencies(characterId, {
       spiritStones: PARTNER_RECRUIT_SPIRIT_STONES_COST,
     });

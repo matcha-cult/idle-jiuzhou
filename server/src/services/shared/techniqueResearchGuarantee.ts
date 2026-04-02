@@ -22,6 +22,10 @@
  * 2. development 环境的强制天阶只允许在共享规则里统一生效，不能让调用方各自判断环境，否则测试和页面展示会再次分叉。
  */
 
+import {
+  QUALITY_RANK_MAP,
+} from './itemQuality.js';
+
 export type TechniqueResearchQuality = '黄' | '玄' | '地' | '天';
 
 export type TechniqueResearchQualityRateEntry = {
@@ -35,6 +39,12 @@ export type TechniqueResearchHeavenGuaranteeState = {
   remainingUntilGuaranteedHeaven: number;
   isGuaranteedHeavenOnNextGeneratedDraft: boolean;
 };
+
+export const TECHNIQUE_RESEARCH_FIRST_DRAFT_MINIMUM_QUALITY: TechniqueResearchQuality = '玄';
+export const TECHNIQUE_RESEARCH_FIRST_DRAFT_GUARANTEE_CONSUMED_JOB_STATUSES = [
+  'generated_draft',
+  'published',
+] as const;
 
 const QUALITY_ROLL_TABLE: ReadonlyArray<{
   quality: TechniqueResearchQuality;
@@ -51,6 +61,19 @@ export const TECHNIQUE_RESEARCH_HEAVEN_GUARANTEE_TRIGGER_COUNT = 20;
 const normalizeTechniqueResearchGeneratedNonHeavenCount = (raw: number): number => {
   if (!Number.isFinite(raw)) return 0;
   return Math.max(0, Math.floor(raw));
+};
+
+const buildTechniqueResearchEffectiveQualityRollTable = (
+  minimumQuality: TechniqueResearchQuality,
+): ReadonlyArray<{
+  quality: TechniqueResearchQuality;
+  weight: number;
+}> => {
+  const minimumQualityRank = QUALITY_RANK_MAP[minimumQuality];
+  return QUALITY_ROLL_TABLE.map((entry) => ({
+    quality: entry.quality,
+    weight: QUALITY_RANK_MAP[entry.quality] >= minimumQualityRank ? entry.weight : 0,
+  }));
 };
 
 export const shouldForceTechniqueResearchHeavenQuality = (
@@ -83,14 +106,23 @@ export const resolveTechniqueResearchHeavenGuaranteeState = (
   };
 };
 
-export const resolveTechniqueResearchQualityByWeight = (): TechniqueResearchQuality => {
-  const totalWeight = QUALITY_ROLL_TABLE.reduce((sum, entry) => sum + entry.weight, 0);
+export const resolveTechniqueResearchQualityByWeight = (
+  minimumQuality: TechniqueResearchQuality = '黄',
+): TechniqueResearchQuality => {
+  const effectiveRollTable = buildTechniqueResearchEffectiveQualityRollTable(minimumQuality);
+  const totalWeight = effectiveRollTable.reduce((sum, entry) => sum + entry.weight, 0);
+  if (totalWeight <= 0) {
+    return minimumQuality;
+  }
   let rolled = Math.random() * totalWeight;
-  for (const entry of QUALITY_ROLL_TABLE) {
+  for (const entry of effectiveRollTable) {
+    if (entry.weight <= 0) {
+      continue;
+    }
     rolled -= entry.weight;
     if (rolled <= 0) return entry.quality;
   }
-  return '黄';
+  return minimumQuality;
 };
 
 export const resolveTechniqueResearchQualityRateEntries = (
@@ -117,12 +149,13 @@ export const resolveTechniqueResearchQualityRateEntries = (
 export const resolveTechniqueResearchQualityForGeneratedDraftSuccess = (
   generatedNonHeavenCount: number,
   nodeEnv: string | undefined = process.env.NODE_ENV,
+  minimumQuality: TechniqueResearchQuality = '黄',
 ): TechniqueResearchQuality => {
   const guaranteeState = resolveTechniqueResearchHeavenGuaranteeState(generatedNonHeavenCount, nodeEnv);
   if (guaranteeState.isGuaranteedHeavenOnNextGeneratedDraft) {
     return '天';
   }
-  return resolveTechniqueResearchQualityByWeight();
+  return resolveTechniqueResearchQualityByWeight(minimumQuality);
 };
 
 export const resolveTechniqueResearchGeneratedNonHeavenCountAfterSuccess = (

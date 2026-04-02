@@ -34,6 +34,14 @@ test('partnerRecruitService: 创建走共享扣费入口，退款统一走邮件
   assert.match(source, /SPIRIT_STONES_STATE_CHANGED/u);
   assert.match(
     source,
+    /const minimumQuality = guaranteeProgress\.hasGeneratedPreviewHistory\s*\?\s*'黄'\s*:\s*PARTNER_RECRUIT_FIRST_PREVIEW_MINIMUM_QUALITY;/u,
+  );
+  assert.match(
+    source,
+    /resolvePartnerRecruitQualityForGeneratedPreviewSuccess\(\s*guaranteeProgress\.generatedNonHeavenCount,\s*undefined,\s*minimumQuality,\s*\)/u,
+  );
+  assert.match(
+    source,
     /partner_recruit_generated_non_heaven_count = CASE[\s\S]*WHEN \$2 = '天' THEN 0[\s\S]*ELSE partner_recruit_generated_non_heaven_count \+ 1/iu,
   );
   assert.doesNotMatch(

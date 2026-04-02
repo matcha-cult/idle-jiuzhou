@@ -30,7 +30,12 @@ const techniqueGenerationSource = fs.readFileSync(
 test('techniqueGenerationService: 创建任务应复用共享保底入口，成功后计数改为原子更新', () => {
   assert.match(
     techniqueGenerationSource,
-    /const quality = resolveTechniqueResearchQualityForGeneratedDraftSuccess\(generatedNonHeavenCount\);/u,
+    /const minimumQuality = guaranteeProgress\.hasGeneratedDraftHistory\s*\?\s*'黄'\s*:\s*TECHNIQUE_RESEARCH_FIRST_DRAFT_MINIMUM_QUALITY;/u,
+    '创建任务未声明首次研修最低玄阶门槛',
+  );
+  assert.match(
+    techniqueGenerationSource,
+    /const quality = resolveTechniqueResearchQualityForGeneratedDraftSuccess\(\s*guaranteeProgress\.generatedNonHeavenCount,\s*undefined,\s*minimumQuality,\s*\);/u,
     '创建任务未复用洞府研修共享保底入口',
   );
   assert.match(

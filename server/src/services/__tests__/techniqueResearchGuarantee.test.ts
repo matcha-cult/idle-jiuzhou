@@ -36,6 +36,24 @@ test('resolveTechniqueResearchQualityRateEntries: 应输出与当前权重同源
   ]);
 });
 
+test('resolveTechniqueResearchQualityForGeneratedDraftSuccess: 首次保底玄阶只影响实际产出，不改变展示概率表', () => {
+  const originalRandom = Math.random;
+
+  try {
+    Math.random = () => 0;
+
+    assert.deepEqual(resolveTechniqueResearchQualityRateEntries(), [
+      { quality: '黄', weight: 4, rate: 40 },
+      { quality: '玄', weight: 3, rate: 30 },
+      { quality: '地', weight: 2, rate: 20 },
+      { quality: '天', weight: 1, rate: 10 },
+    ]);
+    assert.equal(resolveTechniqueResearchQualityForGeneratedDraftSuccess(0, 'production', '玄'), '玄');
+  } finally {
+    Math.random = originalRandom;
+  }
+});
+
 test('resolveTechniqueResearchHeavenGuaranteeState: 连续 19 次成功生成未出天后，下次应进入保底态', () => {
   assert.deepEqual(resolveTechniqueResearchHeavenGuaranteeState(19), {
     generatedNonHeavenCount: 19,
