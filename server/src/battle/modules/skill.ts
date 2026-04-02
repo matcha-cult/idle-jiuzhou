@@ -111,6 +111,9 @@ type SkillExecutionContext = {
 };
 
 type BuffOrDebuffEffect = SkillEffect & { type: 'buff' | 'debuff' };
+type ResolvedTargetEffect = SkillEffect & {
+  type: 'heal' | 'shield' | 'buff' | 'debuff' | 'resource' | 'restore_lingqi' | 'cleanse' | 'cleanse_control';
+};
 type SkillEffectTargetMode = NonNullable<SkillEffect['target']>;
 
 type SkillEffectTargetTeamContext = {
@@ -204,15 +207,66 @@ function buildSkillEffectTargetTeamContext(
   };
 }
 
+function isEnemyFacingSkillTargetType(targetType: BattleSkill['targetType']): boolean {
+  return targetType === 'single_enemy' || targetType === 'all_enemy' || targetType === 'random_enemy';
+}
+
+function resolveDefaultResourceEffectTargetMode(
+  skill: BattleSkill,
+  effect: SkillEffect,
+): SkillEffectTargetMode {
+  const value = toFiniteNumber(effect.value, 0);
+  if (value > 0 && isEnemyFacingSkillTargetType(skill.targetType)) {
+    return 'self';
+  }
+  return 'target';
+}
+
+function resolveDefaultSkillEffectTargetMode(
+  skill: BattleSkill,
+  effect: SkillEffect,
+): SkillEffectTargetMode {
+  switch (effect.type) {
+    case 'buff':
+      return 'self';
+    case 'debuff':
+      return 'enemy';
+    case 'heal':
+    case 'shield':
+    case 'restore_lingqi':
+    case 'cleanse':
+    case 'cleanse_control':
+      return isEnemyFacingSkillTargetType(skill.targetType) ? 'self' : 'target';
+    case 'resource':
+      return resolveDefaultResourceEffectTargetMode(skill, effect);
+    default:
+      return 'target';
+  }
+}
+
 function resolveSkillEffectTargetMode(
   raw: SkillEffect['target'],
-  effectType: 'buff' | 'debuff',
+  skill: BattleSkill,
+  effect: SkillEffect,
 ): SkillEffectTargetMode {
   if (raw === 'self') return 'self';
   if (raw === 'enemy') return 'enemy';
   if (raw === 'ally') return 'ally';
   if (raw === 'target') return 'target';
-  return effectType === 'buff' ? 'self' : 'enemy';
+  return resolveDefaultSkillEffectTargetMode(skill, effect);
+}
+
+function shouldResolveEffectTargetInside(effect: SkillEffect): effect is ResolvedTargetEffect {
+  return (
+    effect.type === 'heal'
+    || effect.type === 'shield'
+    || effect.type === 'buff'
+    || effect.type === 'debuff'
+    || effect.type === 'resource'
+    || effect.type === 'restore_lingqi'
+    || effect.type === 'cleanse'
+    || effect.type === 'cleanse_control'
+  );
 }
 
 function applyContextBonus(value: number, bonusRate: number): number {
@@ -886,7 +940,7 @@ export function executeSkill(
     context.physicalDefenseIgnoreRate = 0.25;
   }
   const effectTargetTeamContext = buildSkillEffectTargetTeamContext(state, caster);
-  const processedBuffEffectTargets = new Set<string>();
+  const processedEffectTargets = new Set<string>();
 
   // 先落主动作日志，再按触发时机追加触发日志，保证日志顺序符合战斗时序
   const targetResults = targets.map((target) => createTargetResult(target));
@@ -924,7 +978,7 @@ export function executeSkill(
       targetResultById,
       context,
       effectTargetTeamContext,
-      processedBuffEffectTargets,
+      processedEffectTargets,
     );
   }
 
@@ -964,7 +1018,7 @@ function executeSkillOnTarget(
   targetResultById: Map<string, TargetResult>,
   context: SkillExecutionContext,
   effectTargetTeamContext: SkillEffectTargetTeamContext,
-  processedBuffEffectTargets: Set<string>,
+  processedEffectTargets: Set<string>,
 ): void {
 
   // 先处理伤害效果，保持“先伤害后附加效果”的执行顺序
@@ -992,8 +1046,7 @@ function executeSkillOnTarget(
     // 控制效果走独立命中流程，避免重复概率判定
     if (
       effect.type !== 'control'
-      && effect.type !== 'buff'
-      && effect.type !== 'debuff'
+      && !shouldResolveEffectTargetInside(effect)
       && typeof effect.chance === 'number'
       && !rollChance(state, effect.chance)
     ) {
@@ -1011,7 +1064,7 @@ function executeSkillOnTarget(
       targetResultById,
       context,
       effectTargetTeamContext,
-      processedBuffEffectTargets,
+      processedEffectTargets,
       effectIndex,
     );
   }
@@ -1031,7 +1084,7 @@ function executeEffect(
   targetResultById: Map<string, TargetResult>,
   context: SkillExecutionContext,
   effectTargetTeamContext: SkillEffectTargetTeamContext,
-  processedBuffEffectTargets: Set<string>,
+  processedEffectTargets: Set<string>,
   effectIndex: number,
 ): void {
   switch (effect.type) {
@@ -1040,47 +1093,30 @@ function executeEffect(
       break;
 
     case 'heal':
-      executeHealEffect(state, caster, target, skill, effect, result, context);
-      break;
-
     case 'shield':
-      executeShieldEffect(caster, target, skill, effect, result, context);
-      break;
-
     case 'buff':
     case 'debuff':
-      executeBuffEffectWithResolvedTarget(
+    case 'resource':
+    case 'restore_lingqi':
+    case 'cleanse':
+    case 'cleanse_control':
+      executeEffectWithResolvedTarget(
         state,
         caster,
         target,
         skill,
-        effect as BuffOrDebuffEffect,
+        effect as ResolvedTargetEffect,
         targetResults,
         targetResultById,
         effectTargetTeamContext,
-        processedBuffEffectTargets,
+        processedEffectTargets,
+        context,
         effectIndex,
       );
       break;
 
     case 'dispel':
       executeDispelEffect(target, effect, result);
-      break;
-
-    case 'resource':
-      executeResourceEffect(target, effect, result, context);
-      break;
-
-    case 'restore_lingqi':
-      executeRestoreLingqiEffect(target, effect, result, context);
-      break;
-
-    case 'cleanse':
-      executeCleanseEffect(target, effect, result);
-      break;
-
-    case 'cleanse_control':
-      executeCleanseControlEffect(target, effect, result);
       break;
 
     case 'lifesteal':
@@ -1235,7 +1271,7 @@ function executeHealEffect(
   healValue = Math.floor(healValue * (1 - healReduction));
 
   const actualHeal = applyHealing(target, healValue);
-  result.heal = actualHeal;
+  result.heal = (result.heal || 0) + actualHeal;
   caster.stats.healingDone += actualHeal;
   if (actualHeal > 0) {
     const logs = triggerSetBonusEffects(state, 'on_heal', caster, {
@@ -1246,13 +1282,14 @@ function executeHealEffect(
   }
 }
 
-function resolveBuffEffectRecipientsForCurrentTarget(
+function resolveEffectRecipientsForCurrentTarget(
   caster: BattleUnit,
   currentTarget: BattleUnit,
-  effect: BuffOrDebuffEffect,
+  skill: BattleSkill,
+  effect: ResolvedTargetEffect,
   effectTargetTeamContext: SkillEffectTargetTeamContext,
 ): BattleUnit[] {
-  const targetMode = resolveSkillEffectTargetMode(effect.target, effect.type);
+  const targetMode = resolveSkillEffectTargetMode(effect.target, skill, effect);
   if (targetMode === 'self') {
     return [caster];
   }
@@ -1269,39 +1306,41 @@ function resolveBuffEffectRecipientsForCurrentTarget(
 }
 
 /**
- * 执行带显式目标语义的 Buff/Debuff。
+ * 执行带显式目标语义的非伤害效果。
  *
  * 作用：
- * - 统一解析 buff/debuff 的真实受术单位，让“攻击目标 + 自身增益”与“默认跟随技能目标”走同一个入口。
- * - 通过 effectIndex + recipientId 去重，避免群攻技能把同一个自增益按命中人数重复施加。
+ * - 统一解析带 target 语义的非伤害效果真实受术单位，让“攻击敌人 + 自身回血/增益”与“友方技能跟随主目标”走同一个入口。
+ * - 通过 effectIndex + recipientId 去重，避免群攻技能把同一个自增益/自疗按命中人数重复结算。
  *
  * 输入/输出：
- * - 输入：当前命中目标、整次技能的目标结果集合、buff/debuff effect。
- * - 输出：无；副作用为给真实受术单位挂 Buff，并把日志写入对应 `TargetResult`。
+ * - 输入：当前命中目标、整次技能的目标结果集合、支持 target 的非伤害 effect。
+ * - 输出：无；副作用为把真实受术单位上的治疗/护盾/Buff/资源等结算写入对应 `TargetResult`。
  *
  * 数据流/状态流：
  * - skill.effects[*].target -> 当前命中目标/施法者 -> 解析真实受术单位
- * - 真实受术单位 -> `executeBuffEffect` -> `TargetResult` 与单位 Buff 列表同步更新。
+ * - 真实受术单位 -> 对应执行函数 -> `TargetResult` 与单位状态同步更新。
  *
  * 关键边界条件与坑点：
- * 1) `target=self` 在群攻技能里必须整次施法只结算一次，不能按敌人数量重复叠加。
- * 2) 旧技能未填写 target 时，Buff 默认自身、Debuff 默认敌方目标，兼容历史 AI 生成配置缺省目标。
+ * 1) `target=self` 在群攻技能里必须整次施法只结算一次，不能按敌人数量重复叠加或重复回血。
+ * 2) 旧技能未填写 target 时，Buff 默认自身、Debuff 默认敌方目标；治疗/护盾/净化/回灵等有益效果仅在敌方指向技能里默认改投给施法者自身。
  */
-function executeBuffEffectWithResolvedTarget(
+function executeEffectWithResolvedTarget(
   state: BattleState,
   caster: BattleUnit,
   currentTarget: BattleUnit,
   skill: BattleSkill,
-  effect: BuffOrDebuffEffect,
+  effect: ResolvedTargetEffect,
   targetResults: TargetResult[],
   targetResultById: Map<string, TargetResult>,
   effectTargetTeamContext: SkillEffectTargetTeamContext,
-  processedBuffEffectTargets: Set<string>,
+  processedEffectTargets: Set<string>,
+  context: SkillExecutionContext,
   effectIndex: number,
 ): void {
-  const recipients = resolveBuffEffectRecipientsForCurrentTarget(
+  const recipients = resolveEffectRecipientsForCurrentTarget(
     caster,
     currentTarget,
+    skill,
     effect,
     effectTargetTeamContext,
   );
@@ -1311,17 +1350,42 @@ function executeBuffEffectWithResolvedTarget(
 
   for (const recipient of recipients) {
     const processedKey = `${effectIndex}:${recipient.id}`;
-    if (processedBuffEffectTargets.has(processedKey)) {
+    if (processedEffectTargets.has(processedKey)) {
       continue;
     }
-    processedBuffEffectTargets.add(processedKey);
+    processedEffectTargets.add(processedKey);
 
     if (typeof effect.chance === 'number' && !rollChance(state, effect.chance)) {
       continue;
     }
 
     const recipientResult = getOrCreateTargetResult(targetResults, targetResultById, recipient);
-    executeBuffEffect(caster, recipient, skill, effect, recipientResult, effectIndex);
+    switch (effect.type) {
+      case 'heal':
+        executeHealEffect(state, caster, recipient, skill, effect, recipientResult, context);
+        break;
+      case 'shield':
+        executeShieldEffect(caster, recipient, skill, effect, recipientResult, context);
+        break;
+      case 'buff':
+      case 'debuff':
+        executeBuffEffect(caster, recipient, skill, effect as BuffOrDebuffEffect, recipientResult, effectIndex);
+        break;
+      case 'resource':
+        executeResourceEffect(recipient, effect, recipientResult, context);
+        break;
+      case 'restore_lingqi':
+        executeRestoreLingqiEffect(recipient, effect, recipientResult, context);
+        break;
+      case 'cleanse':
+        executeCleanseEffect(recipient, effect, recipientResult);
+        break;
+      case 'cleanse_control':
+        executeCleanseControlEffect(recipient, effect, recipientResult);
+        break;
+      default:
+        break;
+    }
   }
 }
 

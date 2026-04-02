@@ -499,8 +499,11 @@ export const validateTechniqueSkillEffect = (
       return validateValueExpression(effect);
 
     case 'heal':
-    case 'shield':
+    case 'shield': {
+      const targetValidation = validateOptionalEnumField('target', effect.target, EFFECT_TARGET_SET);
+      if (!targetValidation.success) return targetValidation;
       return validateValueExpression(effect);
+    }
 
     case 'buff':
     case 'debuff': {
@@ -536,12 +539,18 @@ export const validateTechniqueSkillEffect = (
       return validateRequiredNumberField('value', effect.value);
     }
 
-    case 'restore_lingqi':
+    case 'restore_lingqi': {
+      const targetValidation = validateOptionalEnumField('target', effect.target, EFFECT_TARGET_SET);
+      if (!targetValidation.success) return targetValidation;
       return validateRequiredNumberField('value', effect.value, 0);
+    }
 
     case 'cleanse':
-    case 'cleanse_control':
+    case 'cleanse_control': {
+      const targetValidation = validateOptionalEnumField('target', effect.target, EFFECT_TARGET_SET);
+      if (!targetValidation.success) return targetValidation;
       return { success: true };
+    }
 
     case 'lifesteal':
       return validateRequiredNumberField('value', effect.value, 0, 1);

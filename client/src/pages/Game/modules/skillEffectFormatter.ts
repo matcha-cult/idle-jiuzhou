@@ -153,15 +153,27 @@ const formatDamageEffect = (effect: Record<string, unknown>, context: SkillEffec
   return text;
 };
 
-const formatHealEffect = (effect: Record<string, unknown>): string => {
+const formatHealEffect = (
+  effect: Record<string, unknown>,
+  context: SkillEffectContext = {},
+  options: { omitTargetPrefix?: boolean } = {},
+): string => {
   const scaled = formatScaledValue(effect, 'heal');
-  return scaled ? `恢复气血，${scaled}` : '恢复气血';
+  const baseText = scaled ? `恢复气血，${scaled}` : '恢复气血';
+  if (options.omitTargetPrefix) return baseText;
+  const prefix = formatEffectTargetPrefix(effect, 'heal', context);
+  return prefix ? `${prefix}${baseText}` : baseText;
 };
 
-const formatShieldEffect = (effect: Record<string, unknown>): string => {
+const formatShieldEffect = (
+  effect: Record<string, unknown>,
+  context: SkillEffectContext = {},
+  options: { omitTargetPrefix?: boolean } = {},
+): string => {
   const scaled = formatScaledValue(effect, 'shield');
   const duration = toPositiveInt(effect.duration);
-  let text = scaled ? `获得护盾，${scaled}` : '获得护盾';
+  const baseText = scaled ? `获得护盾，${scaled}` : '获得护盾';
+  let text = options.omitTargetPrefix ? baseText : `${formatEffectTargetPrefix(effect, 'shield', context)}${baseText}`;
   if (duration > 0) text += `，持续${duration}回合`;
   return text;
 };
@@ -302,6 +314,61 @@ const BUFF_EFFECT_TARGET_PREFIX_LABEL: Record<string, string> = {
   ally: '对友方目标',
 };
 
+const isEnemyFacingTargetType = (targetType: string): boolean => {
+  return targetType === 'single_enemy' || targetType === 'all_enemy' || targetType === 'random_enemy';
+};
+
+const resolveDefaultEffectTargetMode = (
+  effect: Record<string, unknown>,
+  effectType: string,
+  context: SkillEffectContext = {},
+): 'self' | 'target' | 'enemy' | 'ally' => {
+  if (effectType === 'buff') return 'self';
+  if (effectType === 'debuff') return 'enemy';
+  if (
+    effectType === 'heal'
+    || effectType === 'shield'
+    || effectType === 'restore_lingqi'
+    || effectType === 'cleanse'
+    || effectType === 'cleanse_control'
+  ) {
+    return isEnemyFacingTargetType(toText(context.targetType)) ? 'self' : 'target';
+  }
+  if (effectType === 'resource') {
+    const value = toNumber(effect.value);
+    if (value !== null && value > 0 && isEnemyFacingTargetType(toText(context.targetType))) {
+      return 'self';
+    }
+    return 'target';
+  }
+  return 'target';
+};
+
+const resolveEffectTargetMode = (
+  effect: Record<string, unknown>,
+  effectType: string,
+  context: SkillEffectContext = {},
+): 'self' | 'target' | 'enemy' | 'ally' => {
+  const rawTarget = toText(effect.target);
+  if (rawTarget === 'self' || rawTarget === 'target' || rawTarget === 'enemy' || rawTarget === 'ally') {
+    return rawTarget;
+  }
+  return resolveDefaultEffectTargetMode(effect, effectType, context);
+};
+
+const formatEffectTargetPrefix = (
+  effect: Record<string, unknown>,
+  effectType: string,
+  context: SkillEffectContext = {},
+): string => {
+  const targetMode = resolveEffectTargetMode(effect, effectType, context);
+  if (targetMode === 'target') {
+    const targetLabel = RESOURCE_EFFECT_TARGET_LABEL[toText(context.targetType)] || '目标';
+    return `对${targetLabel}`;
+  }
+  return BUFF_EFFECT_TARGET_PREFIX_LABEL[targetMode] || '';
+};
+
 /**
  * 格式化光环子效果描述
  *
@@ -325,9 +392,10 @@ const formatAuraDetail = (effect: Record<string, unknown>): string => {
     if (subType === 'damage') {
       subLines.push(formatDamageEffect(subEffect, {}));
     } else if (subType === 'heal') {
-      subLines.push(formatHealEffect(subEffect));
+      subLines.push(formatHealEffect(subEffect, {}, { omitTargetPrefix: true }));
     } else if (subType === 'buff') {
       subLines.push(formatBuffEffect(subEffect, 'buff', {
+        context: {},
         ignoreDuration: true,
         useImplicitTargetPrefix: false,
         omitActionText: true,
@@ -335,6 +403,7 @@ const formatAuraDetail = (effect: Record<string, unknown>): string => {
       }));
     } else if (subType === 'debuff') {
       subLines.push(formatBuffEffect(subEffect, 'debuff', {
+        context: {},
         ignoreDuration: true,
         useImplicitTargetPrefix: false,
         omitActionText: true,
@@ -343,7 +412,7 @@ const formatAuraDetail = (effect: Record<string, unknown>): string => {
     } else if (subType === 'resource') {
       subLines.push(formatResourceEffect(subEffect, { targetType: auraTarget }));
     } else if (subType === 'restore_lingqi') {
-      subLines.push(formatRestoreLingqiEffect(subEffect));
+      subLines.push(formatRestoreLingqiEffect(subEffect, { targetType: auraTarget }, { omitTargetPrefix: true }));
     }
   }
 
@@ -461,6 +530,7 @@ const formatBuffEffect = (
   effect: Record<string, unknown>,
   effectType: 'buff' | 'debuff',
   options: {
+    context?: SkillEffectContext;
     ignoreDuration?: boolean;
     useImplicitTargetPrefix?: boolean;
     omitActionText?: boolean;
@@ -474,14 +544,14 @@ const formatBuffEffect = (
   const shouldCompactValueText = options.compactValueText || buffKind === 'dot' || buffKind === 'hot';
   const valueText = shouldCompactValueText ? formatCompactBuffDetail(rawValueText) : rawValueText;
   const duration = toPositiveInt(effect.duration);
-  const rawTarget = toText(effect.target);
+  const targetContext = options.context ?? {};
   if (buffKind === 'aura') {
     const auraTarget = AURA_TARGET_LABEL[toText(effect.auraTarget)] || toText(effect.auraTarget) || '范围';
     return valueText ? `${auraTarget}${name}：${valueText}` : `${auraTarget}${name}`;
   }
-  const targetPrefix = BUFF_EFFECT_TARGET_PREFIX_LABEL[
-    rawTarget || (options.useImplicitTargetPrefix === false ? '' : (effectType === 'buff' ? 'self' : 'enemy'))
-  ];
+  const targetPrefix = options.useImplicitTargetPrefix === false
+    ? ''
+    : formatEffectTargetPrefix(effect, effectType, targetContext);
   const actionText = effectType === 'buff' ? '施加增益' : '施加减益';
 
   let text = options.omitActionText
@@ -514,21 +584,30 @@ const formatLifestealEffect = (effect: Record<string, unknown>): string => {
   return `吸血 ${formatPercent(value)}%`;
 };
 
-const formatRestoreLingqiEffect = (effect: Record<string, unknown>): string => {
+const formatRestoreLingqiEffect = (
+  effect: Record<string, unknown>,
+  context: SkillEffectContext = {},
+  options: { omitTargetPrefix?: boolean } = {},
+): string => {
   const value = toNumber(effect.value);
-  if (value === null || value <= 0) return '恢复灵气';
-  return `恢复灵气 ${Math.floor(value)}`;
+  const baseText = value === null || value <= 0 ? '恢复灵气' : `恢复灵气 ${Math.floor(value)}`;
+  if (options.omitTargetPrefix) return baseText;
+  const prefix = formatEffectTargetPrefix(effect, 'restore_lingqi', context);
+  return prefix ? `${prefix}${baseText}` : baseText;
 };
 
-const formatCleanseEffect = (effect: Record<string, unknown>): string => {
+const formatCleanseEffect = (effect: Record<string, unknown>, context: SkillEffectContext = {}): string => {
   const count = Math.max(1, toPositiveInt(effect.count) || 1);
-  return `净化减益 ${count}个`;
+  const prefix = formatEffectTargetPrefix(effect, 'cleanse', context);
+  const baseText = `净化减益 ${count}个`;
+  return prefix ? `${prefix}${baseText}` : baseText;
 };
 
-const formatCleanseControlEffect = (effect: Record<string, unknown>): string => {
+const formatCleanseControlEffect = (effect: Record<string, unknown>, context: SkillEffectContext = {}): string => {
   const count = toPositiveInt(effect.count);
-  if (count > 0) return `净化控制 ${count}个`;
-  return '净化控制效果';
+  const prefix = formatEffectTargetPrefix(effect, 'cleanse_control', context);
+  const baseText = count > 0 ? `净化控制 ${count}个` : '净化控制效果';
+  return prefix ? `${prefix}${baseText}` : baseText;
 };
 
 const formatControlEffect = (effect: Record<string, unknown>): string => {
@@ -558,7 +637,14 @@ const formatResourceEffect = (
   const resourceTypeRaw = toText(effect.resourceType);
   const resourceType = RESOURCE_TYPE_LABEL[resourceTypeRaw] || resourceTypeRaw || '资源';
   const value = toNumber(effect.value);
-  const targetLabel = RESOURCE_EFFECT_TARGET_LABEL[toText(context.targetType)] || '目标';
+  const targetMode = resolveEffectTargetMode(effect, 'resource', context);
+  const targetLabel = targetMode === 'target'
+    ? (RESOURCE_EFFECT_TARGET_LABEL[toText(context.targetType)] || '目标')
+    : (targetMode === 'self'
+      ? '自身'
+      : targetMode === 'enemy'
+        ? '敌方目标'
+        : '友方目标');
   if (value === null || value === 0) return `调整${targetLabel}${resourceType}`;
   const sign = value > 0 ? '+' : '-';
   return `调整${targetLabel}${resourceType} ${sign}${Math.abs(Math.floor(value))}`;
@@ -625,19 +711,19 @@ export const formatSkillEffectLines = (effectsRaw: unknown, context: SkillEffect
       continue;
     }
     if (type === 'heal') {
-      lines.push(formatHealEffect(effect));
+      lines.push(formatHealEffect(effect, context));
       continue;
     }
     if (type === 'shield') {
-      lines.push(formatShieldEffect(effect));
+      lines.push(formatShieldEffect(effect, context));
       continue;
     }
     if (type === 'buff') {
-      lines.push(formatBuffEffect(effect, 'buff'));
+      lines.push(formatBuffEffect(effect, 'buff', { context }));
       continue;
     }
     if (type === 'debuff') {
-      lines.push(formatBuffEffect(effect, 'debuff'));
+      lines.push(formatBuffEffect(effect, 'debuff', { context }));
       continue;
     }
     if (type === 'mark') {
@@ -650,15 +736,15 @@ export const formatSkillEffectLines = (effectsRaw: unknown, context: SkillEffect
       continue;
     }
     if (type === 'restore_lingqi') {
-      lines.push(formatRestoreLingqiEffect(effect));
+      lines.push(formatRestoreLingqiEffect(effect, context));
       continue;
     }
     if (type === 'cleanse') {
-      lines.push(formatCleanseEffect(effect));
+      lines.push(formatCleanseEffect(effect, context));
       continue;
     }
     if (type === 'cleanse_control') {
-      lines.push(formatCleanseControlEffect(effect));
+      lines.push(formatCleanseControlEffect(effect, context));
       continue;
     }
     if (type === 'control') {

@@ -1,10 +1,10 @@
 /**
- * 技能 Buff 显式目标回归测试
+ * 技能效果显式目标回归测试
  *
  * 作用（做什么 / 不做什么）：
- * 1) 做什么：验证 buff/debuff effect 支持显式指定目标，且缺省目标会按效果类型自动推断，并保证 action 日志落到真实受术单位。
- * 2) 做什么：锁定群攻技能给自身上 Buff 时只结算一次，避免按命中人数重复叠层。
- * 3) 不做什么：不覆盖资源效果、光环子效果或装备词条目标语义，只聚焦主动技能的 buff/debuff 结算。
+ * 1) 做什么：验证主动技能的 buff/debuff/heal 等效果支持显式指定目标，且缺省目标会按效果类型自动推断，并保证 action 日志落到真实受术单位。
+ * 2) 做什么：锁定群攻技能给自身上 Buff/治疗时只结算一次，避免按命中人数重复叠层或重复回血。
+ * 3) 不做什么：不覆盖资源效果、光环子效果或装备词条目标语义，只聚焦主动技能 effect.target 的结算。
  *
  * 输入 / 输出：
  * - 输入：BattleState、BattleSkill 与执行后的 battle log。
@@ -13,7 +13,7 @@
  * 数据流 / 状态流：
  * - 测试技能定义 -> `executeSkill`
  * - `skill.ts` 解析 effect.target -> 真实受术单位
- * - 断言 Buff 结算结果与日志目标一致。
+ * - 断言效果结算结果与日志目标一致。
  *
  * 复用设计说明：
  * - 统一复用 `battleTestUtils` 构建单位、战斗态与日志读取，避免每个回归用例重复拼装基础结构。
@@ -21,7 +21,7 @@
  *
  * 关键边界条件与坑点：
  * 1) 老技能未填写 `effect.target` 时，Buff 应默认施加给施法者自身，Debuff 应默认命中敌方目标。
- * 2) 群攻 + `target=self` 或缺省自增益若按“每个命中目标都触发一次”处理，会导致自增益重复叠加，这是本组测试要防住的核心回归点。
+ * 2) 群攻 + `target=self` 或缺省自疗/自增益若按“每个命中目标都触发一次”处理，会导致多次回血/重复叠加，这是本组测试要防住的核心回归点。
  */
 
 import test from 'node:test';
@@ -104,6 +104,63 @@ const createAttackDebuffSkill = (
   };
 };
 
+const createAttackHealSkill = (
+  targetType: BattleSkill['targetType'],
+  healTarget?: 'self' | 'target' | 'enemy',
+): BattleSkill => {
+  return {
+    id: `skill-heal-target-${targetType}-${healTarget ?? 'default'}`,
+    name: '回春裂空诀',
+    source: 'technique',
+    sourceId: 'tech-heal-target',
+    cost: {},
+    cooldown: 0,
+    targetType,
+    targetCount: targetType === 'all_enemy' ? 2 : 1,
+    damageType: 'magic',
+    element: 'mu',
+    effects: [
+      {
+        type: 'damage',
+        valueType: 'flat',
+        value: 100,
+      },
+      {
+        type: 'heal',
+        target: healTarget,
+        valueType: 'flat',
+        value: 180,
+      },
+    ],
+    triggerType: 'active',
+    aiPriority: 80,
+  };
+};
+
+const createSingleAllyHealSkill = (): BattleSkill => {
+  return {
+    id: 'skill-single-ally-heal-default-target',
+    name: '回春诀',
+    source: 'technique',
+    sourceId: 'tech-single-ally-heal',
+    cost: {},
+    cooldown: 0,
+    targetType: 'single_ally',
+    targetCount: 1,
+    damageType: 'magic',
+    element: 'mu',
+    effects: [
+      {
+        type: 'heal',
+        valueType: 'flat',
+        value: 220,
+      },
+    ],
+    triggerType: 'active',
+    aiPriority: 60,
+  };
+};
+
 test('攻击技能可在命中敌方后给施法者自身施加 Buff', () => {
   const caster = createUnit({ id: 'player-1', name: '剑修甲' });
   const enemy = createUnit({ id: 'monster-1', name: '木桩妖', type: 'monster' });
@@ -176,4 +233,63 @@ test('群攻技能缺省自增益时整次施法只应结算一次', () => {
   const selfResults = actionLog.targets.filter((entry) => entry.targetId === caster.id);
   assert.equal(selfResults.length, 1);
   assert.deepEqual(selfResults[0]?.buffsApplied, ['buff-zengshang']);
+});
+
+test('敌方指向攻击技能未填写治疗目标时应默认治疗施法者自身', () => {
+  const caster = createUnit({ id: 'player-5', name: '木修甲' });
+  caster.qixue = 420;
+  const enemy = createUnit({ id: 'monster-6', name: '木桩丁', type: 'monster' });
+  const state = createState({ attacker: [caster], defender: [enemy] });
+  const skill = createAttackHealSkill('single_enemy');
+
+  const result = executeSkill(state, caster, skill);
+  assert.equal(result.success, true);
+  assert.equal(caster.qixue, 600);
+  assert.equal(enemy.qixue, 1100);
+
+  const actionLog = asActionLog(consumeBattleLogs(state)[0]);
+  assert.equal(actionLog.targets.length, 2);
+  assert.equal(actionLog.targets[0]?.targetId, enemy.id);
+  assert.equal(actionLog.targets[0]?.damage, 100);
+  assert.equal(actionLog.targets[1]?.targetId, caster.id);
+  assert.equal(actionLog.targets[1]?.heal, 180);
+});
+
+test('治疗效果显式指定 enemy 时应落到敌方目标', () => {
+  const caster = createUnit({ id: 'player-6', name: '木修乙' });
+  caster.qixue = 420;
+  const enemy = createUnit({ id: 'monster-7', name: '木桩戊', type: 'monster' });
+  enemy.qixue = 700;
+  const state = createState({ attacker: [caster], defender: [enemy] });
+  const skill = createAttackHealSkill('single_enemy', 'enemy');
+
+  const result = executeSkill(state, caster, skill);
+  assert.equal(result.success, true);
+  assert.equal(caster.qixue, 420);
+  assert.equal(enemy.qixue, 780);
+
+  const actionLog = asActionLog(consumeBattleLogs(state)[0]);
+  assert.equal(actionLog.targets.length, 1);
+  assert.equal(actionLog.targets[0]?.targetId, enemy.id);
+  assert.equal(actionLog.targets[0]?.damage, 100);
+  assert.equal(actionLog.targets[0]?.heal, 180);
+});
+
+test('友方指向治疗技能未填写治疗目标时仍应跟随主目标', () => {
+  const caster = createUnit({ id: 'player-7', name: '丹修甲' });
+  const ally = createUnit({ id: 'player-8', name: '护法乙' });
+  ally.qixue = 500;
+  const enemy = createUnit({ id: 'monster-8', name: '木桩己', type: 'monster' });
+  const state = createState({ attacker: [caster, ally], defender: [enemy] });
+  const skill = createSingleAllyHealSkill();
+
+  const result = executeSkill(state, caster, skill, [ally.id]);
+  assert.equal(result.success, true);
+  assert.equal(caster.qixue, 1200);
+  assert.equal(ally.qixue, 720);
+
+  const actionLog = asActionLog(consumeBattleLogs(state)[0]);
+  assert.equal(actionLog.targets.length, 1);
+  assert.equal(actionLog.targets[0]?.targetId, ally.id);
+  assert.equal(actionLog.targets[0]?.heal, 220);
 });

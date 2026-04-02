@@ -52,6 +52,18 @@ test('buff 效果应支持显式指定自身为施加目标', () => {
   assert.deepEqual(validation, { success: true });
 });
 
+test('heal 效果应支持显式指定自身为治疗目标', () => {
+  const validation = validateTechniqueSkillEffect({
+    type: 'heal',
+    target: 'self',
+    valueType: 'scale',
+    scaleAttr: 'fagong',
+    scaleRate: 0.8,
+  });
+
+  assert.deepEqual(validation, { success: true });
+});
+
 test('momentum 效果应支持 gain 势机制', () => {
   const validation = validateTechniqueSkillEffect({
     type: 'momentum',

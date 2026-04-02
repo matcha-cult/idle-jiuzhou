@@ -109,6 +109,57 @@ describe('skillEffectFormatter', () => {
     ]);
   });
 
+  it('敌方指向技能里的缺省治疗文案应默认标记为对自身生效', () => {
+    const lines = formatSkillEffectLines([
+      {
+        type: 'heal',
+        valueType: 'scale',
+        scaleAttr: 'max_qixue',
+        scaleRate: 0.3,
+      },
+    ], {
+      targetType: 'single_enemy',
+    });
+
+    expect(lines).toEqual([
+      '对自身恢复气血，倍率 30% 气血上限',
+    ]);
+  });
+
+  it('显式指定 enemy 的治疗文案应标记为对敌方目标生效', () => {
+    const lines = formatSkillEffectLines([
+      {
+        type: 'heal',
+        target: 'enemy',
+        valueType: 'flat',
+        value: 180,
+      },
+    ], {
+      targetType: 'single_enemy',
+    });
+
+    expect(lines).toEqual([
+      '对敌方目标恢复气血，固定 180',
+    ]);
+  });
+
+  it('友方指向技能里的缺省治疗文案应继续跟随主目标', () => {
+    const lines = formatSkillEffectLines([
+      {
+        type: 'heal',
+        valueType: 'scale',
+        scaleAttr: 'fagong',
+        scaleRate: 0.8,
+      },
+    ], {
+      targetType: 'single_ally',
+    });
+
+    expect(lines).toEqual([
+      '对友方目标恢复气血，倍率 80% 法攻',
+    ]);
+  });
+
   it('灼烧减益应直接展示倍率与属性来源，不再额外套括号', () => {
     const lines = formatSkillEffectLines([
       {
