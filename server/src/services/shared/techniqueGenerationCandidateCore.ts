@@ -46,6 +46,7 @@ import {
   type SkillTriggerType,
   validatePassiveSkillConfig,
 } from '../../shared/skillTriggerType.js';
+import { normalizeGeneratedTechniqueSkillCooldown } from './generatedTechniqueSkillNormalization.js';
 import type { TechniqueSkillUpgradeEntry } from './techniqueSkillGenerationSpec.js';
 import {
   TECHNIQUE_UPGRADE_DAMAGE_EFFECT_MAX_TOTAL_SCALE_RATE,
@@ -155,16 +156,6 @@ const readAliasedField = (
 const clamp = (value: number, min: number, max: number): number => {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
-};
-
-const resolveGeneratedSkillCooldown = (
-  rawCooldown: unknown,
-  triggerType: SkillTriggerType,
-): number => {
-  if (rawCooldown === null || rawCooldown === undefined) {
-    return triggerType === 'active' ? 1 : 0;
-  }
-  return Math.floor(clamp(asNumber(rawCooldown, 0), 0, 6));
 };
 
 const isTechniquePlainObject = (raw: unknown): raw is Record<string, unknown> => {
@@ -653,7 +644,7 @@ export const sanitizeTechniqueGenerationCandidateFromModelDetailed = (
       costLingqiRate: clamp(asNumber(readAliasedField(row, 'costLingqiRate', 'cost_lingqi_rate'), 0), 0, 1),
       costQixue: Math.floor(clamp(asNumber(readAliasedField(row, 'costQixue', 'cost_qixue'), 0), 0, 120)),
       costQixueRate: clamp(asNumber(readAliasedField(row, 'costQixueRate', 'cost_qixue_rate'), 0), 0, 0.95),
-      cooldown: resolveGeneratedSkillCooldown(row.cooldown, triggerType),
+      cooldown: normalizeGeneratedTechniqueSkillCooldown(row.cooldown, triggerType),
       targetType: toTargetType(readAliasedField(row, 'targetType', 'target_type')),
       targetCount: Math.floor(clamp(asNumber(readAliasedField(row, 'targetCount', 'target_count'), 1), 1, 6)),
       damageType: toDamageType(readAliasedField(row, 'damageType', 'damage_type')),

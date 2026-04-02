@@ -339,6 +339,87 @@ test('sanitizeTechniqueGenerationCandidateFromModel: 主动技能缺少 cooldown
   assert.deepEqual(validation, { success: true });
 });
 
+test('sanitizeTechniqueGenerationCandidateFromModel: 主动技能 cooldown=0 时应自动抬升为 1 回合', () => {
+  const raw = {
+    technique: {
+      name: '九霄焚风诀',
+      required_realm: '凡人',
+      attribute_type: 'magic',
+      attribute_element: 'huo',
+      description: '测试主动技能冷却下限抬升',
+      long_desc: '测试主动技能冷却下限抬升长描述',
+      tags: ['测试', '冷却下限'],
+    },
+    skills: [
+      {
+        id: 'skill-active-min-cooldown',
+        name: '焚风裂空',
+        description: '显式写成 0 冷却的主动技能',
+        cost_lingqi: 16,
+        cooldown: 0,
+        target_type: 'single_enemy',
+        target_count: 1,
+        damage_type: 'magic',
+        element: 'huo',
+        triggerType: 'active',
+        ai_priority: 55,
+        effects: [
+          {
+            type: 'damage',
+            valueType: 'scale',
+            scaleAttr: 'fagong',
+            scaleRate: 1.25,
+          },
+        ],
+      },
+    ],
+    layers: [
+      {
+        layer: 1,
+        cost_spirit_stones: 100,
+        cost_exp: 50,
+        passives: [{ key: 'fagong', value: 12 }],
+        unlock_skill_ids: ['skill-active-min-cooldown'],
+        upgrade_skill_ids: [],
+        layer_desc: '入门',
+      },
+      {
+        layer: 2,
+        cost_spirit_stones: 200,
+        cost_exp: 100,
+        passives: [{ key: 'fagong', value: 18 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '精进',
+      },
+      {
+        layer: 3,
+        cost_spirit_stones: 300,
+        cost_exp: 150,
+        passives: [{ key: 'fagong', value: 24 }],
+        unlock_skill_ids: [],
+        upgrade_skill_ids: [],
+        layer_desc: '圆满',
+      },
+    ],
+  };
+
+  const candidate = sanitizeTechniqueGenerationCandidateFromModel(raw, '武技', '黄', 3);
+  assert.ok(candidate);
+
+  const skill = candidate.skills[0];
+  assert.equal(skill.triggerType, 'active');
+  assert.equal(skill.cooldown, 1);
+
+  const validation = validateTechniqueGenerationCandidate({
+    candidate,
+    expectedTechniqueType: '武技',
+    expectedQuality: '黄',
+    expectedMaxLayer: 3,
+  });
+  assert.deepEqual(validation, { success: true });
+});
+
 test('sanitizeTechniqueGenerationCandidateFromModel: 应移除 strict schema 强制输出的 null 占位字段', () => {
   const raw = {
     technique: {

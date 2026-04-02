@@ -8,6 +8,7 @@
  */
 import { query } from '../config/database.js';
 import { resolveSkillTriggerType } from '../shared/skillTriggerType.js';
+import { normalizeGeneratedTechniqueSkillCooldown } from './shared/generatedTechniqueSkillNormalization.js';
 import { normalizeTechniqueUsageScope, type TechniqueUsageScope } from './shared/techniqueUsageScope.js';
 
 export type GeneratedTechniqueDefLite = {
@@ -236,6 +237,10 @@ export const reloadGeneratedTechniqueConfigStore = async (): Promise<void> => {
       const id = asString(row.id);
       if (!id) return [];
       const effects = asJsonArray<{ type?: string; buffKind?: string }>(row.effects);
+      const triggerType = resolveSkillTriggerType({
+        triggerType: asString(row.trigger_type) || undefined,
+        effects,
+      });
       const skill: GeneratedSkillDefLite = {
         id,
         code: asString(row.code) || undefined,
@@ -248,16 +253,13 @@ export const reloadGeneratedTechniqueConfigStore = async (): Promise<void> => {
         cost_lingqi_rate: Math.max(0, asNumber(row.cost_lingqi_rate, 0)),
         cost_qixue: Math.max(0, Math.floor(asNumber(row.cost_qixue, 0))),
         cost_qixue_rate: Math.max(0, asNumber(row.cost_qixue_rate, 0)),
-        cooldown: Math.max(0, Math.floor(asNumber(row.cooldown, 0))),
+        cooldown: normalizeGeneratedTechniqueSkillCooldown(row.cooldown, triggerType),
         target_type: asString(row.target_type) || 'single_enemy',
         target_count: Math.max(1, Math.floor(asNumber(row.target_count, 1))),
         damage_type: asString(row.damage_type) || null,
         element: asString(row.element) || 'none',
         effects,
-        trigger_type: resolveSkillTriggerType({
-          triggerType: asString(row.trigger_type) || undefined,
-          effects,
-        }),
+        trigger_type: triggerType,
         conditions: row.conditions ?? null,
         ai_priority: Math.max(0, Math.floor(asNumber(row.ai_priority, 50))),
         ai_conditions: row.ai_conditions ?? null,

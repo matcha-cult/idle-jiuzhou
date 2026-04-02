@@ -21,7 +21,7 @@
 import { randomUUID } from 'crypto';
 import { query } from '../config/database.js';
 import { Transactional } from '../decorators/transactional.js';
-import type { SkillTriggerType } from '../shared/skillTriggerType.js';
+import { resolveSkillTriggerType, type SkillTriggerType } from '../shared/skillTriggerType.js';
 import { addItemToInventory } from './inventory/index.js';
 import { consumeMaterialByDefId } from './inventory/shared/consume.js';
 import { mailService } from './mailService.js';
@@ -82,6 +82,7 @@ import {
   TECHNIQUE_RESEARCH_EXPIRED_DRAFT_REFUND_RATE,
   TECHNIQUE_RESEARCH_FULL_REFUND_RATE,
 } from './shared/techniqueResearchRefund.js';
+import { normalizeGeneratedTechniqueSkillCooldown } from './shared/generatedTechniqueSkillNormalization.js';
 import {
   resolveTechniqueResearchFragmentCost,
   TECHNIQUE_RESEARCH_BASE_FRAGMENT_COST,
@@ -375,6 +376,11 @@ const toTechniquePreviewSkills = (raw: unknown): TechniquePreview['skills'] => {
     const id = asString(row.id);
     const name = asString(row.name);
     if (!id || !name) return [];
+    const effects = Array.isArray(row.effects) ? row.effects : [];
+    const triggerType = resolveSkillTriggerType({
+      triggerType: asString(row.triggerType ?? row.trigger_type) || undefined,
+      effects,
+    });
     return [{
       id,
       name,
@@ -384,12 +390,12 @@ const toTechniquePreviewSkills = (raw: unknown): TechniquePreview['skills'] => {
       costLingqiRate: Math.max(0, asNumber(row.costLingqiRate ?? row.cost_lingqi_rate, 0)),
       costQixue: Math.max(0, Math.floor(asNumber(row.costQixue ?? row.cost_qixue, 0))),
       costQixueRate: Math.max(0, asNumber(row.costQixueRate ?? row.cost_qixue_rate, 0)),
-      cooldown: Math.max(0, Math.floor(asNumber(row.cooldown, 0))),
+      cooldown: normalizeGeneratedTechniqueSkillCooldown(row.cooldown, triggerType),
       targetType: asString(row.targetType ?? row.target_type),
       targetCount: Math.max(1, Math.floor(asNumber(row.targetCount ?? row.target_count, 1))),
       damageType: asString(row.damageType ?? row.damage_type) || null,
       element: asString(row.element) || 'none',
-      effects: Array.isArray(row.effects) ? row.effects : [],
+      effects,
     }];
   });
 };
@@ -863,7 +869,8 @@ class TechniqueGenerationService {
                   'targetCount', s.target_count,
                   'damageType', s.damage_type,
                   'element', s.element,
-                  'effects', s.effects
+                  'effects', s.effects,
+                  'triggerType', s.trigger_type
                 )
                 ORDER BY s.created_at ASC, s.id ASC
               )
