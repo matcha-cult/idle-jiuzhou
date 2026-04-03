@@ -192,11 +192,11 @@ const WANDER_STORY_PREMISE_EXAMPLE = '你循着残留血迹误入谷口深处，
 const WANDER_STORY_PREMISE_STYLE_RULE = 'storyPremise 必须是 8 到 120 字的故事引子，只概括整条奇遇当前的起势、缘由或悬念，像一句前情提要；禁止把整幕 opening 原样压缩，也不要写成标题、角色独白或过长剧情摘要。';
 const WANDER_OPTION_STYLE_RULE = 'optionTexts 必须是长度恰好为 3 的字符串数组，每个元素都必须是非空短句，禁止返回空字符串、null、对象、嵌套数组或把三个选项拼成一个字符串。';
 const WANDER_EPISODE_TITLE_STYLE_RULE = 'episodeTitle 必须是 24字内中文短标题，像“雨夜借灯”“断桥问剑”，禁止句子式长标题、标点堆砌和副标题。';
-const WANDER_OPENING_STYLE_RULE = 'opening 必须是一段 80 到 420 字的完整正文，要交代当下场景、人物动作与异样征兆，并把局势推到玩家抉择前一刻；禁止提前替玩家做选择，禁止提前给出尾声、结局或称号。';
+const WANDER_OPENING_STYLE_RULE = 'opening 必须是一段 80 到 420 字的完整正文，要交代当下场景、人物动作与异样征兆，并把局势推到玩家抉择前一刻；若 previousEpisodes 非空，opening 必须从最近一幕 summary 已经发生之后继续推进，只允许用极短承接句带过上一幕已成事实的结果，禁止复述最近一幕 summary 已明确写出的动作、景象、措辞或因果；禁止提前替玩家做选择，禁止提前给出尾声、结局或称号。';
 const WANDER_OPENING_EXAMPLE = '夜雨压桥，河雾顺着石栏缓缓爬起，你才在破庙檐下收住衣角，便见对岸灯影摇成一线。那人披着旧蓑衣，手里提灯不前不后，只隔着雨幕望来，像是在等谁认出他的来意；桥下水声却忽然沉了一拍，仿佛另有什么东西正贴着桥墩缓缓游过。';
 const WANDER_ENDING_SCENE_RULE = '若本幕是终幕抉择幕，opening 也只能把局势推到最后抉择前一刻，不能提前写玩家选择后的尾声、结局类型、称号名、称号描述、颜色或属性。';
-const WANDER_SUMMARY_STYLE_RULE = 'summary 必须是 20 到 160 字的结果摘要，要明确体现玩家本次选择带来的余波、转折或收束，禁止脱离 chosenOptionText 单独编写空泛结论。';
-const WANDER_SUMMARY_EXAMPLE = '你借灯试探来意后顺势稳住桥上气机，逼得对岸来客率先露出口风，桥下暗潮却因此彻底惊动，这一幕落在暂得线索却更深卷入风波的余波之中。';
+const WANDER_SUMMARY_STYLE_RULE = 'summary 必须是 20 到 160 字的结果摘要，要明确体现玩家本次选择直接造成的结果、局势变化或收束，禁止脱离 chosenOptionText 单独编写空泛结论，也不要套用“这一幕落在……之中”这类总结腔。';
+const WANDER_SUMMARY_EXAMPLE = '你借灯试探来意后顺势稳住桥上气机，逼得对岸来客率先露出口风，也让桥下暗潮彻底惊动，原本暗里的试探当场转成了无法回避的正面冲突。';
 const WANDER_TITLE_EFFECT_STYLE_RULE = `rewardTitleEffects 必须是长度 ${WANDER_TITLE_MIN_EFFECT_COUNT} 到 ${WANDER_TITLE_MAX_EFFECT_COUNT} 的数组，每项都必须是 {key,value} 对象；key 只能从 ${WANDER_TITLE_EFFECT_KEYS_TEXT} 中选择；固定值属性的 value 必须是正整数，百分比属性的 value 必须使用小数比率表示，例如 0.03 表示 3%；每个属性的 value 上限都不同，必须严格遵守属性上限表：${WANDER_TITLE_EFFECT_LIMIT_GUIDE}。`;
 const WANDER_TITLE_EFFECT_EXAMPLE: [WanderAiTitleEffectEntry, WanderAiTitleEffectEntry] = [
   { key: 'max_qixue', value: 60 },
@@ -254,6 +254,17 @@ const roundWanderRatioEffectValue = (value: number): number => {
 
 const assertLengthRange = (value: string, min: number, max: number): boolean => {
   return value.length >= min && value.length <= max;
+};
+
+const resolveWanderSetupStorySummary = (params: {
+  storySummary: string | null;
+  previousEpisodes: WanderAiPreviousEpisodeContext[];
+}): string | null => {
+  if (params.previousEpisodes.length > 0) {
+    return null;
+  }
+
+  return params.storySummary;
 };
 
 const isValidWanderTitleColor = (value: string): boolean => {
@@ -464,7 +475,10 @@ export const buildWanderAiEpisodeSetupUserPayload = (
     story: {
       activeTheme: input.activeTheme,
       activePremise: input.activePremise,
-      storySummary: input.storySummary,
+      storySummary: resolveWanderSetupStorySummary({
+        storySummary: input.storySummary,
+        previousEpisodes: input.previousEpisodes,
+      }),
       nextEpisodeIndex: input.nextEpisodeIndex,
       maxEpisodeIndex: input.maxEpisodeIndex,
       isEndingEpisode: input.isEndingEpisode,
@@ -504,8 +518,8 @@ export const buildWanderAiEpisodeResolutionPromptRuleSet = (
       '你是《九州修仙录》的云游奇遇导演。',
       '你必须输出严格 JSON，不得输出 markdown、解释、额外注释。',
       '剧情必须是东方修仙语境，禁止现代梗、科幻设定、英文名、阿拉伯数字名。',
-      '本阶段只负责根据玩家已经选定的选项，生成这一幕真正发生的余波与收束。',
-      'player.storyPartner 为 null 表示这条故事不带入伙伴；不为 null 时，说明该伙伴已卷入这条故事。你应让这一幕的余波继续自然体现其存在，但不要压过玩家主导地位。',
+      '本阶段只负责根据玩家已经选定的选项，生成这一幕真正发生的结果与收束。',
+      'player.storyPartner 为 null 表示这条故事不带入伙伴；不为 null 时，说明该伙伴已卷入这条故事。你应让这一幕的结果继续自然体现其存在，但不要压过玩家主导地位。',
       'previousEpisodes 会按幕次顺序提供已经发生的完整前文，每一幕都包含标题、正文、玩家已选选项和选择后的结果；你必须把当前这一幕放在这些既有经历之后承接，不能忽略已发生的因果。',
       WANDER_SUMMARY_STYLE_RULE,
       `summary 示例：${WANDER_SUMMARY_EXAMPLE}`,

@@ -85,20 +85,6 @@
   background: var(--panel-bg);
 }
 
-.wander-panel-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.wander-panel-title {
-  font-size: 14px;
-  font-weight: var(--font-weight-title);
-  color: var(--text-color);
-  margin-right: auto;
-}
-
 .wander-generate-card {
   display: flex;
   align-items: center;
@@ -129,10 +115,37 @@
   gap: 10px;
 }
 
+.wander-episode-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.wander-episode-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .wander-episode-top {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
+.wander-episode-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 0 1 auto;
 }
 
 .wander-episode-title {
@@ -140,6 +153,7 @@
   line-height: 1.25;
   font-weight: var(--font-weight-title);
   color: var(--text-color);
+  min-width: 0;
 }
 
 .wander-episode-opening {
@@ -385,10 +399,60 @@
 }
 
 @media (max-width: 900px) {
+
   .wander-generate-card,
   .wander-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .wander-body {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .wander-panel {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .wander-episode-status>.ant-tag,
+  .wander-episode-top>.ant-tag {
+    margin-inline-end: 0;
+    padding-inline: 8px;
+    font-size: 11px;
+    line-height: 18px;
+  }
+
+  .wander-episode {
+    gap: 8px;
+  }
+
+  .wander-episode-header {
+    align-items: flex-start;
+    gap: 6px 8px;
+    flex-wrap: wrap;
+  }
+
+  .wander-episode-main,
+  .wander-episode-top,
+  .wander-episode-status {
+    gap: 4px;
+  }
+
+  .wander-episode-status {
+    justify-content: flex-start;
+  }
+
+  .wander-episode-title {
+    font-size: 15px;
+    line-height: 1.2;
+  }
+
+  .wander-episode-opening {
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.6;
   }
 
   .wander-options {
@@ -407,6 +471,7 @@
   .wander-story-entry::before {
     left: -20px;
   }
+
   .wander-story-entry-title {
     font-size: 14px;
   }

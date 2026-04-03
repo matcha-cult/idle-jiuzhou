@@ -1299,7 +1299,7 @@ class WanderService {
       }
       return {
         success: true,
-        message: '当前云游正在推演余波',
+        message: '当前云游正在推演后续结果',
         data: {
           story,
           job: buildGenerationJobDto(latestJob),
@@ -1331,7 +1331,7 @@ class WanderService {
     const job = jobResult.rows[0];
     return {
       success: true,
-      message: episode.is_ending ? '终幕抉择已落定，正在推演结局' : '本幕抉择已落定，正在推演余波',
+      message: episode.is_ending ? '终幕抉择已落定，正在推演结局' : '本幕抉择已落定，正在推演后续结果',
       data: {
         story,
         job: buildGenerationJobDto(job),

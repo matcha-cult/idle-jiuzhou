@@ -8,6 +8,7 @@ import {
 } from '../../../../services/api';
 import { SILENT_API_REQUEST_CONFIG } from '../../../../services/api/requestConfig';
 import { formatGameCooldownRemaining } from '../../shared/cooldownText';
+import { resolveWanderPrimaryEpisode } from './primaryEpisode';
 import WanderRewardTitleCard from './RewardTitleCard';
 import { buildWanderStoryReaderModel } from './storyReader';
 import { WANDER_PENDING_JOB_POLL_INTERVAL_MS } from './wanderShared';
@@ -113,10 +114,16 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose, onOverviewChan
   const activeStory = overview?.activeStory ?? null;
   const latestFinishedStory = overview?.latestFinishedStory ?? null;
   const storyForHistory = activeStory ?? latestFinishedStory;
+  const primaryEpisode = useMemo(() => {
+    return resolveWanderPrimaryEpisode({
+      currentEpisode,
+      storyForHistory,
+    });
+  }, [currentEpisode, storyForHistory]);
   const isCurrentEpisodeResolving = currentEpisode?.chosenOptionIndex !== null && currentEpisode?.chosenAt === null;
   const isCurrentEpisodeResolutionFailed = isCurrentEpisodeResolving && currentGenerationJob?.status === 'failed';
   const isCurrentEpisodeResolutionPending = isCurrentEpisodeResolving && currentGenerationJob?.status === 'pending';
-  const currentEpisodeAftermath = currentEpisode?.summary.trim() ?? '';
+  const primaryEpisodeAftermath = primaryEpisode?.summary.trim() ?? '';
   const storyReader = useMemo(() => {
     if (!storyForHistory) {
       return null;
@@ -162,7 +169,6 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose, onOverviewChan
             <div className="wander-title">云游奇遇</div>
             <div className="wander-subtitle">每次推演完成后冷却 1 小时，由 AI 延续你的修行缘法，并在结局时铸成正式称号。</div>
           </div>
-          {overview ? <Tag color="default">当前日期 {overview.today}</Tag> : null}
         </div>
 
         <div className="wander-body">
@@ -175,19 +181,89 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose, onOverviewChan
           {!loading && overview ? (
             <>
               <section className="wander-panel wander-panel-highlight">
-                <div className="wander-panel-head">
-                  <div className="wander-panel-title">当前缘法</div>
-                  {!overview.aiAvailable ? <Tag color="red">AI 未配置</Tag> : null}
-                  {overview.hasPendingEpisode ? <Tag color="gold">等待抉择</Tag> : null}
-                  {overview.isResolvingEpisode ? <Tag color="cyan">结算中</Tag> : null}
-                  {overview.isCoolingDown ? <Tag color="green">冷却中</Tag> : null}
-                  {currentGenerationJob?.status === 'pending' && !overview.isResolvingEpisode ? <Tag color="processing">生成中</Tag> : null}
-                  {currentGenerationJob?.status === 'failed' && !overview.isResolvingEpisode ? <Tag color="red">生成失败</Tag> : null}
-                  {currentGenerationJob?.status === 'failed' && overview.isResolvingEpisode ? <Tag color="red">结算失败</Tag> : null}
-                </div>
-
                 {!overview.aiAvailable ? (
                   <div className="wander-empty">当前服务器未配置 AI 文本模型，暂时无法开启云游奇遇。</div>
+                ) : null}
+
+                {primaryEpisode ? (
+                  <div className="wander-episode">
+                    <div className="wander-episode-header">
+                      <div className="wander-episode-main">
+                        <div className="wander-episode-top">
+                          <Tag color="processing">第 {primaryEpisode.dayIndex} 幕</Tag>
+                          {primaryEpisode.isEnding ? <Tag color="magenta">终幕</Tag> : null}
+                        </div>
+                        <div className="wander-episode-title">{primaryEpisode.title}</div>
+                      </div>
+                      <div className="wander-episode-status">
+                        {overview.hasPendingEpisode ? <Tag color="gold">等待抉择</Tag> : null}
+                        {overview.isResolvingEpisode ? <Tag color="cyan">结算中</Tag> : null}
+                        {overview.isCoolingDown ? <Tag color="green">冷却中</Tag> : null}
+                        {currentGenerationJob?.status === 'pending' && !overview.isResolvingEpisode ? <Tag color="processing">生成中</Tag> : null}
+                        {currentGenerationJob?.status === 'failed' && !overview.isResolvingEpisode ? <Tag color="red">生成失败</Tag> : null}
+                        {currentGenerationJob?.status === 'failed' && overview.isResolvingEpisode ? <Tag color="red">结算失败</Tag> : null}
+                      </div>
+                    </div>
+                    <div className="wander-episode-opening">{primaryEpisode.opening}</div>
+
+                    {primaryEpisode.chosenOptionIndex === null ? (
+                      <div className="wander-options">
+                        {primaryEpisode.options.map((option) => (
+                          <Button
+                            key={option.index}
+                            className="wander-option-button"
+                            onClick={() => void chooseOption(primaryEpisode.id, option.index)}
+                            loading={actionKey === `choose:${primaryEpisode.id}:${option.index}`}
+                          >
+                            <span className="wander-option-index">抉择 {option.index + 1}</span>
+                            <span className="wander-option-text">{option.text}</span>
+                          </Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="wander-choice-result">
+                        <div className="wander-choice-label">本幕选择</div>
+                        <div className="wander-choice-text">{primaryEpisode.chosenOptionText}</div>
+                        {isCurrentEpisodeResolutionPending ? (
+                          <div className="wander-choice-reward">
+                            <Spin size="small" /> 正在推演后续结果
+                          </div>
+                        ) : null}
+                        {isCurrentEpisodeResolutionFailed ? (
+                          <div className="wander-choice-retry">
+                            <div className="wander-choice-reward">
+                              {currentGenerationJob?.errorMessage || '本次尾声推演失败，可按原选择继续推演。'}
+                            </div>
+                            <Button
+                              onClick={() => void chooseOption(primaryEpisode.id, primaryEpisode.chosenOptionIndex!)}
+                              loading={actionKey === `choose:${primaryEpisode.id}:${primaryEpisode.chosenOptionIndex!}`}
+                            >
+                              继续推演
+                            </Button>
+                          </div>
+                        ) : null}
+                        {primaryEpisodeAftermath && !isCurrentEpisodeResolving ? (
+                          <div className="wander-choice-aftermath">
+                            <div className="wander-choice-aftermath-text">{primaryEpisodeAftermath}</div>
+                          </div>
+                        ) : null}
+                        {overview.isCoolingDown && !isCurrentEpisodeResolving ? (
+                          <div className="wander-choice-reward">
+                            下一幕冷却：还需等待 {formatGameCooldownRemaining(overview.cooldownRemainingSeconds)}
+                          </div>
+                        ) : null}
+                        {primaryEpisode.isEnding && primaryEpisode.rewardTitleName && !isCurrentEpisodeResolving ? (
+                          <WanderRewardTitleCard
+                            label="获得称号"
+                            name={primaryEpisode.rewardTitleName}
+                            description={primaryEpisode.rewardTitleDesc}
+                            color={primaryEpisode.rewardTitleColor}
+                            effects={primaryEpisode.rewardTitleEffects}
+                          />
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
                 ) : null}
 
                 {overview.aiAvailable && !currentEpisode && currentGenerationJob?.status === 'pending' ? (
@@ -240,74 +316,6 @@ const WanderModal: React.FC<WanderModalProps> = ({ open, onClose, onOverviewChan
                   </div>
                 ) : null}
 
-                {currentEpisode ? (
-                  <div className="wander-episode">
-                    <div className="wander-episode-top">
-                      <Tag color="processing">第 {currentEpisode.dayIndex} 幕</Tag>
-                      {currentEpisode.isEnding ? <Tag color="magenta">终幕</Tag> : null}
-                    </div>
-                    <div className="wander-episode-title">{currentEpisode.title}</div>
-                    <div className="wander-episode-opening">{currentEpisode.opening}</div>
-
-                    {currentEpisode.chosenOptionIndex === null ? (
-                      <div className="wander-options">
-                        {currentEpisode.options.map((option) => (
-                          <Button
-                            key={option.index}
-                            className="wander-option-button"
-                            onClick={() => void chooseOption(currentEpisode.id, option.index)}
-                            loading={actionKey === `choose:${currentEpisode.id}:${option.index}`}
-                          >
-                            <span className="wander-option-index">抉择 {option.index + 1}</span>
-                            <span className="wander-option-text">{option.text}</span>
-                          </Button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="wander-choice-result">
-                        <div className="wander-choice-label">本幕选择</div>
-                        <div className="wander-choice-text">{currentEpisode.chosenOptionText}</div>
-                        {isCurrentEpisodeResolutionPending ? (
-                          <div className="wander-choice-reward">
-                            <Spin size="small" /> 正在推演后续结果
-                          </div>
-                        ) : null}
-                        {isCurrentEpisodeResolutionFailed ? (
-                          <div className="wander-choice-retry">
-                            <div className="wander-choice-reward">
-                              {currentGenerationJob?.errorMessage || '本次尾声推演失败，可按原选择继续推演。'}
-                            </div>
-                            <Button
-                              onClick={() => void chooseOption(currentEpisode.id, currentEpisode.chosenOptionIndex ?? 0)}
-                              loading={actionKey === `choose:${currentEpisode.id}:${currentEpisode.chosenOptionIndex ?? 0}`}
-                            >
-                              继续推演
-                            </Button>
-                          </div>
-                        ) : null}
-                        {currentEpisodeAftermath && !isCurrentEpisodeResolving ? (
-                          <div className="wander-choice-aftermath">
-                            <div className="wander-choice-aftermath-text">{currentEpisodeAftermath}</div>
-                          </div>
-                        ) : null}
-                        {overview.isCoolingDown && !isCurrentEpisodeResolving ? (
-                          <div className="wander-choice-reward">
-                            下一幕冷却：还需等待 {formatGameCooldownRemaining(overview.cooldownRemainingSeconds)}
-                          </div>
-                        ) : null}
-                        {currentEpisode.isEnding && currentEpisode.rewardTitleName && !isCurrentEpisodeResolving ? (
-                          <WanderRewardTitleCard
-                            label="获得称号"
-                            name={currentEpisode.rewardTitleName}
-                            description={currentEpisode.rewardTitleDesc}
-                            color={currentEpisode.rewardTitleColor}
-                            effects={currentEpisode.rewardTitleEffects}
-                          />
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-                ) : null}
               </section>
 
               <section className="wander-panel">

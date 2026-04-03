@@ -23,7 +23,7 @@ import type { WanderStoryDto } from '../../../../services/api';
  *
  * 关键边界条件与坑点：
  * 1. 未选择的幕次不能伪造结果，必须明确输出“尚未作出抉择”的状态文案，避免把剧情写死。
- * 2. 阅读流正文必须优先使用 `opening`；`summary` 只能作为选择后的余波/尾声补段，不能反客为主替代正文。
+ * 2. 阅读流正文必须优先使用 `opening`；`summary` 只能作为选择后的结果/尾声补段，不能反客为主替代正文。
  */
 
 export interface WanderStoryReaderEntry {
