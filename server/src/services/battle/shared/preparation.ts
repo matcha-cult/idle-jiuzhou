@@ -352,7 +352,7 @@ export const prepareFixedTeamBattleParticipants = (params: {
 
     validTeamMembers.push({
       data: {
-        ...snapshot.computed,
+        ...withBattleStartResources(snapshot.computed),
         setBonusEffects: snapshot.loadout.setBonusEffects,
       },
       skills: snapshot.loadout.skills,

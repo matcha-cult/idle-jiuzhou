@@ -142,6 +142,33 @@ test('prepareFixedTeamBattleParticipants: 应按固定名单顺序构建队友�
   assert.deepEqual(result.validTeamMembers.map((member) => member.skills), [[], []]);
 });
 
+test('prepareFixedTeamBattleParticipants: 队友应复用统一战前资源恢复规则', () => {
+  const participants: FixedBattleParticipant[] = [
+    { userId: 101, characterId: 1001 },
+    { userId: 102, characterId: 1002 },
+  ];
+  const teammateSnapshot = createSnapshot(1002, 102, '乙');
+  teammateSnapshot.computed.qixue = 17;
+  teammateSnapshot.computed.lingqi = 10;
+  const snapshots = new Map<number, OnlineBattleCharacterSnapshot>([
+    [1001, createSnapshot(1001, 101, '甲')],
+    [1002, teammateSnapshot],
+  ]);
+
+  const result = prepareFixedTeamBattleParticipants({
+    selfCharacterId: 1001,
+    participants,
+    snapshotsByCharacterId: snapshots,
+  });
+
+  assert.equal(result.success, true);
+  if (!result.success) {
+    assert.fail('预期固定参战名单构建成功');
+  }
+  assert.equal(result.validTeamMembers[0]?.data.qixue, 100);
+  assert.equal(result.validTeamMembers[0]?.data.lingqi, 50);
+});
+
 test('prepareFixedTeamBattleParticipants: 当前角色不在固定名单中时应直接失败', () => {
   const participants: FixedBattleParticipant[] = [
     { userId: 102, characterId: 1002 },
