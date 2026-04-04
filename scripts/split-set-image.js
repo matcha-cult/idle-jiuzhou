@@ -67,6 +67,10 @@ const OUTPUT_WEBP_OPTIONS = {
  *  fillRatio: number;
  *  cx: number;
  *  cy: number;
+ *  innerMinX?: number;
+ *  innerMinY?: number;
+ *  innerMaxX?: number;
+ *  innerMaxY?: number;
  * }} BorderBox
  */
 
@@ -81,6 +85,17 @@ const OUTPUT_WEBP_OPTIONS = {
  * } | {
  *  kind: 'warm-fallback';
  * }} BorderProfile
+ */
+
+/**
+ * @typedef {{
+ *  start: number;
+ *  end: number;
+ *  width: number;
+ *  center: number;
+ *  peak: number;
+ *  sum: number;
+ * }} ProjectionBand
  */
 
 function parseArgs(argv) {
@@ -514,6 +529,303 @@ function standardDeviation(values) {
   return Math.sqrt(variance);
 }
 
+/**
+ * 网格投影解析：
+ * - 做什么：把同一份边框掩码压缩成横纵投影，并恢复共享边框场景下的 5 条竖线 / 3 条横线。
+ * - 不做什么：不参与颜色判定，也不负责裁切阶段的精修。
+ *
+ * 输入/输出：
+ * - 输入：边框掩码、图片尺寸、目标线条数量。
+ * - 输出：按坐标顺序排好的投影线段，及其还原出的 8 个格子框。
+ *
+ * 数据流/状态流：
+ * 1. 掩码沿 X / Y 轴聚合成投影计数。
+ * 2. 从高峰投影中提取原始线段，并合并抗锯齿造成的近邻断段。
+ * 3. 在线段组合中选出最稳定的 5 条竖线和 3 条横线。
+ * 4. 由相邻线段直接还原 2x4 网格格子。
+ *
+ * 复用设计说明：
+ * - 横线与竖线复用同一套 band 提取、合并和评分逻辑，避免两套阈值 / 搜索代码分叉。
+ * - 该链路只依赖掩码，不依赖具体边框颜色，后续同类共享网格素材都能复用。
+ *
+ * 关键边界条件与坑点：
+ * - 同一条线会被抗锯齿切成 2~3 段，必须先按小间隔合并，否则会误判成多条线。
+ * - 只有在投影峰值足够长时才会入选，避免把装备高亮边缘误认成网格线。
+ */
+function buildAxisProjection(mask, width, height, axis) {
+  const length = axis === 'x' ? width : height;
+  const projection = new Uint32Array(length);
+
+  if (axis === 'x') {
+    for (let y = 0; y < height; y += 1) {
+      const rowOffset = y * width;
+      for (let x = 0; x < width; x += 1) {
+        projection[x] += mask[rowOffset + x];
+      }
+    }
+    return projection;
+  }
+
+  for (let y = 0; y < height; y += 1) {
+    const rowOffset = y * width;
+    let sum = 0;
+    for (let x = 0; x < width; x += 1) {
+      sum += mask[rowOffset + x];
+    }
+    projection[y] = sum;
+  }
+
+  return projection;
+}
+
+function extractProjectionBands(projection, minValue) {
+  /** @type {ProjectionBand[]} */
+  const bands = [];
+  let start = -1;
+  let peak = 0;
+  let sum = 0;
+
+  for (let i = 0; i < projection.length; i += 1) {
+    const value = projection[i];
+    if (value >= minValue) {
+      if (start < 0) {
+        start = i;
+        peak = 0;
+        sum = 0;
+      }
+
+      if (value > peak) {
+        peak = value;
+      }
+      sum += value;
+      continue;
+    }
+
+    if (start >= 0) {
+      const end = i - 1;
+      const width = end - start + 1;
+      bands.push({
+        start,
+        end,
+        width,
+        center: (start + end) / 2,
+        peak,
+        sum,
+      });
+      start = -1;
+    }
+  }
+
+  if (start >= 0) {
+    const end = projection.length - 1;
+    const width = end - start + 1;
+    bands.push({
+      start,
+      end,
+      width,
+      center: (start + end) / 2,
+      peak,
+      sum,
+    });
+  }
+
+  return bands;
+}
+
+function mergeNearbyProjectionBands(bands, maxGap) {
+  /** @type {ProjectionBand[]} */
+  const merged = [];
+
+  for (const band of bands) {
+    const last = merged[merged.length - 1];
+    if (last && band.start - last.end - 1 <= maxGap) {
+      last.end = band.end;
+      last.width = last.end - last.start + 1;
+      last.center = (last.start + last.end) / 2;
+      last.peak = Math.max(last.peak, band.peak);
+      last.sum += band.sum;
+      continue;
+    }
+
+    merged.push({ ...band });
+  }
+
+  return merged;
+}
+
+function scoreProjectionBands(bands, axisLength) {
+  if (bands.length < 2) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const centers = bands.map((band) => band.center);
+  const widths = bands.map((band) => band.width);
+  const gaps = [];
+  for (let i = 0; i < centers.length - 1; i += 1) {
+    const gap = centers[i + 1] - centers[i];
+    if (gap <= 0) {
+      return Number.POSITIVE_INFINITY;
+    }
+    gaps.push(gap);
+  }
+
+  const coverage = centers[centers.length - 1] - centers[0];
+  if (coverage <= 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const widthSpread = standardDeviation(widths);
+  const gapSpread = standardDeviation(gaps);
+  const leadingPadding = centers[0];
+  const trailingPadding = axisLength - 1 - centers[centers.length - 1];
+  const paddingBalance = Math.abs(leadingPadding - trailingPadding);
+  const averagePeak = bands.reduce((sum, band) => sum + band.peak, 0) / bands.length;
+
+  return gapSpread * 2.2 + widthSpread * 0.8 + paddingBalance * 0.08 + (axisLength / coverage) * 120 - averagePeak * 0.04;
+}
+
+function selectStableProjectionBands(bands, expectedCount, axisLength) {
+  if (bands.length < expectedCount) {
+    return null;
+  }
+
+  if (bands.length === expectedCount) {
+    const score = scoreProjectionBands(bands, axisLength);
+    if (!Number.isFinite(score)) {
+      return null;
+    }
+
+    return {
+      bands,
+      score,
+    };
+  }
+
+  const sorted = [...bands].sort((a, b) => a.start - b.start);
+  /** @type {ProjectionBand[] | null} */
+  let bestBands = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  function dfs(start, picked) {
+    if (picked.length === expectedCount) {
+      const score = scoreProjectionBands(picked, axisLength);
+      if (score < bestScore) {
+        bestScore = score;
+        bestBands = [...picked];
+      }
+      return;
+    }
+
+    const remainNeeded = expectedCount - picked.length;
+    const remainAvailable = sorted.length - start;
+    if (remainAvailable < remainNeeded) {
+      return;
+    }
+
+    for (let i = start; i < sorted.length; i += 1) {
+      picked.push(sorted[i]);
+      dfs(i + 1, picked);
+      picked.pop();
+    }
+  }
+
+  dfs(0, []);
+
+  if (!bestBands || !Number.isFinite(bestScore)) {
+    return null;
+  }
+
+  return {
+    bands: bestBands,
+    score: bestScore,
+  };
+}
+
+function buildGridBoxesFromProjectionBands(verticalBands, horizontalBands) {
+  if (verticalBands.length !== GRID_COLS + 1 || horizontalBands.length !== GRID_ROWS + 1) {
+    return null;
+  }
+
+  /** @type {BorderBox[]} */
+  const boxes = [];
+
+  for (let row = 0; row < GRID_ROWS; row += 1) {
+    const topBand = horizontalBands[row];
+    const bottomBand = horizontalBands[row + 1];
+
+    for (let col = 0; col < GRID_COLS; col += 1) {
+      const leftBand = verticalBands[col];
+      const rightBand = verticalBands[col + 1];
+      const minX = leftBand.start;
+      const maxX = rightBand.end;
+      const minY = topBand.start;
+      const maxY = bottomBand.end;
+      const innerMinX = Math.max(minX, Math.min(maxX, leftBand.end + 1));
+      const innerMaxX = Math.max(innerMinX, Math.min(maxX, rightBand.start - 1));
+      const innerMinY = Math.max(minY, Math.min(maxY, topBand.end + 1));
+      const innerMaxY = Math.max(innerMinY, Math.min(maxY, bottomBand.start - 1));
+      const width = maxX - minX + 1;
+      const height = maxY - minY + 1;
+
+      if (width <= 0 || height <= 0) {
+        return null;
+      }
+
+      boxes.push({
+        minX,
+        minY,
+        maxX,
+        maxY,
+        area: width * height,
+        width,
+        height,
+        fillRatio: 1,
+        cx: (minX + maxX) / 2,
+        cy: (minY + maxY) / 2,
+        innerMinX,
+        innerMinY,
+        innerMaxX,
+        innerMaxY,
+      });
+    }
+  }
+
+  return boxes;
+}
+
+function extractGridBoxesFromProjection(mask, width, height) {
+  const columnProjection = buildAxisProjection(mask, width, height, 'x');
+  const rowProjection = buildAxisProjection(mask, width, height, 'y');
+
+  const maxColumnValue = Math.max(...columnProjection);
+  const maxRowValue = Math.max(...rowProjection);
+  if (maxColumnValue <= 0 || maxRowValue <= 0) {
+    return null;
+  }
+
+  const minColumnValue = Math.max(Math.floor(height * 0.18), Math.floor(maxColumnValue * 0.42));
+  const minRowValue = Math.max(Math.floor(width * 0.18), Math.floor(maxRowValue * 0.42));
+  const verticalBands = mergeNearbyProjectionBands(extractProjectionBands(columnProjection, minColumnValue), Math.max(2, Math.round(width * 0.003)));
+  const horizontalBands = mergeNearbyProjectionBands(extractProjectionBands(rowProjection, minRowValue), Math.max(2, Math.round(height * 0.004)));
+
+  const selectedVertical = selectStableProjectionBands(verticalBands, GRID_COLS + 1, width);
+  const selectedHorizontal = selectStableProjectionBands(horizontalBands, GRID_ROWS + 1, height);
+  if (!selectedVertical || !selectedHorizontal) {
+    return null;
+  }
+
+  const boxes = buildGridBoxesFromProjectionBands(selectedVertical.bands, selectedHorizontal.bands);
+  if (!boxes) {
+    return null;
+  }
+
+  return {
+    boxes,
+    score: scoreGrid(boxes) + selectedVertical.score + selectedHorizontal.score,
+    lineCount: verticalBands.length + horizontalBands.length,
+  };
+}
+
 function scoreGrid(boxes) {
   if (boxes.length !== GRID_ROWS * GRID_COLS) return Number.POSITIVE_INFINITY;
 
@@ -597,13 +909,19 @@ function sortBoxesToGridOrder(boxes) {
 }
 
 function toExtractRegion(box, imageWidth, imageHeight, includeBorder) {
-  const shrinkX = includeBorder ? 0 : Math.max(2, Math.round(box.width * 0.012));
-  const shrinkY = includeBorder ? 0 : Math.max(2, Math.round(box.height * 0.012));
+  const sourceMinX = includeBorder ? box.minX : box.innerMinX ?? box.minX;
+  const sourceMinY = includeBorder ? box.minY : box.innerMinY ?? box.minY;
+  const sourceMaxX = includeBorder ? box.maxX : box.innerMaxX ?? box.maxX;
+  const sourceMaxY = includeBorder ? box.maxY : box.innerMaxY ?? box.maxY;
+  const sourceWidth = sourceMaxX - sourceMinX + 1;
+  const sourceHeight = sourceMaxY - sourceMinY + 1;
+  const shrinkX = includeBorder ? 0 : Math.max(2, Math.round(sourceWidth * 0.012));
+  const shrinkY = includeBorder ? 0 : Math.max(2, Math.round(sourceHeight * 0.012));
 
-  const left = Math.max(0, box.minX + shrinkX);
-  const top = Math.max(0, box.minY + shrinkY);
-  const right = Math.min(imageWidth - 1, box.maxX - shrinkX);
-  const bottom = Math.min(imageHeight - 1, box.maxY - shrinkY);
+  const left = Math.max(0, sourceMinX + shrinkX);
+  const top = Math.max(0, sourceMinY + shrinkY);
+  const right = Math.min(imageWidth - 1, sourceMaxX - shrinkX);
+  const bottom = Math.min(imageHeight - 1, sourceMaxY - shrinkY);
 
   const width = Math.max(1, right - left + 1);
   const height = Math.max(1, bottom - top + 1);
@@ -1120,32 +1438,46 @@ function evaluateProfile(pixelData, imageWidth, imageHeight, channels, profile) 
   const rawMask = buildMaskByProfile(pixelData, imageWidth, imageHeight, channels, profile);
   const mask = denoiseMask(rawMask, imageWidth, imageHeight);
   const candidateBoxes = extractCandidateBoxesFromMask(mask, imageWidth, imageHeight);
+  /** @type {Array<{score:number; candidateCount:number; boxes:BorderBox[]}>} */
+  const gridCandidates = [];
 
-  if (candidateBoxes.length < GRID_ROWS * GRID_COLS) {
+  if (candidateBoxes.length >= GRID_ROWS * GRID_COLS) {
+    try {
+      const selected = chooseBestGridBoxes(candidateBoxes);
+      const gridScore = scoreGrid(selected);
+      if (Number.isFinite(gridScore)) {
+        gridCandidates.push({
+          score: gridScore + Math.abs(candidateBoxes.length - GRID_ROWS * GRID_COLS) * 28,
+          candidateCount: candidateBoxes.length,
+          boxes: sortBoxesToGridOrder(selected),
+        });
+      }
+    } catch {
+      // 连通域路线允许失败，交给同一份掩码的投影路线继续评估。
+    }
+  }
+
+  const projectionCandidate = extractGridBoxesFromProjection(mask, imageWidth, imageHeight);
+  if (projectionCandidate) {
+    gridCandidates.push({
+      score: projectionCandidate.score,
+      candidateCount: projectionCandidate.lineCount,
+      boxes: projectionCandidate.boxes,
+    });
+  }
+
+  if (gridCandidates.length === 0) {
     return null;
   }
 
-  let selected;
-  try {
-    selected = chooseBestGridBoxes(candidateBoxes);
-  } catch {
-    return null;
-  }
-
-  const gridScore = scoreGrid(selected);
-  if (!Number.isFinite(gridScore)) {
-    return null;
-  }
-
-  const profilePenalty = Math.abs(candidateBoxes.length - GRID_ROWS * GRID_COLS) * 28;
-  const finalScore = gridScore + profilePenalty;
+  const bestGrid = gridCandidates.reduce((best, current) => (current.score < best.score ? current : best));
 
   return {
     profile,
     mask,
-    score: finalScore,
-    candidateCount: candidateBoxes.length,
-    boxes: sortBoxesToGridOrder(selected),
+    score: bestGrid.score,
+    candidateCount: bestGrid.candidateCount,
+    boxes: bestGrid.boxes,
   };
 }
 
