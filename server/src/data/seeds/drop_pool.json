@@ -2524,6 +2524,41 @@
           "show_in_ui": true
         },
         {
+          "item_def_id": "set-tianyan-clothes",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-gloves",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-pants",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-necklace",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-tianyan-accessory",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
           "item_def_id": "set-tianyan-artifact",
           "chance": 0.14,
           "qty_min": 1,
@@ -2545,6 +2580,41 @@
           "show_in_ui": true
         },
         {
+          "item_def_id": "set-xuanheng-clothes",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-gloves",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-pants",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-necklace",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-xuanheng-accessory",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
           "item_def_id": "set-xuanheng-artifact",
           "chance": 0.14,
           "qty_min": 1,
@@ -2560,6 +2630,41 @@
         },
         {
           "item_def_id": "set-poxu-head",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-clothes",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-gloves",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-pants",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-necklace",
+          "chance": 0.14,
+          "qty_min": 1,
+          "qty_max": 1,
+          "show_in_ui": true
+        },
+        {
+          "item_def_id": "set-poxu-accessory",
           "chance": 0.14,
           "qty_min": 1,
           "qty_max": 1,

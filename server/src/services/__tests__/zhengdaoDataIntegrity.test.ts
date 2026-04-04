@@ -69,32 +69,6 @@ const ZHENGDAO_SET_ITEM_IDS = {
     'set-poxu-accessory',
     'set-poxu-artifact',
   ]),
-  normalPieces: [
-    'set-tianyan-clothes',
-    'set-tianyan-gloves',
-    'set-tianyan-pants',
-    'set-tianyan-necklace',
-    'set-tianyan-accessory',
-    'set-xuanheng-clothes',
-    'set-xuanheng-gloves',
-    'set-xuanheng-pants',
-    'set-xuanheng-necklace',
-    'set-xuanheng-accessory',
-    'set-poxu-clothes',
-    'set-poxu-gloves',
-    'set-poxu-pants',
-    'set-poxu-necklace',
-    'set-poxu-accessory',
-  ] as const,
-  hardHeads: ['set-tianyan-head', 'set-xuanheng-head', 'set-poxu-head'] as const,
-  topPieces: [
-    'set-tianyan-weapon',
-    'set-tianyan-artifact',
-    'set-xuanheng-weapon',
-    'set-xuanheng-artifact',
-    'set-poxu-weapon',
-    'set-poxu-artifact',
-  ] as const,
 };
 const ZHENGDAO_POOL_IDS = {
   commonPoolId: 'dp-common-monster-zhengdao',
@@ -164,6 +138,36 @@ test('证道期主线、地图、秘境与任务应统一处于开放态', async
   assert.ok(weeklyTask, '缺少证道期周常任务定义');
   assert.equal(weeklyTask?.enabled, true, '证道期周常任务应开放');
   assert.notEqual(await getTaskDefinitionById('task-zhengdao-weekly-001'), null, '运行时应暴露证道期周常任务');
+});
+
+test('证道期周常应把灵砂与法印分别绑定到正确的收集事件类型', () => {
+  const taskSeed = loadSeed('task_def.json');
+  const taskById = buildObjectMap(asArray(taskSeed.tasks), 'id');
+  const weeklyTask = asObject(taskById.get('task-zhengdao-weekly-001'));
+  const objectives = asArray(weeklyTask?.objectives).map((entry) => asObject(entry));
+
+  const lingshaObjective = objectives.find(
+    (objective) => asText(objective?.id) === 'obj-003',
+  );
+  const fayinObjective = objectives.find(
+    (objective) => asText(objective?.id) === 'obj-004',
+  );
+
+  assert.ok(lingshaObjective, '证道期周常缺少天阙灵砂目标');
+  assert.equal(asText(lingshaObjective?.type), 'gather_resource', '天阙灵砂应继续走地图资源采集事件');
+  assert.equal(
+    asText(asObject(lingshaObjective?.params)?.resource_id),
+    ZHENGDAO_POOL_IDS.lingsha,
+    '天阙灵砂目标应继续绑定资源 ID',
+  );
+
+  assert.ok(fayinObjective, '证道期周常缺少证道法印目标');
+  assert.equal(asText(fayinObjective?.type), 'collect', '证道法印应通过掉落物收集事件推进');
+  assert.equal(
+    asText(asObject(fayinObjective?.params)?.item_id),
+    ZHENGDAO_POOL_IDS.fayin,
+    '证道法印目标应绑定掉落物品 ID',
+  );
 });
 
 test('第八章主线目标应只引用已存在地图/NPC/怪物/物品/秘境', () => {
@@ -249,23 +253,39 @@ test('第八章主线对白的目标提示应与当前任务节一致', () => {
     ['dlg-main-8-001', '目标更新：抵达万法天阙，并与引痕使交谈。'],
     ['dlg-main-8-002', '目标更新：击败天阙巡狩6只、律纹游魂6只。'],
     ['dlg-main-8-003', '目标更新：收集天阙灵砂12个，并向铸纹师复命。'],
-    ['dlg-main-8-004', '目标更新：通关万法道宫（普通）1次。'],
+    ['dlg-main-8-004', '目标更新：通关万法道宫 1 次。'],
     ['dlg-main-8-005', '目标更新：击败镇章使2只、问天执炬2只。'],
-    ['dlg-main-8-006', '目标更新：通关万法道宫（困难）2次。'],
+    ['dlg-main-8-006', '目标更新：通关万法道宫 2 次。'],
     ['dlg-main-8-007', '目标更新：收集证道法印4个，并向执律天官复命。'],
     ['dlg-main-8-008', '目标更新：收集天阙灵砂30个，并向执律天官复命。'],
+  ]);
+  const forbiddenDialogueTextByDialogueId = new Map<string, readonly string[]>([
+    ['dlg-main-8-004', ['普通问律', '（普通）']],
+    ['dlg-main-8-005', ['普通问律']],
+    ['dlg-main-8-006', ['困难问律', '（困难）']],
   ]);
 
   for (const [dialogueId, expectedSystemText] of expectedSystemTextByDialogueId) {
     const dialogue = asObject(dialogueById.get(dialogueId));
     assert.ok(dialogue, `缺少第八章对白定义: ${dialogueId}`);
 
-    const systemNode = asArray(dialogue?.nodes)
-      .map((node) => asObject(node))
-      .find((node) => asText(node?.type) === 'system');
+    const nodes = asArray(dialogue?.nodes).map((node) => asObject(node));
+    const systemNode = nodes.find((node) => asText(node?.type) === 'system');
 
     assert.ok(systemNode, `${dialogueId} 缺少 system 节点`);
     assert.equal(asText(systemNode?.text), expectedSystemText, `${dialogueId} 的目标提示必须和任务节一致`);
+
+    const forbiddenTexts = forbiddenDialogueTextByDialogueId.get(dialogueId);
+    if (!forbiddenTexts) continue;
+
+    const dialogueText = nodes.map((node) => asText(node?.text)).join('\n');
+    for (const forbiddenText of forbiddenTexts) {
+      assert.equal(
+        dialogueText.includes(forbiddenText),
+        false,
+        `${dialogueId} 不应再包含过期的难度提示：${forbiddenText}`,
+      );
+    }
   }
 });
 
@@ -389,19 +409,10 @@ test('证道期怪物掉落池、套装与装备来源应完整闭环', () => {
     assert.equal(ZHENGDAO_SET_ITEM_IDS.all.has(itemDefId), false, `证道期公共池不应包含装备：${itemDefId}`);
   }
 
-  const normalPoolItemIds = collectMergedPoolItemIds(ZHENGDAO_POOL_IDS.normalPoolId, dropPoolById, commonPoolById);
-  const hardPoolItemIds = collectMergedPoolItemIds(ZHENGDAO_POOL_IDS.hardPoolId, dropPoolById, commonPoolById);
-  const nightmarePoolItemIds = collectMergedPoolItemIds(ZHENGDAO_POOL_IDS.nightmarePoolId, dropPoolById, commonPoolById);
   const bossPoolItemIds = collectMergedPoolItemIds(ZHENGDAO_POOL_IDS.bossPoolId, dropPoolById, commonPoolById);
 
-  for (const itemDefId of ZHENGDAO_SET_ITEM_IDS.normalPieces) {
-    assert.equal(normalPoolItemIds.has(itemDefId), true, `普通掉落池缺少基础部位：${itemDefId}`);
-  }
-  for (const itemDefId of ZHENGDAO_SET_ITEM_IDS.hardHeads) {
-    assert.equal(hardPoolItemIds.has(itemDefId), true, `困难掉落池缺少头部：${itemDefId}`);
-  }
-  for (const itemDefId of ZHENGDAO_SET_ITEM_IDS.topPieces) {
-    assert.equal(nightmarePoolItemIds.has(itemDefId) || bossPoolItemIds.has(itemDefId), true, `高阶部位未进入噩梦/Boss链路：${itemDefId}`);
+  for (const itemDefId of ZHENGDAO_SET_ITEM_IDS.all) {
+    assert.equal(bossPoolItemIds.has(itemDefId), true, `证道秘境 Boss 掉落池缺少套装部位：${itemDefId}`);
   }
 
   const dungeonByDifficultyId = new Map<string, ReturnType<typeof asObject>>();
