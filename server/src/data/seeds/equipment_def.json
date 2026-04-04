@@ -4942,7 +4942,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuying/01-weapon-set-xuying-weapon.webp",
+      "icon": "/assets/set-tianyan/01-weapon-set-tianyan-weapon.webp",
       "equip_slot": "weapon",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -4970,7 +4970,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuying/02-head-set-xuying-head.webp",
+      "icon": "/assets/set-tianyan/02-head-set-tianyan-head.webp",
       "equip_slot": "head",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -4999,7 +4999,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuying/03-clothes-set-xuying-clothes.webp",
+      "icon": "/assets/set-tianyan/03-clothes-set-tianyan-clothes.webp",
       "equip_slot": "clothes",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5027,7 +5027,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuying/04-gloves-set-xuying-gloves.webp",
+      "icon": "/assets/set-tianyan/04-gloves-set-tianyan-gloves.webp",
       "equip_slot": "gloves",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5054,7 +5054,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuying/05-pants-set-xuying-pants.webp",
+      "icon": "/assets/set-tianyan/05-pants-set-tianyan-pants.webp",
       "equip_slot": "pants",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5082,7 +5082,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuying/06-necklace-set-xuying-necklace.webp",
+      "icon": "/assets/set-tianyan/06-necklace-set-tianyan-necklace.webp",
       "equip_slot": "necklace",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5110,7 +5110,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuying/07-accessory-set-xuying-accessory.webp",
+      "icon": "/assets/set-tianyan/07-accessory-set-tianyan-accessory.webp",
       "equip_slot": "accessory",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5138,7 +5138,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuying/08-artifact-set-xuying-artifact.webp",
+      "icon": "/assets/set-tianyan/08-artifact-set-tianyan-artifact.webp",
       "equip_slot": "artifact",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5168,7 +5168,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuanguang/01-weapon-set-xuanguang-weapon.webp",
+      "icon": "/assets/set-xuanheng/01-weapon-set-xuanheng-weapon.webp",
       "equip_slot": "weapon",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5195,7 +5195,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuanguang/02-head-set-xuanguang-head.webp",
+      "icon": "/assets/set-xuanheng/02-head-set-xuanheng-head.webp",
       "equip_slot": "head",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5222,7 +5222,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuanguang/03-clothes-set-xuanguang-clothes.webp",
+      "icon": "/assets/set-xuanheng/03-clothes-set-xuanheng-clothes.webp",
       "equip_slot": "clothes",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5249,7 +5249,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuanguang/04-gloves-set-xuanguang-gloves.webp",
+      "icon": "/assets/set-xuanheng/04-gloves-set-xuanheng-gloves.webp",
       "equip_slot": "gloves",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5275,7 +5275,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuanguang/05-pants-set-xuanguang-pants.webp",
+      "icon": "/assets/set-xuanheng/05-pants-set-xuanheng-pants.webp",
       "equip_slot": "pants",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5301,7 +5301,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuanguang/06-necklace-set-xuanguang-necklace.webp",
+      "icon": "/assets/set-xuanheng/06-necklace-set-xuanheng-necklace.webp",
       "equip_slot": "necklace",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5327,7 +5327,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuanguang/07-accessory-set-xuanguang-accessory.webp",
+      "icon": "/assets/set-xuanheng/07-accessory-set-xuanheng-accessory.webp",
       "equip_slot": "accessory",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
@@ -5353,7 +5353,7 @@
       "stack_max": 1,
       "bind_type": "equip",
       "tradeable": true,
-      "icon": "/assets/set-xuanguang/08-artifact-set-xuanguang-artifact.webp",
+      "icon": "/assets/set-xuanheng/08-artifact-set-xuanheng-artifact.webp",
       "equip_slot": "artifact",
       "equip_req_realm": "炼虚合道·证道期",
       "base_attrs": {
