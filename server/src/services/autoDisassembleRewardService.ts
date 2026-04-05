@@ -220,6 +220,123 @@ const buildEquipRollOptionsForAttempt = (raw: unknown, attemptIndex: number): Ge
   };
 };
 
+/**
+ * 批量发放自动分解产物，并在“整批入包失败”时按更小块重试。
+ *
+ * 作用：
+ * 1. 优先用大批量写入吃掉可堆叠产物，减少逐件 createItem 的事务往返。
+ * 2. 仅在背包空间不足时缩小批次，尽量保持“能进包的先进包，剩余走邮件”的既有结算语义。
+ *
+ * 不做：
+ * 1. 不处理装备原始奖励的逐件随机生成。
+ * 2. 不负责银两累加；银两仍由调用方统一处理。
+ *
+ * 输入 / 输出：
+ * - 输入：自动分解后的单种产物定义与数量。
+ * - 输出：成功时把结果写回 `result`；失败时返回首个非背包已满错误文案。
+ *
+ * 数据流 / 状态流：
+ * reward qty -> 尝试整批 createItem -> 失败则二分缩小批次
+ * -> 成功部分记入 grantedItems -> 最小批次仍满时剩余全部转邮件。
+ *
+ * 复用设计说明：
+ * - 把“批量尝试 + 缩块重试”集中在自动分解服务内部，battleDrop/mail/mainQuest 等上层入口继续复用同一发奖边界。
+ * - 同一规则同时覆盖功法书残页、材料分解等非装备产物，避免每条奖励链路各写一套容量探测逻辑。
+ *
+ * 关键边界条件与坑点：
+ * 1. 仅对同一种产物做缩块，不能跨 itemDefId 混批，否则无法保证邮件补发与实例 ID 的归属正确。
+ * 2. 当 `qty=1` 仍返回“背包已满”时，说明当前剩余产物都不可能继续入包，必须一次性转邮件，避免退化成 O(n) 次失败调用。
+ */
+const grantAutoDisassembleRewardItemInChunks = async (
+  result: GrantRewardItemWithAutoDisassembleResult,
+  createItem: GrantItemCreateFn,
+  rewardItem: {
+    itemDefId: string;
+    qty: number;
+  },
+): Promise<{ success: boolean; message?: string }> => {
+  let remainingQty = Math.max(0, Math.floor(rewardItem.qty));
+
+  while (remainingQty > 0) {
+    let attemptQty = remainingQty;
+    let applied = false;
+
+    while (attemptQty > 0) {
+      const rewardCreateResult = await createItem({
+        itemDefId: rewardItem.itemDefId,
+        qty: attemptQty,
+        obtainedFrom: 'auto_disassemble',
+      });
+
+      if (rewardCreateResult.success) {
+        appendGrantedItem(result, rewardItem.itemDefId, attemptQty, normalizeItemIds(rewardCreateResult.itemIds));
+        remainingQty -= attemptQty;
+        applied = true;
+        break;
+      }
+
+      if (rewardCreateResult.message !== '背包已满') {
+        return {
+          success: false,
+          message: `自动分解奖励入包失败: ${rewardItem.itemDefId}, ${rewardCreateResult.message}`,
+        };
+      }
+
+      if (attemptQty === 1) {
+        appendPendingMailItem(result, {
+          item_def_id: rewardItem.itemDefId,
+          qty: remainingQty,
+        });
+        appendGrantedItem(result, rewardItem.itemDefId, remainingQty, []);
+        remainingQty = 0;
+        applied = true;
+        break;
+      }
+
+      attemptQty = Math.floor(attemptQty / 2);
+    }
+
+    if (!applied) {
+      return {
+        success: false,
+        message: `自动分解奖励入包失败: ${rewardItem.itemDefId}, 无法分配奖励数量`,
+      };
+    }
+  }
+
+  return { success: true };
+};
+
+const grantOriginalSourceItemBatch = async (
+  result: GrantRewardItemWithAutoDisassembleResult,
+  input: GrantRewardItemWithAutoDisassembleInput,
+  qty: number,
+): Promise<void> => {
+  const createResult = await input.createItem({
+    itemDefId: input.itemDefId,
+    qty,
+    ...(input.bindType ? { bindType: input.bindType } : {}),
+    obtainedFrom: input.sourceObtainedFrom,
+  });
+
+  if (createResult.success) {
+    appendGrantedItem(result, input.itemDefId, qty, normalizeItemIds(createResult.itemIds));
+    return;
+  }
+
+  if (createResult.message === '背包已满') {
+    appendPendingMailItem(result, {
+      item_def_id: input.itemDefId,
+      qty,
+      ...(input.bindType ? { options: { bindType: input.bindType } } : {}),
+    });
+    appendGrantedItem(result, input.itemDefId, qty, []);
+    return;
+  }
+
+  result.warnings.push(`物品创建失败: ${input.itemDefId}, ${createResult.message}`);
+};
+
 export const grantRewardItemWithAutoDisassemble = async (
   input: GrantRewardItemWithAutoDisassembleInput
 ): Promise<GrantRewardItemWithAutoDisassembleResult> => {
@@ -277,6 +394,72 @@ export const grantRewardItemWithAutoDisassemble = async (
     }
 
     result.warnings.push(`物品创建失败: ${input.itemDefId}, ${createResult.message}`);
+    return result;
+  }
+
+  if (category !== 'equipment') {
+    const candidateMeta: AutoDisassembleCandidateMeta = {
+      itemName,
+      category,
+      subCategory,
+      effectDefs,
+      qualityRank: baseQualityRank,
+    };
+
+    if (!shouldAutoDisassembleBySetting(input.autoDisassembleSetting, candidateMeta)) {
+      await grantOriginalSourceItemBatch(result, input, normalizedQty);
+      return result;
+    }
+
+    const rewardPlan = buildDisassembleRewardPlan({
+      category,
+      subCategory,
+      effectDefs,
+      qualityRankRaw: baseQualityRank,
+      strengthenLevelRaw: 0,
+      refineLevelRaw: 0,
+      affixesRaw: [],
+      qty: normalizedQty,
+    });
+    if (!rewardPlan.success) {
+      result.warnings.push(`自动分解规则计算失败: ${input.itemDefId}, ${rewardPlan.message}`);
+      await grantOriginalSourceItemBatch(result, input, normalizedQty);
+      return result;
+    }
+
+    const tempResult = createEmptyResult();
+    for (const rewardItem of rewardPlan.rewards.items) {
+      const chunkGrantResult = await grantAutoDisassembleRewardItemInChunks(
+        tempResult,
+        input.createItem,
+        rewardItem,
+      );
+      if (!chunkGrantResult.success) {
+        result.warnings.push(
+          chunkGrantResult.message ?? `自动分解奖励入包失败: ${rewardItem.itemDefId}`,
+        );
+        await grantOriginalSourceItemBatch(result, input, normalizedQty);
+        return result;
+      }
+    }
+
+    if (rewardPlan.rewards.silver > 0) {
+      if (!input.addSilver) {
+        result.warnings.push(`自动分解银两发放失败: ${input.itemDefId}, 缺少addSilver实现`);
+        await grantOriginalSourceItemBatch(result, input, normalizedQty);
+        return result;
+      }
+
+      const addSilverResult = await input.addSilver(input.characterId, rewardPlan.rewards.silver);
+      if (!addSilverResult.success) {
+        result.warnings.push(`自动分解银两发放失败: ${input.itemDefId}, ${addSilverResult.message}`);
+        await grantOriginalSourceItemBatch(result, input, normalizedQty);
+        return result;
+      }
+      tempResult.gainedSilver += rewardPlan.rewards.silver;
+    }
+
+    mergeResult(result, tempResult);
     return result;
   }
 
