@@ -42,3 +42,31 @@ export function calculateDefenseReductionRate(
   if (denominator <= 0) return 0;
   return effectiveDefense / denominator;
 }
+
+/**
+ * 作用：
+ * - 把“原始伤害值乘以防御减伤倍率”的过程收敛到统一纯函数，避免光环直伤、反应伤害与主伤害链路各自重复拼公式。
+ * - 只负责套用防御减伤倍率，不处理命中、暴击、护盾、取整与最小伤害规则。
+ *
+ * 输入/输出：
+ * - 输入：原始伤害值、受击方、伤害类型、可选破防比例。
+ * - 输出：套用防御减伤后的伤害值；真实伤害原样返回。
+ *
+ * 数据流/状态流：
+ * - 调用方给出已确定的原始伤害 -> 本函数读取统一减伤率 -> 返回减伤后的数值 -> 再由各模块按自身语义取整或落地。
+ * - 不修改 BattleUnit，不产生副作用。
+ *
+ * 关键边界条件与坑点：
+ * - `true` 伤害必须直接透传，不能误读防御属性。
+ * - 本函数不做最小 1 点兜底，是否允许减到 0 必须由调用方显式决定。
+ */
+export function calculateDamageAfterDefenseReduction(
+  damage: number,
+  defender: BattleUnit,
+  damageType: 'physical' | 'magic' | 'true',
+  ignoreRate = 0,
+): number {
+  if (damageType === 'true') return damage;
+  const reductionRate = calculateDefenseReductionRate(defender, damageType, ignoreRate);
+  return damage * (1 - reductionRate);
+}

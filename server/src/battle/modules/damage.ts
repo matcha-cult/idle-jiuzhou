@@ -6,7 +6,7 @@ import type { BattleState, BattleUnit, DamageResult } from '../types.js';
 import { BATTLE_CONSTANTS } from '../types.js';
 import { rollChance } from '../utils/random.js';
 import { consumeNextDodgeBuff } from './buff.js';
-import { calculateDefenseReductionRate } from './defense.js';
+import { calculateDamageAfterDefenseReduction } from './defense.js';
 import { getVoidErosionDamageBonusRate } from './mark.js';
 
 interface DamageProfile {
@@ -80,12 +80,12 @@ export function calculateDamage(
 
   // 3. 防御减伤（真实伤害跳过）
   if (profile.damageType !== 'true') {
-    const defenseReduction = calculateDefenseReductionRate(
+    damage = calculateDamageAfterDefenseReduction(
+      damage,
       defender,
       profile.damageType,
       profile.ignoreDefenseRate ?? 0,
     );
-    damage *= (1 - defenseReduction);
   }
 
   // 4. 招架判定

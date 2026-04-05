@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { BattleEngine } from '../../battle/battleEngine.js';
 import { createPVEBattle } from '../../battle/battleFactory.js';
 import { executeSkill, getAvailableSkills } from '../../battle/modules/skill.js';
+import { BATTLE_CONSTANTS } from '../../battle/types.js';
 import type { BattleSkill, SkillEffect } from '../../battle/types.js';
 import type { SkillData } from '../../battle/battleFactory.js';
 import type { SkillDefConfig } from '../staticConfigLoader.js';
@@ -574,4 +575,71 @@ test('旧减益光环子效果缺失 target 且误写成 buff 时，仍应按敌
   assert.ok(auraHostBuff, '未显式写 target 的减益光环也应先挂载宿主 Buff');
   assert.equal(enemy.currentAttrs.mingzhong, 0.15, '旧数据里的命中压制应按减益方向结算');
   assert.equal(enemy.currentAttrs.sudu, 130, '旧数据里的减速光环应真正压到敌方速度');
+});
+
+test('光环造成的直接伤害应吃防御属性减伤', () => {
+  const caster = createUnit({
+    id: 'player-aura-damage-owner',
+    name: '曜环使',
+    attrs: {
+      fagong: 320,
+    },
+  });
+  const enemy = createUnit({
+    id: 'monster-aura-damage-target',
+    name: '玄甲傀',
+    type: 'monster',
+    attrs: {
+      fafang: 300,
+    },
+  });
+
+  const directDamageAuraSkill: BattleSkill = {
+    id: 'skill-direct-damage-aura',
+    name: '曜火灵环',
+    source: 'technique',
+    cost: {},
+    cooldown: 0,
+    targetType: 'self',
+    targetCount: 1,
+    damageType: 'magic',
+    element: 'huo',
+    effects: [
+      {
+        type: 'buff',
+        buffKind: 'aura',
+        buffKey: 'buff-aura',
+        auraTarget: 'all_enemy',
+        auraEffects: [
+          {
+            type: 'damage',
+            valueType: 'flat',
+            value: 200,
+            damageType: 'magic',
+          },
+        ],
+      },
+    ],
+    triggerType: 'passive',
+    aiPriority: 70,
+  };
+  caster.skills = [directDamageAuraSkill];
+
+  const state = createState({
+    attacker: [caster],
+    defender: [enemy],
+  });
+  const engine = new BattleEngine(state);
+  const initialQixue = enemy.qixue;
+  const expectedDamage = Math.floor(200 * (1 - (300 / (300 + BATTLE_CONSTANTS.DEFENSE_DAMAGE_K))));
+
+  engine.startBattle();
+
+  const auraLog = consumeBattleLogs(state).find((log) => log.type === 'aura');
+  if (!auraLog || auraLog.type !== 'aura') {
+    assert.fail('期望产生 aura 日志');
+  }
+
+  assert.equal(auraLog.subResults[0]?.damage, expectedDamage, '光环直伤日志应记录减伤后的最终值');
+  assert.equal(enemy.qixue, initialQixue - expectedDamage, '光环直伤应按法防减伤后再扣血');
 });

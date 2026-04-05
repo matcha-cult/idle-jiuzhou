@@ -21,6 +21,7 @@ import type {
 } from '../types.js';
 import { BATTLE_CONSTANTS } from '../types.js';
 import { applyDamage } from './damage.js';
+import { calculateDamageAfterDefenseReduction } from './defense.js';
 import { applyHealing } from './healing.js';
 import { applySoulShackleRecoveryReduction } from './mark.js';
 import { appendBattleLog } from '../logStream.js';
@@ -558,7 +559,11 @@ function applyAuraSubEffect(
     case 'damage': {
       if (!target.isAlive) break;
       const dmgType = sub.damageType ?? 'physical';
-      const { actualDamage } = applyDamage(state, target, sub.resolvedValue, dmgType);
+      const reducedDamage = Math.max(
+        0,
+        Math.floor(calculateDamageAfterDefenseReduction(sub.resolvedValue, target, dmgType)),
+      );
+      const { actualDamage } = applyDamage(state, target, reducedDamage, dmgType);
       subResult.damage = (subResult.damage ?? 0) + actualDamage;
       if (!target.isAlive) {
         appendBattleLog(state, {

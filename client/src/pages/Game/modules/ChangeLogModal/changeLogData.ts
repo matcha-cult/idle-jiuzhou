@@ -32,6 +32,8 @@ export const CHANGE_LOG_ENTRIES: readonly ChangeLogEntrySource[] = [
   {
     releasedAt: '2026-04-05',
     sections: [
+      '现在光环造成的伤害会受到防御属性影响',
+      '调整天衍套装触发效果的处理流程',
       '洞府研修模型调整，停用 KIMI 2.5、Grok 4.20 Beta，目前暂时仅剩 Gemini 3.1 Pro',
       '<div class="my-4 border-t border-gray-200 dark:border-gray-700"></div>',
       '优化成就界面，称号单独成一个菜单项展示，增加称号搜索功能',

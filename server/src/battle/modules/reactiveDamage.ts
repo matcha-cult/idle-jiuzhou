@@ -19,7 +19,7 @@
 
 import type { BattleLogEntry, BattleState, BattleUnit, TargetHitResult } from '../types.js';
 import { applyDamage } from './damage.js';
-import { calculateDefenseReductionRate } from './defense.js';
+import { calculateDamageAfterDefenseReduction } from './defense.js';
 
 export interface ReactiveDamageApplyResult {
   actualDamage: number;
@@ -100,7 +100,8 @@ function applyReactiveDefenseReduction(
   damage: number,
   damageType: 'physical' | 'magic' | 'true',
 ): number {
-  if (damageType === 'true') return damage;
-  const reductionRate = calculateDefenseReductionRate(target, damageType);
-  return Math.max(0, Math.floor(damage * (1 - reductionRate)));
+  return Math.max(
+    0,
+    Math.floor(calculateDamageAfterDefenseReduction(damage, target, damageType)),
+  );
 }
