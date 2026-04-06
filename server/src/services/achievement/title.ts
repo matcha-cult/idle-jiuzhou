@@ -8,6 +8,38 @@ import {
 import type { ServiceResult, TitleInfo, TitleListResult } from './types.js';
 import { invalidateCharacterComputedCache } from '../characterComputedService.js';
 import { listTitleDefinitionsByIds, getTitleDefinitionById } from '../titleDefinitionService.js';
+import { scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId } from '../onlineBattleProjectionService.js';
+
+/**
+ * 称号变更后的战斗状态刷新入口
+ *
+ * 作用（做什么 / 不做什么）：
+ * 1. 做什么：统一处理称号装备后的角色属性缓存失效与在线战斗快照刷新，避免面板与后续战斗入口读取旧称号属性。
+ * 2. 做什么：复用 `invalidateCharacterComputedCache` 内置的角色属性重算与战斗档案刷新，保持与装备、功法改动一致的单一刷新顺序。
+ * 3. 不做什么：不处理称号归属发放，不负责 Socket 推送，也不重复刷新 battle loadout。
+ *
+ * 输入 / 输出：
+ * - 输入：characterId。
+ * - 输出：Promise<void>；副作用是事务提交后让角色读取链路与在线战斗快照都切到最新称号属性。
+ *
+ * 数据流 / 状态流：
+ * 称号写库成功 -> 本入口 -> invalidateCharacterComputedCache
+ * -> scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId。
+ *
+ * 复用设计说明：
+ * 1. 称号、功法、装备都会影响角色派生属性，把“属性缓存失效 + 在线战斗快照刷新”抽成单点入口后，后续补充其他称号写链路时无需再重复拼接顺序。
+ * 2. 高频变化点是“哪些称号操作会改属性”，而不是刷新顺序本身，因此把顺序固化在这里能减少重复维护。
+ *
+ * 关键边界条件与坑点：
+ * 1. 必须先失效 computed，再刷新在线战斗快照；否则快照重建会继续读到旧称号属性。
+ * 2. invalidateCharacterComputedCache 已经负责 battle loadout 侧刷新，这里不能再额外重复调同层刷新。
+ */
+const refreshCharacterBattleStateAfterTitleMutation = async (
+  characterId: number,
+): Promise<void> => {
+  await invalidateCharacterComputedCache(characterId);
+  await scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId(characterId);
+};
 
 /**
  * 称号管理服务
@@ -176,7 +208,7 @@ class TitleService {
     );
 
     await this.updateCharacterAttrsWithDeltaTx(cid, targetName, delta);
-    await invalidateCharacterComputedCache(cid);
+    await refreshCharacterBattleStateAfterTitleMutation(cid);
     return { success: true, message: 'ok' };
   }
 }
