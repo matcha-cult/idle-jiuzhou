@@ -124,6 +124,11 @@ export type PartnerTechniqueLearnPreviewDto = {
   replacedTechnique: PartnerTechniqueDto;
 };
 
+export type PartnerPendingTechniqueLearnPreviewDto = {
+  book: PartnerBookDto;
+  preview: PartnerTechniqueLearnPreviewDto;
+};
+
 export type PartnerDisplayDto = {
   id: number;
   partnerDefId: string;
@@ -310,6 +315,7 @@ export type PartnerOverviewDto = {
   partners: PartnerDetailDto[];
   books: PartnerBookDto[];
   partnerConsumables: PartnerConsumableDto[];
+  pendingTechniqueLearnPreview: PartnerPendingTechniqueLearnPreviewDto | null;
 };
 
 export type PartnerSkillPolicySlotDto = {

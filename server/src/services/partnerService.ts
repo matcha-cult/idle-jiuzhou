@@ -38,6 +38,11 @@ import { scheduleOnlineBattleCharacterSnapshotRefreshByCharacterId } from './onl
 import { schedulePartnerRankSnapshotRefreshByCharacterId } from './partnerRankSnapshotService.js';
 import { resolveGeneratedTechniqueBookDisplay } from './shared/generatedTechniqueBookView.js';
 import {
+  PARTNER_TECHNIQUE_PREVIEW_ITEM_LOCATION,
+  buildPartnerTechniqueLearnPreviewMetadata,
+  readPartnerTechniqueLearnPreviewState,
+} from './shared/partnerTechniqueLearnPreviewState.js';
+import {
   PARTNER_GROWTH_KEYS,
   listReplaceablePartnerTechniqueIds,
   resolvePartnerInjectPlan,
@@ -189,6 +194,7 @@ export interface PartnerOverviewDto {
   partners: PartnerDetailDto[];
   books: PartnerBookDto[];
   partnerConsumables: PartnerConsumableDto[];
+  pendingTechniqueLearnPreview: PartnerPendingTechniqueLearnPreviewDto | null;
 }
 
 export interface PartnerInjectResultDto {
@@ -210,6 +216,11 @@ export interface PartnerTechniqueLearnPreviewDto {
   itemInstanceId: number;
   learnedTechnique: PartnerTechniqueDto;
   replacedTechnique: PartnerTechniqueDto;
+}
+
+export interface PartnerPendingTechniqueLearnPreviewDto {
+  book: PartnerBookDto;
+  preview: PartnerTechniqueLearnPreviewDto;
 }
 
 export type PartnerTechniqueLearnActionResultDto =
@@ -656,6 +667,29 @@ type PartnerItemInstanceRow = {
   metadata: object | null;
 };
 
+type PartnerPreviewItemInstanceRow = PartnerItemInstanceRow & {
+  owner_user_id: number | string | bigint | null;
+  owner_character_id: number | string | bigint | null;
+  quality: string | null;
+  quality_rank: number | string | bigint | null;
+  bind_type: string | null;
+  bind_owner_user_id: number | string | bigint | null;
+  bind_owner_character_id: number | string | bigint | null;
+  locked: boolean;
+  expire_at: string | Date | null;
+  obtained_from: string | null;
+  obtained_ref_id: string | null;
+  affixes: object | null;
+  socketed_gems: object | null;
+  affix_roll_meta: object | null;
+  random_seed: number | string | bigint | null;
+  identified: boolean;
+  affix_gen_version: number | string | bigint | null;
+  strengthen_level: number | string | bigint | null;
+  refine_level: number | string | bigint | null;
+  custom_name: string | null;
+};
+
 type PartnerTechniqueBookContext = {
   itemInstanceId: number;
   itemDefId: string;
@@ -670,6 +704,11 @@ type PartnerTechniqueLearnContext = {
   learnedTechnique: PartnerTechniqueDto;
   maxTechniqueSlots: number;
   replaceableTechniqueIds: string[];
+};
+
+type PartnerPendingTechniqueLearnPreviewContext = {
+  book: PartnerBookDto;
+  preview: PartnerTechniqueLearnPreviewDto;
 };
 
 const loadCharacterPartnerContext = async (
@@ -705,6 +744,45 @@ const loadCharacterPartnerContext = async (
     spiritStones: normalizeInteger(row.spirit_stones),
     realm: normalizeText(row.realm) || '凡人',
     subRealm: normalizeText(row.sub_realm) || null,
+  };
+};
+
+const buildPartnerBookDto = (
+  row: Pick<PartnerItemInstanceRow, 'id' | 'item_def_id' | 'qty' | 'metadata'>,
+): PartnerBookDto | null => {
+  const itemDefId = normalizeText(row.item_def_id);
+  if (!itemDefId) return null;
+
+  const itemDef = getItemDefinitionById(itemDefId);
+  const learning = resolveTechniqueBookLearning({
+    itemDef,
+    metadata: row.metadata,
+  });
+  if (!itemDef || !learning) return null;
+
+  const techniqueMeta = getPartnerTechniqueStaticMeta(learning.techniqueId, 1);
+  if (!techniqueMeta) return null;
+
+  const generatedDisplay = resolveGeneratedTechniqueBookDisplay(itemDefId, row.metadata);
+  return {
+    itemInstanceId: normalizeInteger(row.id, 1),
+    itemDefId,
+    name:
+      normalizeText(generatedDisplay?.name) ||
+      normalizeText(itemDef.name) ||
+      itemDefId,
+    icon: normalizeText(itemDef.icon) || null,
+    techniqueId: learning.techniqueId,
+    techniqueName:
+      normalizeText(generatedDisplay?.generatedTechniqueName) ||
+      normalizeText(techniqueMeta.definition.name) ||
+      learning.techniqueId,
+    quality:
+      normalizeText(generatedDisplay?.quality) ||
+      normalizeText(itemDef.quality) ||
+      normalizeText(techniqueMeta.definition.quality) ||
+      '黄',
+    qty: normalizeInteger(row.qty, 1),
   };
 };
 
@@ -750,40 +828,345 @@ const loadPartnerBooks = async (characterId: number): Promise<PartnerBookDto[]> 
 
   const books: PartnerBookDto[] = [];
   for (const row of result.rows as PartnerItemInstanceRow[]) {
-    const itemDefId = normalizeText(row.item_def_id);
-    if (!itemDefId) continue;
-    const itemDef = getItemDefinitionById(itemDefId);
-    const learning = resolveTechniqueBookLearning({
-      itemDef,
-      metadata: row.metadata,
-    });
-    if (!itemDef || !learning) continue;
-    const techniqueMeta = getPartnerTechniqueStaticMeta(learning.techniqueId, 1);
-    if (!techniqueMeta) continue;
-    const generatedDisplay = resolveGeneratedTechniqueBookDisplay(itemDefId, row.metadata);
-    books.push({
-      itemInstanceId: normalizeInteger(row.id, 1),
-      itemDefId,
-      name:
-        normalizeText(generatedDisplay?.name) ||
-        normalizeText(itemDef.name) ||
-        itemDefId,
-      icon: normalizeText(itemDef.icon) || null,
-      techniqueId: learning.techniqueId,
-      techniqueName:
-        normalizeText(generatedDisplay?.generatedTechniqueName) ||
-        normalizeText(techniqueMeta.definition.name) ||
-        learning.techniqueId,
-      quality:
-        normalizeText(generatedDisplay?.quality) ||
-        normalizeText(itemDef.quality) ||
-        normalizeText(techniqueMeta.definition.quality) ||
-        '黄',
-      qty: normalizeInteger(row.qty, 1),
-    });
+    const book = buildPartnerBookDto(row);
+    if (!book) continue;
+    books.push(book);
   }
 
   return books;
+};
+
+const buildPendingPartnerTechniqueLearnPreview = async (params: {
+  characterId: number;
+  itemRow: Pick<PartnerItemInstanceRow, 'id' | 'item_def_id' | 'qty' | 'metadata'>;
+  state: {
+    partnerId: number;
+    learnedTechniqueId: string;
+    replacedTechniqueId: string;
+  };
+  forUpdate: boolean;
+}): Promise<PartnerResult<PartnerPendingTechniqueLearnPreviewDto>> => {
+  const book = buildPartnerBookDto(params.itemRow);
+  if (!book) {
+    return { success: false, message: '待处理打书预览中的功法书数据异常' };
+  }
+
+  if (book.techniqueId !== params.state.learnedTechniqueId) {
+    return { success: false, message: '待处理打书预览与功法书不匹配' };
+  }
+
+  const contextResult = await loadPartnerTechniqueLearnContext({
+    characterId: params.characterId,
+    partnerId: params.state.partnerId,
+    itemDefId: book.itemDefId,
+    techniqueId: params.state.learnedTechniqueId,
+    forUpdate: params.forUpdate,
+  });
+  if (!contextResult.success || !contextResult.data) {
+    return { success: false, message: contextResult.message };
+  }
+
+  const replacedTechnique = buildReplacePreviewTechnique(
+    contextResult.data.currentTechniqueRows,
+    params.state.replacedTechniqueId,
+  );
+  if (!replacedTechnique) {
+    return { success: false, message: '待处理打书预览中的被替换功法已失效' };
+  }
+
+  return {
+    success: true,
+    message: 'ok',
+    data: {
+      book,
+      preview: {
+        partnerId: params.state.partnerId,
+        itemInstanceId: book.itemInstanceId,
+        learnedTechnique: contextResult.data.learnedTechnique,
+        replacedTechnique,
+      },
+    },
+  };
+};
+
+const loadPendingPartnerTechniqueLearnPreview = async (
+  characterId: number,
+): Promise<PartnerResult<PartnerPendingTechniqueLearnPreviewDto | null>> => {
+  const result = await query(
+    `
+      SELECT id, item_def_id, qty, metadata
+      FROM item_instance
+      WHERE owner_character_id = $1
+        AND location = $2
+      ORDER BY created_at ASC, id ASC
+    `,
+    [characterId, PARTNER_TECHNIQUE_PREVIEW_ITEM_LOCATION],
+  );
+
+  if (result.rows.length <= 0) {
+    return { success: true, message: 'ok', data: null };
+  }
+  if (result.rows.length > 1) {
+    return { success: false, message: '存在多个待处理的伙伴打书预览，请先清理异常数据' };
+  }
+
+  const itemRow = result.rows[0] as PartnerItemInstanceRow;
+  const state = readPartnerTechniqueLearnPreviewState(itemRow.metadata);
+  if (!state) {
+    return { success: false, message: '待处理打书预览数据异常' };
+  }
+
+  return buildPendingPartnerTechniqueLearnPreview({
+    characterId,
+    itemRow,
+    state,
+    forUpdate: false,
+  });
+};
+
+const loadPendingPartnerTechniqueLearnPreviewByItem = async (params: {
+  characterId: number;
+  itemInstanceId: number;
+  forUpdate: boolean;
+}): Promise<PartnerResult<PartnerPendingTechniqueLearnPreviewDto>> => {
+  const lockSql = params.forUpdate ? 'FOR UPDATE' : '';
+  const result = await query(
+    `
+      SELECT id, item_def_id, qty, metadata
+      FROM item_instance
+      WHERE id = $1
+        AND owner_character_id = $2
+        AND location = $3
+      LIMIT 1
+      ${lockSql}
+    `,
+    [params.itemInstanceId, params.characterId, PARTNER_TECHNIQUE_PREVIEW_ITEM_LOCATION],
+  );
+  if (result.rows.length <= 0) {
+    return { success: false, message: '待处理打书预览不存在' };
+  }
+
+  const itemRow = result.rows[0] as PartnerItemInstanceRow;
+  const state = readPartnerTechniqueLearnPreviewState(itemRow.metadata);
+  if (!state) {
+    return { success: false, message: '待处理打书预览数据异常' };
+  }
+
+  return buildPendingPartnerTechniqueLearnPreview({
+    characterId: params.characterId,
+    itemRow,
+    state,
+    forUpdate: params.forUpdate,
+  });
+};
+
+const reservePartnerTechniqueLearnPreviewBook = async (params: {
+  characterId: number;
+  itemInstanceId: number;
+  partnerId: number;
+  learnedTechniqueId: string;
+  replacedTechniqueId: string;
+}): Promise<PartnerResult<number>> => {
+  const existingPreview = await query(
+    `
+      SELECT id
+      FROM item_instance
+      WHERE owner_character_id = $1
+        AND location = $2
+      LIMIT 1
+      FOR UPDATE
+    `,
+    [params.characterId, PARTNER_TECHNIQUE_PREVIEW_ITEM_LOCATION],
+  );
+  if (existingPreview.rows.length > 0) {
+    return { success: false, message: '当前已有待处理的伙伴打书预览，请先确认或放弃' };
+  }
+
+  const result = await query(
+    `
+      SELECT
+        id,
+        owner_user_id,
+        owner_character_id,
+        item_def_id,
+        qty,
+        quality,
+        quality_rank,
+        bind_type,
+        bind_owner_user_id,
+        bind_owner_character_id,
+        location,
+        location_slot,
+        strengthen_level,
+        refine_level,
+        socketed_gems,
+        random_seed,
+        affixes,
+        identified,
+        affix_gen_version,
+        affix_roll_meta,
+        custom_name,
+        locked,
+        expire_at,
+        obtained_from,
+        obtained_ref_id,
+        metadata
+      FROM item_instance
+      WHERE id = $1
+        AND owner_character_id = $2
+      LIMIT 1
+      FOR UPDATE
+    `,
+    [params.itemInstanceId, params.characterId],
+  );
+  if (result.rows.length <= 0) {
+    return { success: false, message: '功法书不存在' };
+  }
+
+  const itemRow = result.rows[0] as PartnerPreviewItemInstanceRow;
+  if (itemRow.locked) {
+    return { success: false, message: '道具已锁定' };
+  }
+  if (!['bag', 'warehouse'].includes(normalizeText(itemRow.location))) {
+    return { success: false, message: '道具当前位置不可用于伙伴打书预览' };
+  }
+  const currentQty = normalizeInteger(itemRow.qty, 1);
+  if (currentQty <= 0) {
+    return { success: false, message: '道具数量不足' };
+  }
+
+  const metadata = buildPartnerTechniqueLearnPreviewMetadata(itemRow.metadata, {
+    partnerId: params.partnerId,
+    learnedTechniqueId: params.learnedTechniqueId,
+    replacedTechniqueId: params.replacedTechniqueId,
+  });
+
+  if (currentQty === 1) {
+    const updateResult = await query(
+      `
+        UPDATE item_instance
+        SET location = $2,
+            location_slot = NULL,
+            equipped_slot = NULL,
+            metadata = $3::jsonb,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING id
+      `,
+      [params.itemInstanceId, PARTNER_TECHNIQUE_PREVIEW_ITEM_LOCATION, JSON.stringify(metadata)],
+    );
+    if (updateResult.rows.length <= 0) {
+      return { success: false, message: '保留待处理功法书失败' };
+    }
+    return {
+      success: true,
+      message: 'ok',
+      data: normalizeInteger(updateResult.rows[0]?.id, 1),
+    };
+  }
+
+  await query(
+    `
+      UPDATE item_instance
+      SET qty = qty - 1,
+          updated_at = NOW()
+      WHERE id = $1
+    `,
+    [params.itemInstanceId],
+  );
+
+  const insertResult = await query(
+    `
+      INSERT INTO item_instance (
+        owner_user_id,
+        owner_character_id,
+        item_def_id,
+        qty,
+        quality,
+        quality_rank,
+        bind_type,
+        bind_owner_user_id,
+        bind_owner_character_id,
+        location,
+        location_slot,
+        equipped_slot,
+        strengthen_level,
+        refine_level,
+        socketed_gems,
+        random_seed,
+        affixes,
+        identified,
+        affix_gen_version,
+        affix_roll_meta,
+        custom_name,
+        locked,
+        expire_at,
+        obtained_from,
+        obtained_ref_id,
+        metadata,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1, $2, $3, 1, $4, $5, $6, $7, $8, $9, NULL, NULL, $10, $11, $12::jsonb, $13,
+        $14::jsonb, $15, $16, $17::jsonb, $18, FALSE, $19, $20, $21, $22::jsonb, NOW(), NOW()
+      )
+      RETURNING id
+    `,
+    [
+      normalizeInteger(itemRow.owner_user_id),
+      normalizeInteger(itemRow.owner_character_id),
+      normalizeText(itemRow.item_def_id),
+      normalizeText(itemRow.quality) || null,
+      normalizeInteger(itemRow.quality_rank) || null,
+      normalizeText(itemRow.bind_type) || 'none',
+      normalizeInteger(itemRow.bind_owner_user_id) || null,
+      normalizeInteger(itemRow.bind_owner_character_id) || null,
+      PARTNER_TECHNIQUE_PREVIEW_ITEM_LOCATION,
+      normalizeInteger(itemRow.strengthen_level),
+      normalizeInteger(itemRow.refine_level),
+      itemRow.socketed_gems ? JSON.stringify(itemRow.socketed_gems) : null,
+      normalizeInteger(itemRow.random_seed) || null,
+      itemRow.affixes ? JSON.stringify(itemRow.affixes) : null,
+      itemRow.identified !== false,
+      normalizeInteger(itemRow.affix_gen_version, 1),
+      itemRow.affix_roll_meta ? JSON.stringify(itemRow.affix_roll_meta) : null,
+      normalizeText(itemRow.custom_name) || null,
+      itemRow.expire_at,
+      normalizeText(itemRow.obtained_from) || null,
+      normalizeText(itemRow.obtained_ref_id) || null,
+      JSON.stringify(metadata),
+    ],
+  );
+  if (insertResult.rows.length <= 0) {
+    return { success: false, message: '保留待处理功法书失败' };
+  }
+
+  return {
+    success: true,
+    message: 'ok',
+    data: normalizeInteger(insertResult.rows[0]?.id, 1),
+  };
+};
+
+const deletePendingPartnerTechniqueLearnPreviewBook = async (params: {
+  characterId: number;
+  itemInstanceId: number;
+}): Promise<PartnerResult> => {
+  const deleteResult = await query(
+    `
+      DELETE FROM item_instance
+      WHERE id = $1
+        AND owner_character_id = $2
+        AND location = $3
+      RETURNING id
+    `,
+    [params.itemInstanceId, params.characterId, PARTNER_TECHNIQUE_PREVIEW_ITEM_LOCATION],
+  );
+  if (deleteResult.rows.length <= 0) {
+    return { success: false, message: '待处理打书预览不存在或已失效' };
+  }
+  return { success: true, message: 'ok' };
 };
 
 const loadPartnerConsumables = async (
@@ -1091,6 +1474,11 @@ class PartnerService {
       });
       const books = await loadPartnerBooks(characterId);
       const partnerConsumables = await loadPartnerConsumables(characterId);
+      const pendingTechniqueLearnPreviewResult = await loadPendingPartnerTechniqueLearnPreview(characterId);
+      if (!pendingTechniqueLearnPreviewResult.success) {
+        return { success: false, message: pendingTechniqueLearnPreviewResult.message };
+      }
+      const pendingTechniqueLearnPreview = pendingTechniqueLearnPreviewResult.data ?? null;
 
       return {
         success: true,
@@ -1104,6 +1492,7 @@ class PartnerService {
           partners,
           books,
           partnerConsumables,
+          pendingTechniqueLearnPreview,
         },
       };
     } catch (error) {
@@ -1807,6 +2196,7 @@ class PartnerService {
   }
 
   @Transactional
+  @Transactional
   async startTechniqueLearnByBook(params: {
     characterId: number;
     partnerId: number;
@@ -1855,7 +2245,7 @@ class PartnerService {
           allowRandomReplacement: false,
         });
         if (!learnResult.success || !learnResult.data) {
-          return { success: false, message: learnResult.message };
+          throw new Error(learnResult.message);
         }
         return {
           success: true,
@@ -1878,6 +2268,16 @@ class PartnerService {
       if (!replacedTechnique) {
         return { success: false, message: '预览目标功法不存在或已失效' };
       }
+      const reserveResult = await reservePartnerTechniqueLearnPreviewBook({
+        characterId: params.characterId,
+        itemInstanceId: params.itemInstanceId,
+        partnerId: params.partnerId,
+        learnedTechniqueId: context.learnedTechnique.techniqueId,
+        replacedTechniqueId,
+      });
+      if (!reserveResult.success || !reserveResult.data) {
+        return { success: false, message: reserveResult.message };
+      }
 
       return {
         success: true,
@@ -1886,7 +2286,7 @@ class PartnerService {
           mode: 'preview_replace',
           preview: {
             partnerId: params.partnerId,
-            itemInstanceId: params.itemInstanceId,
+            itemInstanceId: reserveResult.data,
             learnedTechnique: context.learnedTechnique,
             replacedTechnique,
           },
@@ -1906,52 +2306,43 @@ class PartnerService {
     replacedTechniqueId: string;
   }): Promise<PartnerResult<PartnerLearnTechniqueResultDto>> {
     try {
-      const bookResult = await loadPartnerTechniqueBookContext({
+      const pendingPreviewResult = await loadPendingPartnerTechniqueLearnPreviewByItem({
         characterId: params.characterId,
         itemInstanceId: params.itemInstanceId,
         forUpdate: true,
       });
-      if (!bookResult.success || !bookResult.data) {
-        return { success: false, message: bookResult.message };
+      if (!pendingPreviewResult.success || !pendingPreviewResult.data) {
+        return { success: false, message: pendingPreviewResult.message };
       }
-
-      const contextResult = await loadPartnerTechniqueLearnContext({
-        characterId: params.characterId,
-        partnerId: params.partnerId,
-        itemDefId: bookResult.data.itemDefId,
-        techniqueId: bookResult.data.techniqueId,
-        forUpdate: true,
-      });
-      if (!contextResult.success || !contextResult.data) {
-        return { success: false, message: contextResult.message };
+      const pendingPreview = pendingPreviewResult.data;
+      if (pendingPreview.preview.partnerId !== params.partnerId) {
+        return { success: false, message: '待处理打书预览与当前伙伴不匹配' };
       }
-      if (contextResult.data.currentTechniqueRows.length < contextResult.data.maxTechniqueSlots) {
-        return { success: false, message: '当前无需替换预览，请重新学习功法书' };
-      }
-      if (!contextResult.data.replaceableTechniqueIds.includes(params.replacedTechniqueId)) {
+      if (pendingPreview.preview.replacedTechnique.techniqueId !== params.replacedTechniqueId) {
         return { success: false, message: '预览已失效，请重新选择功法书' };
       }
 
-      const consumeResult = await consumeSpecificItemInstance(
-        params.characterId,
-        params.itemInstanceId,
-        1,
-      );
-      if (!consumeResult.success) {
-        return { success: false, message: consumeResult.message };
-      }
-      if (normalizeText(consumeResult.itemDefId) !== bookResult.data.itemDefId) {
-        return { success: false, message: '功法书已变化，请重新打开预览' };
-      }
-
-      return applyPartnerTechniqueLearn({
+      const learnResult = await applyPartnerTechniqueLearn({
         characterId: params.characterId,
         partnerId: params.partnerId,
-        itemDefId: bookResult.data.itemDefId,
-        techniqueId: bookResult.data.techniqueId,
+        itemDefId: pendingPreview.book.itemDefId,
+        techniqueId: pendingPreview.book.techniqueId,
         replacedTechniqueId: params.replacedTechniqueId,
         allowRandomReplacement: false,
       });
+      if (!learnResult.success || !learnResult.data) {
+        throw new Error(learnResult.message);
+      }
+
+      const deleteResult = await deletePendingPartnerTechniqueLearnPreviewBook({
+        characterId: params.characterId,
+        itemInstanceId: pendingPreview.preview.itemInstanceId,
+      });
+      if (!deleteResult.success) {
+        throw new Error(deleteResult.message);
+      }
+
+      return learnResult;
     } catch (error) {
       const reason = error instanceof Error ? error.message : '未知错误';
       return { success: false, message: `确认伙伴打书失败：${reason}` };
@@ -1964,25 +2355,21 @@ class PartnerService {
     itemInstanceId: number;
   }): Promise<PartnerResult<PartnerDiscardTechniqueBookResultDto>> {
     try {
-      const bookResult = await loadPartnerTechniqueBookContext({
+      const pendingPreviewResult = await loadPendingPartnerTechniqueLearnPreviewByItem({
         characterId: params.characterId,
         itemInstanceId: params.itemInstanceId,
         forUpdate: true,
       });
-      if (!bookResult.success || !bookResult.data) {
-        return { success: false, message: bookResult.message };
+      if (!pendingPreviewResult.success || !pendingPreviewResult.data) {
+        return { success: false, message: pendingPreviewResult.message };
       }
 
-      const consumeResult = await consumeSpecificItemInstance(
-        params.characterId,
-        params.itemInstanceId,
-        1,
-      );
-      if (!consumeResult.success) {
-        return { success: false, message: consumeResult.message };
-      }
-      if (normalizeText(consumeResult.itemDefId) !== bookResult.data.itemDefId) {
-        return { success: false, message: '功法书已变化，请重新打开预览' };
+      const deleteResult = await deletePendingPartnerTechniqueLearnPreviewBook({
+        characterId: params.characterId,
+        itemInstanceId: pendingPreviewResult.data.preview.itemInstanceId,
+      });
+      if (!deleteResult.success) {
+        throw new Error(deleteResult.message);
       }
 
       return {

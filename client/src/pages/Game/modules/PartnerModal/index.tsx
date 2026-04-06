@@ -29,13 +29,13 @@ import {
   type PartnerDetailDto,
   type PartnerFusionStatusDto,
   type PartnerOverviewDto,
+  type PartnerPendingTechniqueLearnPreviewDto,
   type PartnerReboneStatusDto,
   type PartnerRecruitPreviewDto,
   type PartnerRecruitStatusDto,
   type PartnerSkillPolicyDto,
   type PartnerSkillPolicyEntryDto,
   type PartnerTechniqueDetailDto,
-  type PartnerTechniqueLearnPreviewDto,
   type PartnerTechniqueDto,
   type PartnerTechniqueUpgradeCostDto,
   SILENT_API_REQUEST_CONFIG,
@@ -123,10 +123,7 @@ type TechniqueLearnOutcome = {
   learnedTechnique: PartnerTechniqueDto;
   replacedTechnique: PartnerTechniqueDto | null;
 };
-type PendingTechniqueLearnPreview = {
-  book: PartnerBookDto;
-  preview: PartnerTechniqueLearnPreviewDto;
-};
+type PendingTechniqueLearnPreview = PartnerPendingTechniqueLearnPreviewDto;
 
 const PARTNER_SKILL_TOOLTIP_CLASS_NAMES = {
   root: 'skill-tooltip-overlay game-tooltip-surface-root',
@@ -314,6 +311,10 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
   useEffect(() => {
     setSelectedPartnerId(resolvePartnerNextSelectedId(overview, selectedPartnerId));
   }, [overview, selectedPartnerId]);
+
+  useEffect(() => {
+    setPendingTechniqueLearnPreview(overview?.pendingTechniqueLearnPreview ?? null);
+  }, [overview?.pendingTechniqueLearnPreview]);
 
   useEffect(() => {
     setSelectedFusionMaterialIds((currentIds) => currentIds.filter((partnerId) =>
@@ -819,6 +820,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose }) => {
           book,
           preview: res.data.preview,
         });
+        await refreshOverview();
         return;
       }
       await applyTechniqueLearnOutcome(res.data.result, res.message || '学习成功');
