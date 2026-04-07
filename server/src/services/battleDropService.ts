@@ -14,6 +14,7 @@ import { recordCollectItemEvent, recordCollectItemEvents } from './taskService.j
 import {
   grantRewardItemWithAutoDisassemble,
   type AutoDisassembleSetting,
+  type GrantRewardItemWithAutoDisassembleMetrics,
 } from './autoDisassembleRewardService.js';
 import { normalizeAutoDisassembleSetting } from './autoDisassembleRules.js';
 import type { MonsterData } from '../battle/battleFactory.js';
@@ -1248,12 +1249,21 @@ class BattleDropService {
       let grantRewardWarningCostMs = 0;
       let grantRewardPendingMailCostMs = 0;
       let grantRewardApplyResultCostMs = 0;
+      let grantRewardGenerateEquipmentCostMs = 0;
+      let grantRewardBuildDisassembleRewardPlanCostMs = 0;
+      let grantRewardCreateOriginalItemCostMs = 0;
+      let grantRewardCreateDisassembleRewardCostMs = 0;
+      let grantRewardAddSilverCostMs = 0;
       let equipmentDropCount = 0;
       let nonEquipmentDropCount = 0;
       let autoDisassembleEnabledDropCount = 0;
       let grantedItemEntryCount = 0;
       let pendingMailItemCount = 0;
       let grantWarningCount = 0;
+      let grantRewardEquipmentGenerateCount = 0;
+      let grantRewardDisassemblePlanBuildCount = 0;
+      let grantRewardOriginalItemCreateCallCount = 0;
+      let grantRewardDisassembleRewardCreateCallCount = 0;
 
       const appendCollectCount = (characterId: number, itemDefId: string, qty: number): void => {
         const collectEventMap = collectEventMapByCharacter.get(characterId) ?? new Map<string, number>();
@@ -1341,6 +1351,17 @@ class BattleDropService {
         }
 
         const grantStartedAt = Date.now();
+        const grantMetrics: GrantRewardItemWithAutoDisassembleMetrics = {
+          generateEquipmentCostMs: 0,
+          buildDisassembleRewardPlanCostMs: 0,
+          createOriginalItemCostMs: 0,
+          createDisassembleRewardCostMs: 0,
+          addSilverCostMs: 0,
+          equipmentGenerateCount: 0,
+          disassemblePlanBuildCount: 0,
+          originalItemCreateCallCount: 0,
+          disassembleRewardCreateCallCount: 0,
+        };
         const grantResult = await grantRewardItemWithAutoDisassemble({
           characterId: receiverCharacterId,
           itemDefId: drop.itemDefId,
@@ -1355,6 +1376,7 @@ class BattleDropService {
             disassemblable: sourceMeta.disassemblable,
           },
           autoDisassembleSetting: receiverAutoDisassemble,
+          metrics: grantMetrics,
           sourceObtainedFrom: 'battle_drop',
           sourceEquipOptions: createOptions.equipOptions,
           createItem: async ({ itemDefId, qty, bindType, obtainedFrom, equipOptions }) => {
@@ -1377,6 +1399,15 @@ class BattleDropService {
           },
           });
         grantRewardCreateCostMs += Date.now() - grantStartedAt;
+        grantRewardGenerateEquipmentCostMs += grantMetrics.generateEquipmentCostMs;
+        grantRewardBuildDisassembleRewardPlanCostMs += grantMetrics.buildDisassembleRewardPlanCostMs;
+        grantRewardCreateOriginalItemCostMs += grantMetrics.createOriginalItemCostMs;
+        grantRewardCreateDisassembleRewardCostMs += grantMetrics.createDisassembleRewardCostMs;
+        grantRewardAddSilverCostMs += grantMetrics.addSilverCostMs;
+        grantRewardEquipmentGenerateCount += grantMetrics.equipmentGenerateCount;
+        grantRewardDisassemblePlanBuildCount += grantMetrics.disassemblePlanBuildCount;
+        grantRewardOriginalItemCreateCallCount += grantMetrics.originalItemCreateCallCount;
+        grantRewardDisassembleRewardCreateCallCount += grantMetrics.disassembleRewardCreateCallCount;
 
         const warningStartedAt = Date.now();
         for (const warning of grantResult.warnings) {
@@ -1414,21 +1445,30 @@ class BattleDropService {
         grantRewardApplyResultCostMs += Date.now() - applyResultStartedAt;
       }
 
-      slowLogger.mark('grantRewardDrops', {
-        grantedDropCount: result.rewards.items.length,
-        pendingMailReceiverCount: pendingMailByReceiver.size,
-        grantRewardMetaCostMs,
-        grantRewardCreateCostMs,
-        grantRewardWarningCostMs,
-        grantRewardPendingMailCostMs,
-        grantRewardApplyResultCostMs,
-        equipmentDropCount,
-        nonEquipmentDropCount,
-        autoDisassembleEnabledDropCount,
-        grantedItemEntryCount,
-        pendingMailItemCount,
-        grantWarningCount,
-      });
+        slowLogger.mark('grantRewardDrops', {
+          grantedDropCount: result.rewards.items.length,
+          pendingMailReceiverCount: pendingMailByReceiver.size,
+          grantRewardMetaCostMs,
+          grantRewardCreateCostMs,
+          grantRewardWarningCostMs,
+          grantRewardPendingMailCostMs,
+          grantRewardApplyResultCostMs,
+          grantRewardGenerateEquipmentCostMs,
+          grantRewardBuildDisassembleRewardPlanCostMs,
+          grantRewardCreateOriginalItemCostMs,
+          grantRewardCreateDisassembleRewardCostMs,
+          grantRewardAddSilverCostMs,
+          equipmentDropCount,
+          nonEquipmentDropCount,
+          autoDisassembleEnabledDropCount,
+          grantedItemEntryCount,
+          pendingMailItemCount,
+          grantWarningCount,
+          grantRewardEquipmentGenerateCount,
+          grantRewardDisassemblePlanBuildCount,
+          grantRewardOriginalItemCreateCallCount,
+          grantRewardDisassembleRewardCreateCallCount,
+        });
 
       collectEventCount = [...collectEventMapByCharacter.values()].reduce(
         (total, collectEventMap) => total + collectEventMap.size,

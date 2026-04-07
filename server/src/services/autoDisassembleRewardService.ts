@@ -41,6 +41,18 @@ export type AddCharacterSilverFn = (
   silver: number
 ) => Promise<{ success: boolean; message: string }>;
 
+export type GrantRewardItemWithAutoDisassembleMetrics = {
+  generateEquipmentCostMs: number;
+  buildDisassembleRewardPlanCostMs: number;
+  createOriginalItemCostMs: number;
+  createDisassembleRewardCostMs: number;
+  addSilverCostMs: number;
+  equipmentGenerateCount: number;
+  disassemblePlanBuildCount: number;
+  originalItemCreateCallCount: number;
+  disassembleRewardCreateCallCount: number;
+};
+
 export interface GrantRewardItemWithAutoDisassembleInput {
   characterId: number;
   itemDefId: string;
@@ -59,6 +71,7 @@ export interface GrantRewardItemWithAutoDisassembleInput {
   createItem: GrantItemCreateFn;
   addSilver?: AddCharacterSilverFn;
   sourceEquipOptions?: unknown;
+  metrics?: GrantRewardItemWithAutoDisassembleMetrics;
 }
 
 export interface GrantedRewardItem {
@@ -220,6 +233,32 @@ const buildEquipRollOptionsForAttempt = (raw: unknown, attemptIndex: number): Ge
   };
 };
 
+const measureAsyncMetric = async <T>(
+  metrics: GrantRewardItemWithAutoDisassembleMetrics | undefined,
+  costKey:
+    | 'generateEquipmentCostMs'
+    | 'buildDisassembleRewardPlanCostMs'
+    | 'createOriginalItemCostMs'
+    | 'createDisassembleRewardCostMs'
+    | 'addSilverCostMs',
+  work: () => Promise<T>,
+  countKey?:
+    | 'equipmentGenerateCount'
+    | 'disassemblePlanBuildCount'
+    | 'originalItemCreateCallCount'
+    | 'disassembleRewardCreateCallCount',
+): Promise<T> => {
+  if (metrics && countKey) {
+    metrics[countKey] += 1;
+  }
+  const startedAt = Date.now();
+  const result = await work();
+  if (metrics) {
+    metrics[costKey] += Date.now() - startedAt;
+  }
+  return result;
+};
+
 /**
  * 批量发放自动分解产物，并在“整批入包失败”时按更小块重试。
  *
@@ -250,6 +289,7 @@ const buildEquipRollOptionsForAttempt = (raw: unknown, attemptIndex: number): Ge
 const grantAutoDisassembleRewardItemInChunks = async (
   result: GrantRewardItemWithAutoDisassembleResult,
   createItem: GrantItemCreateFn,
+  metrics: GrantRewardItemWithAutoDisassembleMetrics | undefined,
   rewardItem: {
     itemDefId: string;
     qty: number;
@@ -262,11 +302,16 @@ const grantAutoDisassembleRewardItemInChunks = async (
     let applied = false;
 
     while (attemptQty > 0) {
-      const rewardCreateResult = await createItem({
-        itemDefId: rewardItem.itemDefId,
-        qty: attemptQty,
-        obtainedFrom: 'auto_disassemble',
-      });
+      const rewardCreateResult = await measureAsyncMetric(
+        metrics,
+        'createDisassembleRewardCostMs',
+        () => createItem({
+          itemDefId: rewardItem.itemDefId,
+          qty: attemptQty,
+          obtainedFrom: 'auto_disassemble',
+        }),
+        'disassembleRewardCreateCallCount',
+      );
 
       if (rewardCreateResult.success) {
         appendGrantedItem(result, rewardItem.itemDefId, attemptQty, normalizeItemIds(rewardCreateResult.itemIds));
@@ -312,12 +357,17 @@ const grantOriginalSourceItemBatch = async (
   input: GrantRewardItemWithAutoDisassembleInput,
   qty: number,
 ): Promise<void> => {
-  const createResult = await input.createItem({
-    itemDefId: input.itemDefId,
-    qty,
-    ...(input.bindType ? { bindType: input.bindType } : {}),
-    obtainedFrom: input.sourceObtainedFrom,
-  });
+  const createResult = await measureAsyncMetric(
+    input.metrics,
+    'createOriginalItemCostMs',
+    () => input.createItem({
+      itemDefId: input.itemDefId,
+      qty,
+      ...(input.bindType ? { bindType: input.bindType } : {}),
+      obtainedFrom: input.sourceObtainedFrom,
+    }),
+    'originalItemCreateCallCount',
+  );
 
   if (createResult.success) {
     appendGrantedItem(result, input.itemDefId, qty, normalizeItemIds(createResult.itemIds));
@@ -366,13 +416,18 @@ export const grantRewardItemWithAutoDisassemble = async (
     category !== 'equipment'
     && !allowAutoDisassemble
   ) {
-    const createResult = await input.createItem({
-      itemDefId: input.itemDefId,
-      qty: normalizedQty,
-      ...(input.bindType ? { bindType: input.bindType } : {}),
-      obtainedFrom: input.sourceObtainedFrom,
-      ...(input.sourceEquipOptions !== undefined ? { equipOptions: input.sourceEquipOptions } : {}),
-    });
+    const createResult = await measureAsyncMetric(
+      input.metrics,
+      'createOriginalItemCostMs',
+      () => input.createItem({
+        itemDefId: input.itemDefId,
+        qty: normalizedQty,
+        ...(input.bindType ? { bindType: input.bindType } : {}),
+        obtainedFrom: input.sourceObtainedFrom,
+        ...(input.sourceEquipOptions !== undefined ? { equipOptions: input.sourceEquipOptions } : {}),
+      }),
+      'originalItemCreateCallCount',
+    );
 
     if (createResult.success) {
       appendGrantedItem(result, input.itemDefId, normalizedQty, normalizeItemIds(createResult.itemIds));
@@ -414,16 +469,21 @@ export const grantRewardItemWithAutoDisassemble = async (
       return result;
     }
 
-    const rewardPlan = buildDisassembleRewardPlan({
-      category,
-      subCategory,
-      effectDefs,
-      qualityRankRaw: baseQualityRank,
-      strengthenLevelRaw: 0,
-      refineLevelRaw: 0,
-      affixesRaw: [],
-      qty: normalizedQty,
-    });
+    const rewardPlan = await measureAsyncMetric(
+      input.metrics,
+      'buildDisassembleRewardPlanCostMs',
+      async () => buildDisassembleRewardPlan({
+        category,
+        subCategory,
+        effectDefs,
+        qualityRankRaw: baseQualityRank,
+        strengthenLevelRaw: 0,
+        refineLevelRaw: 0,
+        affixesRaw: [],
+        qty: normalizedQty,
+      }),
+      'disassemblePlanBuildCount',
+    );
     if (!rewardPlan.success) {
       result.warnings.push(`自动分解规则计算失败: ${input.itemDefId}, ${rewardPlan.message}`);
       await grantOriginalSourceItemBatch(result, input, normalizedQty);
@@ -435,6 +495,7 @@ export const grantRewardItemWithAutoDisassemble = async (
       const chunkGrantResult = await grantAutoDisassembleRewardItemInChunks(
         tempResult,
         input.createItem,
+        input.metrics,
         rewardItem,
       );
       if (!chunkGrantResult.success) {
@@ -453,7 +514,11 @@ export const grantRewardItemWithAutoDisassemble = async (
         return result;
       }
 
-      const addSilverResult = await input.addSilver(input.characterId, rewardPlan.rewards.silver);
+      const addSilverResult = await measureAsyncMetric(
+        input.metrics,
+        'addSilverCostMs',
+        () => input.addSilver!(input.characterId, rewardPlan.rewards.silver),
+      );
       if (!addSilverResult.success) {
         result.warnings.push(`自动分解银两发放失败: ${input.itemDefId}, ${addSilverResult.message}`);
         await grantOriginalSourceItemBatch(result, input, normalizedQty);
@@ -472,13 +537,18 @@ export const grantRewardItemWithAutoDisassemble = async (
     let generatedQualityRank = baseQualityRank;
 
     const createSourceItem = async () => {
-      const sourceCreateResult = await input.createItem({
-        itemDefId: input.itemDefId,
-        qty: 1,
-        ...(input.bindType ? { bindType: input.bindType } : {}),
-        obtainedFrom: input.sourceObtainedFrom,
-        ...(sourceEquipOptionsForCreate !== undefined ? { equipOptions: sourceEquipOptionsForCreate } : {}),
-      });
+      const sourceCreateResult = await measureAsyncMetric(
+        input.metrics,
+        'createOriginalItemCostMs',
+        () => input.createItem({
+          itemDefId: input.itemDefId,
+          qty: 1,
+          ...(input.bindType ? { bindType: input.bindType } : {}),
+          obtainedFrom: input.sourceObtainedFrom,
+          ...(sourceEquipOptionsForCreate !== undefined ? { equipOptions: sourceEquipOptionsForCreate } : {}),
+        }),
+        'originalItemCreateCallCount',
+      );
 
       if (sourceCreateResult.success) {
         appendGrantedItem(result, input.itemDefId, 1, normalizeItemIds(sourceCreateResult.itemIds));
@@ -516,7 +586,12 @@ export const grantRewardItemWithAutoDisassemble = async (
      */
     if (category === 'equipment') {
       const equipRollOptions = buildEquipRollOptionsForAttempt(input.sourceEquipOptions, i + 1);
-      const generated = await generateEquipment(input.itemDefId, equipRollOptions);
+      const generated = await measureAsyncMetric(
+        input.metrics,
+        'generateEquipmentCostMs',
+        () => generateEquipment(input.itemDefId, equipRollOptions),
+        'equipmentGenerateCount',
+      );
       if (generated) {
         sourceEquipOptionsForMail = equipRollOptions;
         sourceEquipOptionsForCreate = {
@@ -546,16 +621,21 @@ export const grantRewardItemWithAutoDisassemble = async (
       continue;
     }
 
-    const rewardPlan = buildDisassembleRewardPlan({
-      category,
-      subCategory,
-      effectDefs,
-      qualityRankRaw: generatedQualityRank,
-      strengthenLevelRaw: 0,
-      refineLevelRaw: 0,
-      affixesRaw: [],
-      qty: 1,
-    });
+    const rewardPlan = await measureAsyncMetric(
+      input.metrics,
+      'buildDisassembleRewardPlanCostMs',
+      async () => buildDisassembleRewardPlan({
+        category,
+        subCategory,
+        effectDefs,
+        qualityRankRaw: generatedQualityRank,
+        strengthenLevelRaw: 0,
+        refineLevelRaw: 0,
+        affixesRaw: [],
+        qty: 1,
+      }),
+      'disassemblePlanBuildCount',
+    );
     if (!rewardPlan.success) {
       result.warnings.push(`自动分解规则计算失败: ${input.itemDefId}, ${rewardPlan.message}`);
       await createSourceItem();
@@ -566,11 +646,16 @@ export const grantRewardItemWithAutoDisassemble = async (
     let rewardApplySuccess = true;
 
     for (const rewardItem of rewardPlan.rewards.items) {
-      const rewardCreateResult = await input.createItem({
-        itemDefId: rewardItem.itemDefId,
-        qty: rewardItem.qty,
-        obtainedFrom: 'auto_disassemble',
-      });
+      const rewardCreateResult = await measureAsyncMetric(
+        input.metrics,
+        'createDisassembleRewardCostMs',
+        () => input.createItem({
+          itemDefId: rewardItem.itemDefId,
+          qty: rewardItem.qty,
+          obtainedFrom: 'auto_disassemble',
+        }),
+        'disassembleRewardCreateCallCount',
+      );
 
       if (rewardCreateResult.success) {
         appendGrantedItem(tempResult, rewardItem.itemDefId, rewardItem.qty, normalizeItemIds(rewardCreateResult.itemIds));
@@ -596,7 +681,11 @@ export const grantRewardItemWithAutoDisassemble = async (
         rewardApplySuccess = false;
         result.warnings.push(`自动分解银两发放失败: ${input.itemDefId}, 缺少addSilver实现`);
       } else {
-        const addSilverResult = await input.addSilver(input.characterId, rewardPlan.rewards.silver);
+        const addSilverResult = await measureAsyncMetric(
+          input.metrics,
+          'addSilverCostMs',
+          () => input.addSilver!(input.characterId, rewardPlan.rewards.silver),
+        );
         if (!addSilverResult.success) {
           rewardApplySuccess = false;
           result.warnings.push(`自动分解银两发放失败: ${input.itemDefId}, ${addSilverResult.message}`);
