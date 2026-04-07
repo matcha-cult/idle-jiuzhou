@@ -38,6 +38,7 @@ import {
   type TechniqueTextModelJsonSchemaProperties,
   type TechniqueTextModelResponseFormat,
 } from '../shared/techniqueTextModelShared.js';
+import { REALM_ORDER } from '../shared/realmRules.js';
 import type {
   WanderAiEpisodeResolutionDraft,
   WanderAiEpisodeSetupDraft,
@@ -183,6 +184,8 @@ const WANDER_TITLE_EFFECT_LIMIT_GUIDE = TITLE_EFFECT_KEYS.map((key) => {
   const maxText = CHARACTER_RATIO_ATTR_KEY_SET.has(key) ? `${Math.round(max * 10_000) / 100}%` : String(max);
   return `${key}(${CHARACTER_ATTR_LABEL_MAP[key] ?? key}<=${maxText})`;
 }).join('、');
+const WANDER_REALM_ORDER_PROMPT = `游戏境界顺序示例：${REALM_ORDER.join(' > ')}`;
+const WANDER_REALM_RULE = '玩家与同行修士的境界只能使用以上游戏境界，禁止写炼气期、筑基期、结丹期或任何其他体系的境界名。';
 
 const WANDER_OPTION_EXAMPLE: [string, string, string] = [
   '先借檐避雨，再试探来意',
@@ -325,6 +328,8 @@ export const buildWanderAiEpisodeSetupPromptRuleSet = (isEndingEpisode: boolean)
       '你必须输出严格 JSON，不得输出 markdown、解释、额外注释。',
       '剧情必须是东方修仙语境，禁止现代梗、科幻设定、英文名、阿拉伯数字名。',
       '本阶段只负责生成待玩家选择的幕次，不负责结算结果。',
+      WANDER_REALM_ORDER_PROMPT,
+      WANDER_REALM_RULE,
       'player.storyPartner 为 null 表示这条故事不带入伙伴；不为 null 时，说明该伙伴会卷入这条故事。你应自然写出其同行、反应、插话或协助，但不要喧宾夺主，也不要替玩家做选择。',
       'player.storyOtherPlayer 为 null 表示这条故事不带入其他玩家；不为 null 时，说明有一名近期活跃的其他修士会卷入这条故事。你应自然写出其同行、路遇、竞争或援手，但不能让其压过玩家主导地位，也不要替该玩家擅自决定立场。',
       'previousEpisodes 会按幕次顺序提供已经发生的完整前文，每一幕都包含标题、正文、玩家已选选项和选择后的结果；续写时必须严格承接这些既成事实，不得遗忘、改写或跳过已经发生的因果。',
@@ -525,6 +530,8 @@ export const buildWanderAiEpisodeResolutionPromptRuleSet = (
       '你必须输出严格 JSON，不得输出 markdown、解释、额外注释。',
       '剧情必须是东方修仙语境，禁止现代梗、科幻设定、英文名、阿拉伯数字名。',
       '本阶段只负责根据玩家已经选定的选项，生成这一幕真正发生的结果与收束。',
+      WANDER_REALM_ORDER_PROMPT,
+      WANDER_REALM_RULE,
       'player.storyPartner 为 null 表示这条故事不带入伙伴；不为 null 时，说明该伙伴已卷入这条故事。你应让这一幕的结果继续自然体现其存在，但不要压过玩家主导地位。',
       'player.storyOtherPlayer 为 null 表示这条故事不带入其他玩家；不为 null 时，说明这名近期活跃的修士已卷入当前因果。你应让这一幕继续自然体现其反应、取舍或动作，但不能让其盖过玩家，也不要替其凭空改写既有立场。',
       'previousEpisodes 会按幕次顺序提供已经发生的完整前文，每一幕都包含标题、正文、玩家已选选项和选择后的结果；你必须把当前这一幕放在这些既有经历之后承接，不能忽略已发生的因果。',
