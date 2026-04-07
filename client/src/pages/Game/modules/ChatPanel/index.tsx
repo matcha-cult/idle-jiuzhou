@@ -8,9 +8,11 @@ import PartnerPreviewOverlay from '../../shared/PartnerPreviewOverlay';
 import PhoneBindingDialog from '../../shared/PhoneBindingDialog';
 import PlayerName from '../../shared/PlayerName';
 import { buildPlayerInfoTarget } from '../../shared/playerInfoTarget';
+import TechniquePreviewOverlay from '../../shared/TechniquePreviewOverlay';
 import { useDeferredGameRequest } from '../../shared/useDeferredGameRequest';
 import { usePartnerPreview } from '../../shared/usePartnerPreview';
 import { usePhoneBindingStatus } from '../../shared/usePhoneBindingStatus';
+import { useTechniquePreview } from '../../shared/useTechniquePreview';
 import ChatChannelSelector from './ChatChannelSelector';
 import StatsShell from './StatsShell';
 import { CHAT_CHANNEL_ITEMS, type ChatChannel, type PublicChatChannel } from './chatChannelConfig';
@@ -119,6 +121,7 @@ type ChatContentSegment =
 
 const CHAT_CONTENT_TOKEN_PATTERN = /\[#([a-z_]+)\|([^|\]]+)\|([^\]]+)\]/g;
 const HEAVEN_PARTNER_PREVIEW_COLOR = 'var(--rarity-tian)';
+const HEAVEN_TECHNIQUE_PREVIEW_COLOR = 'var(--rarity-tian)';
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
@@ -340,7 +343,7 @@ const countByRegex = (line: string, pattern: RegExp): number => {
 };
 
 // 聊天正文统一走受控 token 协议解析，避免“哪段文字可点击”继续散落成字符串猜测。
-// 当前先支持 `[#partner|实体ID|显示文本]`，后续新增 token 只需扩展 tokenType 分发。
+// 当前支持 `partner` / `technique` 两类实体 token，后续新增实体时只需扩展 tokenType 分发。
 const parseChatContentSegments = (content: string): ChatContentSegment[] => {
   const source = String(content ?? '');
   if (!source) return [];
@@ -372,6 +375,10 @@ const parseChatTokenEntityId = (entityId: string): number | null => {
     return null;
   }
   return normalizedEntityId;
+};
+
+const normalizeChatTokenStringEntityId = (entityId: string): string => {
+  return String(entityId ?? '').trim();
 };
 
 interface ChatPanelProps {
@@ -427,6 +434,12 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
     openPartnerPreviewById,
     closePartnerPreview,
   } = usePartnerPreview();
+  const {
+    previewTechnique,
+    previewTechniqueLoading,
+    openTechniquePreviewById,
+    closeTechniquePreview,
+  } = useTechniquePreview();
   const {
     status: phoneBindingStatus,
     refresh: refreshPhoneBindingStatus,
@@ -751,6 +764,14 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
     await openPartnerPreviewById(partnerId);
   }, [openPartnerPreviewById]);
 
+  const openTechniquePreviewByChatEntityId = useCallback(async (entityId: string) => {
+    const techniqueId = normalizeChatTokenStringEntityId(entityId);
+    if (!techniqueId) {
+      return;
+    }
+    await openTechniquePreviewById(techniqueId);
+  }, [openTechniquePreviewById]);
+
   const renderMessageContent = useCallback((msg: Message): ReactNode => {
     const content = String(msg.content ?? '');
     const segments = parseChatContentSegments(content);
@@ -767,10 +788,24 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
               <button
                 key={`token-${index}`}
                 type="button"
-                className="message-partner-preview-name"
+                className="message-entity-preview-name"
                 style={{ color: HEAVEN_PARTNER_PREVIEW_COLOR }}
                 onClick={() => void openPartnerPreviewByChatEntityId(segment.entityId)}
                 title="查看伙伴详情"
+              >
+                {segment.label}
+              </button>
+            );
+          }
+          if (segment.kind === 'token' && segment.tokenType === 'technique' && isSystemWorldMessage) {
+            return (
+              <button
+                key={`token-${index}`}
+                type="button"
+                className="message-entity-preview-name"
+                style={{ color: HEAVEN_TECHNIQUE_PREVIEW_COLOR }}
+                onClick={() => void openTechniquePreviewByChatEntityId(segment.entityId)}
+                title="查看功法详情"
               >
                 {segment.label}
               </button>
@@ -784,7 +819,7 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
         })}
       </span>
     );
-  }, [openPartnerPreviewByChatEntityId]);
+  }, [openPartnerPreviewByChatEntityId, openTechniquePreviewByChatEntityId]);
 
   const handleRemovePrivateTarget = (targetId: string) => {
     const nextTargets = privateTargets.filter((t) => t.id !== targetId);
@@ -1769,6 +1804,12 @@ const ChatPanelBase = forwardRef<ChatPanelHandle, ChatPanelProps>(({ onSelectPla
         partner={previewPartner}
         isMobile={isMobile === true}
         onClose={closePartnerPreview}
+      />
+      <TechniquePreviewOverlay
+        detail={previewTechnique}
+        loading={previewTechniqueLoading}
+        isMobile={isMobile === true}
+        onClose={closeTechniquePreview}
       />
     </div>
   );

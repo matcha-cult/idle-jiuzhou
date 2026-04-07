@@ -118,6 +118,10 @@ type TechniqueResearchGuaranteeProgress = {
   hasGeneratedDraftHistory: boolean;
 };
 
+const buildChatTechniqueToken = (techniqueId: string, label: string): string => {
+  return `[#technique|${techniqueId}|${label}]`;
+};
+
 export type ServiceResult<T = unknown> = {
   success: boolean;
   message: string;
@@ -528,7 +532,7 @@ class TechniqueGenerationService {
 
     broadcastWorldSystemMessage({
       senderTitle: '天机传音',
-      content: `【洞府研修】${nickname}抄写出天阶功法《${techniqueName}》，道韵惊世，声传九州！`,
+      content: `【洞府研修】${nickname}抄写出天阶功法${buildChatTechniqueToken(techniqueId, `《${techniqueName}》`)}，道韵惊世，声传九州！`,
     });
   }
 

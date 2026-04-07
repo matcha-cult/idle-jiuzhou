@@ -374,7 +374,7 @@
       display: inline;
     }
 
-    .message-partner-preview-name {
+    .message-entity-preview-name {
       appearance: none;
       border: none;
       background: none;
@@ -389,12 +389,12 @@
       transition: color 0.2s ease, text-decoration-color 0.2s ease;
     }
 
-    .message-partner-preview-name:hover {
+    .message-entity-preview-name:hover {
       text-decoration: underline;
       text-decoration-thickness: 1px;
     }
 
-    .message-partner-preview-name:focus-visible {
+    .message-entity-preview-name:focus-visible {
       outline: 1px solid currentColor;
       outline-offset: 2px;
       border-radius: 2px;

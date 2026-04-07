@@ -100,8 +100,11 @@ export interface TechniqueDetailResponse {
   };
 }
 
-export const getTechniqueDetail = (techniqueId: string): Promise<TechniqueDetailResponse> => {
-  return api.get(`/technique/${techniqueId}`);
+export const getTechniqueDetail = (
+  techniqueId: string,
+  requestConfig?: RequestConfig,
+): Promise<TechniqueDetailResponse> => {
+  return api.get(`/technique/${techniqueId}`, requestConfig);
 };
 
 export type CharacterTechniqueDto = {
