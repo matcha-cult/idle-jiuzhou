@@ -897,7 +897,6 @@ model idle_sessions {
   lose_count          Int                   @default(0)
   total_exp           Int                   @default(0)
   total_silver        Int                   @default(0)
-  reward_items        Json                  @default("[]")
   bag_full_flag       Boolean               @default(false)
   started_at          DateTime              @default(now()) @db.Timestamptz(6)
   ended_at            DateTime?             @db.Timestamptz(6)

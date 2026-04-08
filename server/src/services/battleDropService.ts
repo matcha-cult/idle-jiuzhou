@@ -176,6 +176,7 @@ export interface BattleParticipant {
   nickname: string;
   realm: string;
   fuyuan?: number;
+  idleSessionId?: string;
 }
 
 export interface SinglePlayerRewardSettlementResult {
@@ -808,6 +809,7 @@ class BattleDropService {
             itemDefId,
             qty,
             obtainedFrom,
+            ...(participant.idleSessionId ? { idleSessionId: participant.idleSessionId } : {}),
             ...(bindType ? { bindType } : {}),
             ...(equipOptions ? { equipOptions: equipOptions as CreateItemOptions['equipOptions'] } : {}),
           }]);

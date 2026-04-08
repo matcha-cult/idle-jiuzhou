@@ -57,15 +57,6 @@ export interface IdleConfigDto {
 // ============================================
 
 /**
- * 奖励物品条目（与服务端 RewardItemEntry 对齐）
- */
-export interface RewardItemEntryDto {
-  itemDefId: string;
-  itemName: string;
-  quantity: number;
-}
-
-/**
  * 挂机会话 DTO（GET /api/idle/status、GET /api/idle/history 响应体）
  * - status 联合字面量：active → stopping → completed | interrupted
  * - viewedAt 为 null 表示未查看，UI 层据此触发回放弹窗
@@ -82,7 +73,6 @@ export interface IdleSessionDto {
   loseCount: number;
   totalExp: number;
   totalSilver: number;
-  rewardItems: RewardItemEntryDto[];
   bagFullFlag: boolean;
   startedAt: string; // ISO 8601 字符串，UI 层按需转换为 Date
   endedAt: string | null;

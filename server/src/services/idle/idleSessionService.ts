@@ -35,7 +35,6 @@ import type {
   IdleConfigDto,
   IdleSessionRow,
   SessionSnapshot,
-  RewardItemEntry,
 } from './types.js';
 import { rowToIdleSessionRow } from './rowMappers.js';
 import { getIdleExecutionLoopHeartbeatAt } from './idleExecutionRegistry.js';
@@ -45,7 +44,6 @@ import {
 } from './idleSessionActivity.js';
 import { resolveIdleMaxDurationMs } from '../shared/idleDurationLimits.js';
 import {
-  mergeRewardItems as mergeIdleRewardItems,
   type IdleSessionSummaryDelta,
   type IdleSessionSummarySnapshot,
 } from './idleSessionSummary.js';
@@ -393,12 +391,12 @@ class IdleSessionService {
         `INSERT INTO idle_sessions (
           id, character_id, status, map_id, room_id, max_duration_ms,
           session_snapshot, total_battles, win_count, lose_count,
-          total_exp, total_silver, reward_items, bag_full_flag,
+          total_exp, total_silver, bag_full_flag,
           started_at, ended_at, viewed_at
         ) VALUES (
           $1, $2, 'active', $3, $4, $5,
           $6, 0, 0, 0,
-          0, 0, '[]', false,
+          0, 0, false,
           NOW(), NULL, NULL
         )`,
         [
@@ -617,12 +615,11 @@ class IdleSessionService {
    * 累加更新会话汇总字段（由 IdleBattleExecutor 在每场战斗完成后调用）
    *
    * 使用 SQL 原子加法，避免并发覆盖。
-   * rewardItems 合并逻辑：将新物品追加到现有 JSONB 数组（按 itemDefId 合并数量）。
    */
   async updateSessionSummary(
     sessionId: string,
     delta: IdleSessionSummaryDelta,
-    snapshot?: IdleSessionSummarySnapshot,
+    _snapshot?: IdleSessionSummarySnapshot,
   ): Promise<void> {
     const {
       totalBattlesDelta,
@@ -630,67 +627,10 @@ class IdleSessionService {
       loseDelta,
       expDelta,
       silverDelta,
-      newItems,
       bagFullFlag,
     } = delta;
 
     await withTransactionAuto(async () => {
-      if (snapshot) {
-        await query(
-          `UPDATE idle_sessions
-           SET total_battles = total_battles + $2,
-               win_count     = win_count + $3,
-               lose_count    = lose_count + $4,
-               total_exp     = total_exp + $5,
-               total_silver  = total_silver + $6,
-               reward_items  = $7,
-               bag_full_flag = $8,
-               updated_at    = NOW()
-           WHERE id = $1`,
-          [
-            sessionId,
-            totalBattlesDelta,
-            winDelta,
-            loseDelta,
-            expDelta,
-            silverDelta,
-            JSON.stringify(snapshot.rewardItems),
-            snapshot.bagFullFlag,
-          ],
-        );
-        return;
-      }
-
-      if (newItems.length === 0) {
-        await query(
-          `UPDATE idle_sessions
-           SET total_battles = total_battles + $2,
-               win_count     = win_count + $3,
-               lose_count    = lose_count + $4,
-               total_exp     = total_exp + $5,
-               total_silver  = total_silver + $6,
-               bag_full_flag = CASE WHEN $7 THEN true ELSE bag_full_flag END,
-               updated_at    = NOW()
-           WHERE id = $1`,
-          [sessionId, totalBattlesDelta, winDelta, loseDelta, expDelta, silverDelta, bagFullFlag],
-        );
-        return;
-      }
-
-      const res = await query(
-        `SELECT reward_items
-         FROM idle_sessions
-         WHERE id = $1
-         FOR UPDATE`,
-        [sessionId],
-      );
-      if (res.rows.length === 0) {
-        return;
-      }
-
-      const existing = (res.rows[0].reward_items as RewardItemEntry[]) ?? [];
-      const merged = mergeIdleRewardItems(existing, newItems);
-
       await query(
         `UPDATE idle_sessions
          SET total_battles = total_battles + $2,
@@ -698,8 +638,7 @@ class IdleSessionService {
              lose_count    = lose_count + $4,
              total_exp     = total_exp + $5,
              total_silver  = total_silver + $6,
-             reward_items  = $7,
-             bag_full_flag = CASE WHEN $8 THEN true ELSE bag_full_flag END,
+             bag_full_flag = CASE WHEN $7 THEN true ELSE bag_full_flag END,
              updated_at    = NOW()
          WHERE id = $1`,
         [
@@ -709,23 +648,11 @@ class IdleSessionService {
           loseDelta,
           expDelta,
           silverDelta,
-          JSON.stringify(merged),
           bagFullFlag,
         ],
       );
     });
   }
-}
-
-/**
- * 合并奖励物品列表（按 itemDefId 累加数量）
- * 纯函数，无副作用，便于测试。
- */
-export function mergeRewardItems(
-  existing: RewardItemEntry[],
-  newItems: RewardItemEntry[]
-): RewardItemEntry[] {
-  return mergeIdleRewardItems(existing, newItems);
 }
 
 // ============================================

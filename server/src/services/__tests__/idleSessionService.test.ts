@@ -7,12 +7,10 @@
  *   - 属性 3：Stamina 不足时禁止启动
  *   - 属性 12：历史记录容量限制（最多 3 条）
  *   - 属性 13：历史记录时间倒序
- *   - 单元测试：mergeRewardItems 纯函数边界条件
  *
  * 输入/输出：
  *   - 使用 node:test + node:assert 实现
  *   - 依赖 DB/Redis 的属性通过内存模拟验证业务规则（不做集成测试）
- *   - mergeRewardItems 是纯函数，直接测试
  *
  * 数据流：
  *   随机生成输入 → 调用被测函数/模拟逻辑 → 断言属性成立
@@ -24,8 +22,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeRewardItems } from '../idle/idleSessionService.js';
-import type { RewardItemEntry, IdleSessionRow } from '../idle/types.js';
+import type { IdleSessionRow } from '../idle/types.js';
 
 // ============================================
 // 随机数生成工具
@@ -404,63 +401,6 @@ test('属性 13：历史记录时间倒序（numRuns: 100）', () => {
 // ============================================
 // 任务 5.7：IdleSessionService 边界条件单元测试
 // ============================================
-
-test('5.7 mergeRewardItems：相同 itemDefId 应累加数量', () => {
-  const existing: RewardItemEntry[] = [
-    { itemDefId: 'item-a', itemName: '物品A', quantity: 3 },
-    { itemDefId: 'item-b', itemName: '物品B', quantity: 1 },
-  ];
-  const newItems: RewardItemEntry[] = [
-    { itemDefId: 'item-a', itemName: '物品A', quantity: 2 },
-    { itemDefId: 'item-c', itemName: '物品C', quantity: 5 },
-  ];
-
-  const merged = mergeRewardItems(existing, newItems);
-
-  const itemA = merged.find((i) => i.itemDefId === 'item-a');
-  const itemB = merged.find((i) => i.itemDefId === 'item-b');
-  const itemC = merged.find((i) => i.itemDefId === 'item-c');
-
-  assert.equal(itemA?.quantity, 5, 'item-a 数量应累加为 5');
-  assert.equal(itemB?.quantity, 1, 'item-b 数量应保持为 1');
-  assert.equal(itemC?.quantity, 5, 'item-c 应新增，数量为 5');
-  assert.equal(merged.length, 3, '合并后应有 3 种物品');
-});
-
-test('5.7 mergeRewardItems：existing 为空时直接返回 newItems 的副本', () => {
-  const newItems: RewardItemEntry[] = [
-    { itemDefId: 'item-x', itemName: '物品X', quantity: 10 },
-  ];
-
-  const merged = mergeRewardItems([], newItems);
-
-  assert.equal(merged.length, 1);
-  assert.equal(merged[0]?.quantity, 10);
-  // 确认是副本，不是同一引用
-  assert.notEqual(merged, newItems);
-});
-
-test('5.7 mergeRewardItems：newItems 为空时返回 existing 的副本', () => {
-  const existing: RewardItemEntry[] = [
-    { itemDefId: 'item-y', itemName: '物品Y', quantity: 7 },
-  ];
-
-  const merged = mergeRewardItems(existing, []);
-
-  assert.equal(merged.length, 1);
-  assert.equal(merged[0]?.quantity, 7);
-});
-
-test('5.7 mergeRewardItems：幂等性 — 合并空列表不改变结果', () => {
-  const items: RewardItemEntry[] = [
-    { itemDefId: 'item-z', itemName: '物品Z', quantity: 4 },
-  ];
-
-  const merged1 = mergeRewardItems(items, []);
-  const merged2 = mergeRewardItems(merged1, []);
-
-  assert.equal(merged2[0]?.quantity, 4, '多次合并空列表结果应不变');
-});
 
 test('5.7 markSessionViewed 幂等性：相同 sessionId 多次调用不应报错（逻辑验证）', () => {
   // 验证 SQL 中 viewed_at IS NULL 条件保证幂等性

@@ -1,4 +1,4 @@
-import { afterTransactionCommit, withTransaction } from '../../config/database.js';
+import { afterTransactionCommit, query, withTransaction } from '../../config/database.js';
 import { redis } from '../../config/redis.js';
 import { itemService } from '../itemService.js';
 import { sendSystemMail, type MailAttachItem } from '../mailService.js';
@@ -50,6 +50,7 @@ export type BufferedCharacterItemGrant = {
   qty: number;
   bindType?: string;
   obtainedFrom: string;
+  idleSessionId?: string;
   metadata?: BufferedCharacterItemGrantMetadata | null;
   quality?: string | null;
   qualityRank?: number | null;
@@ -66,6 +67,7 @@ type EncodedCharacterItemGrantPayload = {
   itemDefId: string;
   bindType: string;
   obtainedFrom: string;
+  idleSessionId: string | null;
   metadata: BufferedCharacterItemGrantMetadata | null;
   quality: string | null;
   qualityRank: number | null;
@@ -83,6 +85,7 @@ export type PendingCharacterItemGrant = {
   qty: number;
   bindType: string;
   obtainedFrom: string;
+  idleSessionId: string | null;
   metadata: BufferedCharacterItemGrantMetadata | null;
   quality: string | null;
   qualityRank: number | null;
@@ -178,6 +181,11 @@ const normalizeObtainedFrom = (obtainedFrom: string): string => {
   return String(obtainedFrom || '').trim();
 };
 
+const normalizeIdleSessionId = (idleSessionId: string | null | undefined): string | null => {
+  const normalized = String(idleSessionId ?? '').trim();
+  return normalized || null;
+};
+
 const normalizeGrantMetadata = (
   metadata: BufferedCharacterItemGrantMetadata | null | undefined,
 ): BufferedCharacterItemGrantMetadata | null => {
@@ -206,6 +214,7 @@ const encodeItemGrantPayload = (payload: EncodedCharacterItemGrantPayload): stri
     itemDefId: payload.itemDefId,
     bindType: payload.bindType,
     obtainedFrom: payload.obtainedFrom,
+    idleSessionId: payload.idleSessionId,
     equipOptions: payload.equipOptions,
   });
 };
@@ -225,6 +234,7 @@ const decodeItemGrantPayload = (raw: string): EncodedCharacterItemGrantPayload |
       itemDefId,
       bindType,
       obtainedFrom,
+      idleSessionId: normalizeIdleSessionId(parsed.idleSessionId),
       metadata: normalizeGrantMetadata(parsed.metadata),
       quality: normalizeGrantQuality(parsed.quality),
       qualityRank: normalizeGrantQualityRank(parsed.qualityRank),
@@ -255,6 +265,7 @@ const normalizeBufferedCharacterItemGrants = (
       itemDefId,
       bindType: normalizeBindType(grant.bindType),
       obtainedFrom,
+      idleSessionId: normalizeIdleSessionId(grant.idleSessionId),
       metadata: normalizeGrantMetadata(grant.metadata),
       quality: normalizeGrantQuality(grant.quality),
       qualityRank: normalizeGrantQualityRank(grant.qualityRank),
@@ -456,14 +467,15 @@ export const loadCharacterPendingItemGrants = async (
   for (const [field, qty] of mergedHash.entries()) {
     const payload = decodeItemGrantPayload(field);
     if (!payload || qty <= 0) continue;
-    pendingGrants.push({
-      itemDefId: payload.itemDefId,
-      qty,
-      bindType: payload.bindType,
-      obtainedFrom: payload.obtainedFrom,
-      metadata: payload.metadata,
-      quality: payload.quality,
-      qualityRank: payload.qualityRank,
+      pendingGrants.push({
+        itemDefId: payload.itemDefId,
+        qty,
+        bindType: payload.bindType,
+        obtainedFrom: payload.obtainedFrom,
+        idleSessionId: payload.idleSessionId,
+        metadata: payload.metadata,
+        quality: payload.quality,
+        qualityRank: payload.qualityRank,
     });
   }
   return pendingGrants;
@@ -482,6 +494,7 @@ const flushSingleCharacterItemGrants = async (
       createCharacterInventoryMutationContext([characterId]),
     ]);
     const pendingMailItems: MailAttachItem[] = [];
+    const idleBagFullSessionIds = new Set<string>();
     let receiverUserId = 0;
 
     for (const grant of grants) {
@@ -510,6 +523,9 @@ const flushSingleCharacterItemGrants = async (
       }
 
       if (createResult.message === '背包已满') {
+        if (grant.payload.idleSessionId) {
+          idleBagFullSessionIds.add(grant.payload.idleSessionId);
+        }
         pushPendingMailItem(pendingMailItems, {
           item_def_id: grant.payload.itemDefId,
           qty: grant.qty,
@@ -537,6 +553,16 @@ const flushSingleCharacterItemGrants = async (
       if (!mailResult.success) {
         throw new Error(`角色资产 Delta 补发邮件失败: characterId=${characterId}, message=${mailResult.message}`);
       }
+    }
+
+    if (idleBagFullSessionIds.size > 0) {
+      await query(
+        `UPDATE idle_sessions
+         SET bag_full_flag = true,
+             updated_at = NOW()
+         WHERE id = ANY($1::uuid[])`,
+        [[...idleBagFullSessionIds]],
+      );
     }
   });
 };

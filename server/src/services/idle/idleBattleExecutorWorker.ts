@@ -127,7 +127,7 @@ const loopRuntimeStates = new Map<
 // 缓冲区管理
 // ============================================
 
-function createBuffer(session: Pick<IdleSessionRow, 'rewardItems' | 'bagFullFlag'>): BatchBuffer {
+function createBuffer(session: Pick<IdleSessionRow, 'bagFullFlag'>): BatchBuffer {
   return {
     rewardWindow: createIdleRewardWindowState(),
     summaryState: createIdleSessionSummaryState(session),

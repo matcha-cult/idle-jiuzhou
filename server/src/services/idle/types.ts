@@ -123,7 +123,6 @@ export interface SessionSnapshot {
 /**
  * 挂机会话行（idle_sessions 表的 TypeScript 映射）
  * - status 联合字面量：active → stopping → completed | interrupted
- * - rewardItems 为累计物品奖励列表，每次战斗胜利后追加合并
  * - bagFullFlag 表示本次挂机期间出现过“背包空间不足，改走邮件补发”的情况
  * - viewedAt 为 null 表示玩家尚未查看本次挂机结果（保留会话已读语义）
  */
@@ -140,7 +139,6 @@ export interface IdleSessionRow {
   loseCount: number;
   totalExp: number;
   totalSilver: number;
-  rewardItems: RewardItemEntry[];
   bagFullFlag: boolean;
   startedAt: Date;
   endedAt: Date | null;
@@ -149,7 +147,7 @@ export interface IdleSessionRow {
 
 /**
  * 奖励物品条目
- * - 用于 IdleSessionRow.rewardItems 与实时挂机收益推送
+ * - 用于实时挂机收益推送与奖励兑现计划预览
  * - itemDefId：物品定义 ID；itemName：展示名称（快照，防止物品改名后历史记录显示异常）
  */
 export interface RewardItemEntry {

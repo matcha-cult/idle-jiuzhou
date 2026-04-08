@@ -15,11 +15,11 @@
  *
  * 关键边界条件与坑点：
  *   1. 数据库字段名必须使用表结构的 snake_case（例如 character_id），不能直接读取 characterId。
- *   2. JSON 字段（session_snapshot/reward_items）默认由 pg 解析；
+ *   2. JSON 字段（session_snapshot）默认由 pg 解析；
  *      本模块不做兼容解析，调用方需保证查询驱动配置一致。
  */
 
-import type { IdleSessionRow, RewardItemEntry, SessionSnapshot } from './types.js';
+import type { IdleSessionRow, SessionSnapshot } from './types.js';
 
 /** 将 idle_sessions 查询行映射为 IdleSessionRow。 */
 export function rowToIdleSessionRow(row: Record<string, unknown>): IdleSessionRow {
@@ -36,7 +36,6 @@ export function rowToIdleSessionRow(row: Record<string, unknown>): IdleSessionRo
     loseCount: Number(row.lose_count),
     totalExp: Number(row.total_exp),
     totalSilver: Number(row.total_silver),
-    rewardItems: (row.reward_items as RewardItemEntry[]) ?? [],
     bagFullFlag: Boolean(row.bag_full_flag),
     startedAt: new Date(row.started_at as string),
     endedAt: row.ended_at ? new Date(row.ended_at as string) : null,
