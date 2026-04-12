@@ -1125,7 +1125,54 @@ const loadEquippedTitleEffectsMap = async (
 interface ResolvedStaticAttrs {
   attrs: CharacterComputedStats;
   primaryAttrs: CharacterPrimaryAttrs;
+  previousAttrs: CharacterComputedStats | null;
 }
+
+/**
+ * 基于最大资源变化同步当前资源。
+ *
+ * 作用：
+ * 1. 在共享角色状态层统一处理 max_qixue/max_lingqi 变化对 qixue/lingqi 的影响，避免单角色/批量入口各写一套。
+ * 2. 保持运行时资源缓存仍只存 current 值，不额外扩展 Redis schema。
+ * 3. 不做什么：不引入战斗内 isAlive/复活语义，也不改变首次初始化“满血、零灵气”的既有规则。
+ *
+ * 输入/输出：
+ * - 输入：当前资源缓存、最新最大资源，以及可选的上一版最大资源。
+ * - 输出：按 delta 同步并 clamp 后的 CharacterResourceState。
+ *
+ * 数据流/状态流：
+ * existing resource state + previous max attrs + next max attrs -> delta sync -> clamp -> 回写 resource cache。
+ *
+ * 复用设计说明：
+ * - 单角色 ensureResourceState 与批量 ensureResourceStateMap 共用同一 helper，避免资源同步规则分叉。
+ * - “旧 max” 来自静态属性缓存，“current” 来自资源缓存，两类缓存职责保持单一。
+ *
+ * 关键边界条件与坑点：
+ * 1. 没有上一版 max 时，不能伪造 delta；此时只能保留首次初始化/普通 clamp 语义。
+ * 2. 战斗外共享状态允许 qixue 降到 0，但不能把战斗内死亡态或保底 1 血规则带到这里。
+ */
+const syncResourceStateWithMaxDelta = (params: {
+  state: CharacterResourceState;
+  maxQixue: number;
+  maxLingqi: number;
+  previousMaxQixue?: number | null;
+  previousMaxLingqi?: number | null;
+  applyDelta: boolean;
+}): CharacterResourceState => {
+  const qixueBase = Math.floor(params.state.qixue);
+  const lingqiBase = Math.floor(params.state.lingqi);
+  const nextQixue = params.applyDelta && Number.isFinite(params.previousMaxQixue)
+    ? qixueBase + (params.maxQixue - Math.floor(params.previousMaxQixue ?? 0))
+    : qixueBase;
+  const nextLingqi = params.applyDelta && Number.isFinite(params.previousMaxLingqi)
+    ? lingqiBase + (params.maxLingqi - Math.floor(params.previousMaxLingqi ?? 0))
+    : lingqiBase;
+
+  return {
+    qixue: clampNumber(nextQixue, 0, params.maxQixue),
+    lingqi: clampNumber(nextLingqi, 0, params.maxLingqi),
+  };
+};
 
 type StaticAttrComputationDependencies = {
   equipBonuses: EquippedAttrBonuses;
@@ -1182,6 +1229,7 @@ const computeStaticAttrsFromDependencies = async (
   return {
     attrs: normalizeStats(stats),
     primaryAttrs,
+    previousAttrs: null,
   };
 };
 
@@ -1521,16 +1569,21 @@ const ensureResourceState = async (
   characterId: number,
   maxQixue: number,
   maxLingqi: number,
+  previousMaxes?: { maxQixue: number; maxLingqi: number } | null,
 ): Promise<CharacterResourceState> => {
   const existing = await readResourceStateFromCache(characterId);
   const initState: CharacterResourceState = existing ?? {
     qixue: maxQixue,
     lingqi: 0,
   };
-  const normalized: CharacterResourceState = {
-    qixue: clampNumber(Math.floor(initState.qixue), 0, maxQixue),
-    lingqi: clampNumber(Math.floor(initState.lingqi), 0, maxLingqi),
-  };
+  const normalized = syncResourceStateWithMaxDelta({
+    state: initState,
+    maxQixue,
+    maxLingqi,
+    previousMaxQixue: previousMaxes?.maxQixue ?? null,
+    previousMaxLingqi: previousMaxes?.maxLingqi ?? null,
+    applyDelta: existing != null,
+  });
   if (!existing || existing.qixue !== normalized.qixue || existing.lingqi !== normalized.lingqi) {
     await writeResourceStateCache(characterId, normalized);
   }
@@ -1544,12 +1597,13 @@ const resolveStaticAttrs = async (
   globalBuffValues: CharacterGlobalBuffValues,
 ): Promise<ResolvedStaticAttrs> => {
   const signature = buildSignature(base, monthCardFuyuanBonus, globalBuffValues);
+  const cached = bypassStaticCache ? null : await readStaticAttrsFromCache(base.id);
   if (!bypassStaticCache) {
-    const cached = await readStaticAttrsFromCache(base.id);
     if (cached && cached.signature === signature) {
       return {
         attrs: cached.attrs,
         primaryAttrs: cached.primaryAttrs,
+        previousAttrs: cached.attrs,
       };
     }
   }
@@ -1559,7 +1613,10 @@ const resolveStaticAttrs = async (
     attrs: resolved.attrs,
     primaryAttrs: resolved.primaryAttrs,
   });
-  return resolved;
+  return {
+    ...resolved,
+    previousAttrs: cached?.attrs ?? null,
+  };
 };
 
 const resolveStaticAttrsMap = async (
@@ -1591,6 +1648,7 @@ const resolveStaticAttrsMap = async (
   }
 
   const uncachedBases: CharacterBaseRow[] = [];
+  const previousAttrsByCharacterId = new Map<number, CharacterComputedStats | null>();
   if (!bypassStaticCache) {
     const cachedPayloadByCharacterId = await readStaticAttrsFromCacheMap(bases.map((base) => base.id));
     for (const base of bases) {
@@ -1599,9 +1657,11 @@ const resolveStaticAttrsMap = async (
         result.set(base.id, {
           attrs: cachedPayload.attrs,
           primaryAttrs: cachedPayload.primaryAttrs,
+          previousAttrs: cachedPayload.attrs,
         });
         continue;
       }
+      previousAttrsByCharacterId.set(base.id, cachedPayload?.attrs ?? null);
       uncachedBases.push(base);
     }
   } else {
@@ -1638,7 +1698,10 @@ const resolveStaticAttrsMap = async (
         techniquePassives: techniquePassivesByCharacterId.get(base.id) ?? {},
       },
     );
-    result.set(base.id, resolved);
+    result.set(base.id, {
+      ...resolved,
+      previousAttrs: previousAttrsByCharacterId.get(base.id) ?? null,
+    });
     cacheWrites.push({
       characterId: base.id,
       payload: {
@@ -1672,6 +1735,12 @@ const buildComputedRow = async (
     base.id,
     staticSnapshot.attrs.max_qixue,
     staticSnapshot.attrs.max_lingqi,
+    staticSnapshot.previousAttrs
+      ? {
+        maxQixue: staticSnapshot.previousAttrs.max_qixue,
+        maxLingqi: staticSnapshot.previousAttrs.max_lingqi,
+      }
+      : null,
   );
   const staminaMax = calcCharacterStaminaMaxByInsightLevel(base.insight_level);
   const stamina = clampNumber(Math.floor(Number(base.stamina) || 0), 0, staminaMax);
@@ -1689,7 +1758,13 @@ const buildComputedRow = async (
 };
 
 const ensureResourceStateMap = async (
-  entries: Array<{ characterId: number; maxQixue: number; maxLingqi: number }>,
+  entries: Array<{
+    characterId: number;
+    maxQixue: number;
+    maxLingqi: number;
+    previousMaxQixue?: number | null;
+    previousMaxLingqi?: number | null;
+  }>,
 ): Promise<Map<number, CharacterResourceState>> => {
   const result = new Map<number, CharacterResourceState>();
   if (entries.length <= 0) {
@@ -1707,10 +1782,14 @@ const ensureResourceStateMap = async (
       qixue: entry.maxQixue,
       lingqi: 0,
     };
-    const normalized: CharacterResourceState = {
-      qixue: clampNumber(Math.floor(initState.qixue), 0, entry.maxQixue),
-      lingqi: clampNumber(Math.floor(initState.lingqi), 0, entry.maxLingqi),
-    };
+    const normalized = syncResourceStateWithMaxDelta({
+      state: initState,
+      maxQixue: entry.maxQixue,
+      maxLingqi: entry.maxLingqi,
+      previousMaxQixue: entry.previousMaxQixue ?? null,
+      previousMaxLingqi: entry.previousMaxLingqi ?? null,
+      applyDelta: existing != null,
+    });
     if (!existing || existing.qixue !== normalized.qixue || existing.lingqi !== normalized.lingqi) {
       cacheWrites.push({
         characterId: entry.characterId,
@@ -1767,6 +1846,8 @@ const buildCharacterComputedRowMap = async (
         characterId: row.id,
         maxQixue: staticSnapshot?.attrs.max_qixue ?? 1,
         maxLingqi: staticSnapshot?.attrs.max_lingqi ?? 0,
+        previousMaxQixue: staticSnapshot?.previousAttrs?.max_qixue ?? null,
+        previousMaxLingqi: staticSnapshot?.previousAttrs?.max_lingqi ?? null,
       };
     }),
   );

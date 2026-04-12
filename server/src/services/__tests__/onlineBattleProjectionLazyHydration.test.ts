@@ -33,6 +33,7 @@ import * as partnerBattleMemberService from '../shared/partnerBattleMember.js';
 import {
   getOnlineBattleCharacterSnapshotByCharacterId,
   getOnlineBattleCharacterSnapshotByUserId,
+  refreshOnlineBattleCharacterSnapshotsByCharacterIds,
   warmupOnlineBattleProjectionService,
 } from '../onlineBattleProjectionService.js';
 
@@ -333,4 +334,120 @@ test('在线战斗投影应在读取旧 Redis 快照时把货币字段归一化�
   assert.equal(snapshot?.computed.spirit_stones, 123456);
   assert.equal(snapshot?.computed.silver, 7890);
   assert.equal(snapshot?.computed.exp, 321);
+});
+
+test('在线战斗快照刷新应继承共享属性层已经同步后的当前气血与灵气', async (t) => {
+  const computedRow: CharacterComputedRow = {
+    id: 3003,
+    user_id: 90,
+    nickname: '同步后的道友',
+    title: '散修',
+    gender: 'male',
+    avatar: null,
+    auto_cast_skills: true,
+    auto_disassemble_enabled: false,
+    auto_disassemble_rules: [],
+    dungeon_no_stamina_cost: false,
+    spirit_stones: 0,
+    silver: 0,
+    stamina: 50,
+    realm: '炼气',
+    sub_realm: null,
+    exp: 0,
+    attribute_points: 0,
+    jing: 0,
+    qi: 0,
+    shen: 0,
+    attribute_type: 'physical',
+    attribute_element: 'none',
+    current_map_id: 'map-qingyun-village',
+    current_room_id: 'room-village-center',
+    max_qixue: 180,
+    max_lingqi: 90,
+    wugong: 10,
+    fagong: 12,
+    wufang: 8,
+    fafang: 7,
+    mingzhong: 0.9,
+    shanbi: 0.05,
+    zhaojia: 0.02,
+    baoji: 0.1,
+    baoshang: 1.5,
+    jianbaoshang: 0,
+    jianfantan: 0,
+    kangbao: 0,
+    zengshang: 0,
+    zhiliao: 0,
+    jianliao: 0,
+    xixue: 0,
+    lengque: 0,
+    kongzhi_kangxing: 0,
+    jin_kangxing: 0,
+    mu_kangxing: 0,
+    shui_kangxing: 0,
+    huo_kangxing: 0,
+    tu_kangxing: 0,
+    qixue_huifu: 0,
+    lingqi_huifu: 0,
+    sudu: 20,
+    fuyuan: 1,
+    stamina_max: 100,
+    qixue: 135,
+    lingqi: 48,
+  };
+  const loadout: CharacterBattleLoadout = {
+    setBonusEffects: [],
+    skills: [],
+  };
+
+  t.mock.method(redis, 'del', async () => 1);
+  t.mock.method(redis, 'get', async () => null);
+  t.mock.method(redis, 'mget', async (...keys: string[]) => keys.map(() => null));
+  t.mock.method(redis, 'pipeline', () => createPipelineMock());
+  t.mock.method(redis, 'multi', () => createMultiMock());
+
+  t.mock.method(database, 'query', async (sql: string) => {
+    if (sql.includes('WITH recent_characters AS')) return { rows: [] };
+    if (sql.includes('FROM team_members tm')) return { rows: [] };
+    if (sql.includes('FROM dungeon_entry_count')) return { rows: [] };
+    if (sql.includes('FROM arena_rating')) return { rows: [] };
+    if (sql.includes('GROUP BY challenger_character_id')) return { rows: [] };
+    if (sql.includes('FROM arena_battle ab')) return { rows: [] };
+    if (sql.includes('FROM dungeon_instance di')) return { rows: [] };
+    if (sql.includes('FROM character_tower_progress')) return { rows: [] };
+    throw new Error(`未覆盖的 SQL: ${sql}`);
+  });
+
+  t.mock.method(
+    computedService,
+    'getCharacterComputedBatchByCharacterIds',
+    async (characterIds: number[]) => {
+      return characterIds.includes(3003)
+        ? new Map([[3003, computedRow]])
+        : new Map<number, CharacterComputedRow>();
+    },
+  );
+  t.mock.method(
+    profileCache,
+    'loadCharacterBattleLoadoutsByCharacterIds',
+    async (characterIds: number[]) => {
+      return characterIds.includes(3003)
+        ? new Map([[3003, loadout]])
+        : new Map<number, CharacterBattleLoadout>();
+    },
+  );
+  t.mock.method(
+    partnerBattleMemberService,
+    'loadActivePartnerBattleMemberMap',
+    async () => new Map(),
+  );
+
+  const refreshed = await refreshOnlineBattleCharacterSnapshotsByCharacterIds([3003]);
+  const snapshot = refreshed.get(3003);
+
+  assert.ok(snapshot);
+  assert.equal(snapshot.computed.max_qixue, 180);
+  assert.equal(snapshot.computed.max_lingqi, 90);
+  assert.equal(snapshot.computed.qixue, 135);
+  assert.equal(snapshot.computed.lingqi, 48);
 });
