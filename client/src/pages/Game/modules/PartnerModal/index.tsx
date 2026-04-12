@@ -2155,7 +2155,7 @@ const PartnerModal: React.FC<PartnerModalProps> = ({ open, onClose, onRecruitSta
         {renderPartnerSummaryCard('partner-inline-summary')}
         <div className="partner-section-title">技能策略</div>
         <div className="partner-skill-policy-note">
-          以下顺序会影响伙伴在所有战斗中的自动施法尝试顺序，越靠前越优先；关闭后该技能不会自动释放。
+          以下顺序会影响伙伴在所有战斗中的自动施法尝试顺序与开场光环触发顺序，越靠前越优先；关闭后该技能不会自动释放或自动触发。
         </div>
         {skillPolicyLoading ? (
           <Skeleton active paragraph={{ rows: 6 }} />
