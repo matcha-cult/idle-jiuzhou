@@ -20,6 +20,7 @@ import { Transactional } from '../decorators/transactional.js';
 import type { GenerateOptions } from './equipmentService.js';
 import { getInventoryInfo, moveItemInstancesToBagWithStacking } from './inventory/index.js';
 import { lockCharacterInventoryMutex } from './inventoryMutex.js';
+import { itemService } from './itemService.js';
 import { recordCollectItemEventsBatch } from './taskService.js';
 import { createCacheLayer } from './shared/cacheLayer.js';
 import { getGameServerIfInitialized } from '../game/gameServer.js';
@@ -32,7 +33,7 @@ import {
   type GrantedRewardPayload,
   type GrantedRewardPreviewResult,
 } from './shared/rewardPayload.js';
-import { applyCharacterRewardDeltas, createCharacterRewardDelta } from './shared/characterRewardSettlement.js';
+import { createCharacterRewardDelta } from './shared/characterRewardSettlement.js';
 import { getItemDefinitionsByIds } from './staticConfigLoader.js';
 import {
   grantRewardItemWithAutoDisassemble,
@@ -51,7 +52,8 @@ import {
   type MailCounterDeltaInput,
   type MailCounterStateRow,
 } from './shared/mailCounterStore.js';
-import { enqueueCharacterItemGrant } from './shared/characterItemGrantDeltaService.js';
+import { createCharacterBagSlotAllocator } from './shared/characterBagSlotAllocator.js';
+import { createCharacterInventoryMutationContext } from './shared/characterInventoryMutationContext.js';
 import {
   loadProjectedCharacterItemInstances,
   loadProjectedCharacterItemInstanceById,
@@ -219,6 +221,11 @@ type PreparedMailInsertPayload = {
 type PrepareMailInsertPayloadResult =
   | { success: true; payload: PreparedMailInsertPayload }
   | { success: false; message: string };
+
+type MailClaimSynchronousGrantContext = {
+  bagSlotAllocator: Awaited<ReturnType<typeof createCharacterBagSlotAllocator>>;
+  inventoryMutationContext: Awaited<ReturnType<typeof createCharacterInventoryMutationContext>>;
+};
 
 const MAIL_HAS_ATTACHMENTS_SQL = '(attach_silver > 0 OR attach_spirit_stones > 0 OR attach_items IS NOT NULL OR attach_rewards IS NOT NULL OR attach_instance_ids IS NOT NULL)';
 const MAIL_ACTIVE_SCOPE_SQL = `COALESCE(expire_at, 'infinity'::timestamptz) > NOW()`;
@@ -1097,6 +1104,166 @@ class MailService {
     );
   }
 
+  /**
+   * 为“主动邮件领取”创建同步入包上下文。
+   *
+   * 作用：
+   * 1) 邮件领取已明确要求原子语义，因此这里直接复用真实入包能力，而不是走异步 Delta 聚合。
+   * 2) 统一复用背包新槽位分配器与库存视图缓存，避免同一封邮件里多次创建物品重复扫表。
+   *
+   * 输入 / 输出：
+   * - 输入：角色 ID。
+   * - 输出：同步入包时共享的槽位分配器与库存缓存。
+   *
+   * 数据流 / 状态流：
+   * - 调用方先持有角色背包互斥锁；
+   * - 本方法再构建事务内复用的分配器与缓存；
+   * - 后续所有邮件附件物品都走同一份上下文，保证容量视图一致。
+   *
+   * 复用设计说明：
+   * - 不新增第三套入包规则，继续复用 itemService / inventory 的正式入包链路；
+   * - 只把“邮件主动领取不能补发邮件”这一策略收口在邮件服务，避免影响挂机/掉落等被动发奖。
+   *
+   * 关键边界条件与坑点：
+   * 1) 必须在调用前已持有背包互斥锁，否则缓存的槽位视图可能被并发写入打破。
+   * 2) 这里只负责同步入包上下文，不负责事务回滚；调用方必须配合 savepoint 处理失败回退。
+   */
+  private async createMailClaimSynchronousGrantContext(
+    characterId: number,
+  ): Promise<MailClaimSynchronousGrantContext> {
+    const [bagSlotAllocator, inventoryMutationContext] = await Promise.all([
+      createCharacterBagSlotAllocator([characterId]),
+      createCharacterInventoryMutationContext([characterId]),
+    ]);
+
+    return {
+      bagSlotAllocator,
+      inventoryMutationContext,
+    };
+  }
+
+  /**
+   * 执行“主动邮件领取”的同步物品创建。
+   *
+   * 作用：
+   * 1) 主动领取必须做到“要么完整入包，要么整封失败”，因此这里显式绕开异步奖励 Delta。
+   * 2) 复用统一 itemService 创建普通物品/装备，避免邮件服务自行维护一套入包规则。
+   *
+   * 输入 / 输出：
+   * - 输入：收件人、物品定义、数量及附件附带的 metadata/品质/装备参数。
+   * - 输出：与 itemService.createItem 一致的创建结果。
+   *
+   * 数据流 / 状态流：
+   * - 邮件附件参数 -> itemService.createItem -> inventory/equipment 正式入包；
+   * - 同一封邮件复用共享的槽位分配器与库存缓存，避免重复计算容量。
+   *
+   * 复用设计说明：
+   * - attachItems 与 attachRewards.items 都可以复用该入口；
+   * - 自动分解链路只替换 createItem 回调，不再额外拼装第二套库存写入逻辑。
+   *
+   * 关键边界条件与坑点：
+   * 1) 调用方必须已经持有背包互斥锁，因此统一传入 `skipInventoryMutexLock: true`，避免重复加锁。
+   * 2) 若后续逻辑决定整封领取失败，调用方必须回滚 savepoint，否则前面已成功创建的物品会被提交。
+   */
+  private async createMailClaimItemSynchronously(
+    userId: number,
+    characterId: number,
+    context: MailClaimSynchronousGrantContext,
+    params: {
+      itemDefId: string;
+      qty: number;
+      bindType?: string;
+      obtainedFrom: string;
+      metadata?: Record<string, string | number | boolean | null | undefined>;
+      quality?: string;
+      qualityRank?: number;
+      equipOptions?: GenerateOptions;
+    },
+  ): Promise<Awaited<ReturnType<typeof itemService.createItem>>> {
+    return itemService.createItem(userId, characterId, params.itemDefId, params.qty, {
+      obtainedFrom: params.obtainedFrom,
+      ...(params.bindType ? { bindType: params.bindType } : {}),
+      ...(params.metadata ? { metadata: params.metadata } : {}),
+      ...(params.quality ? { quality: params.quality } : {}),
+      ...(params.qualityRank !== undefined ? { qualityRank: params.qualityRank } : {}),
+      ...(params.equipOptions ? { equipOptions: params.equipOptions } : {}),
+      bagSlotAllocator: context.bagSlotAllocator,
+      inventoryMutationContext: context.inventoryMutationContext,
+      skipInventoryMutexLock: true,
+      persistImmediately: true,
+    });
+  }
+
+  /**
+   * 在当前事务内立即结算邮件领取资源增量。
+   *
+   * 作用：
+   * 1) 主动邮件领取需要严格服从 savepoint 回滚，因此不能继续走 after-commit 资源 Delta。
+   * 2) 把邮件里的经验/银两/灵石直接落到 `characters`，保证同一事务失败时能完整回退。
+   *
+   * 输入 / 输出：
+   * - 输入：角色 ID 与待结算的 exp / silver / spiritStones 增量。
+   * - 输出：无；当前事务内直接更新角色资源。
+   *
+   * 数据流 / 状态流：
+   * - 邮件奖励阶段先在内存里累计资源；
+   * - 需要提交时统一走本方法一次性写库；
+   * - 若外层 savepoint / 事务回滚，资源会随之回退。
+   *
+   * 复用设计说明：
+   * - 被动奖励仍走共享 Delta 聚合；
+   * - 只有“主动邮件领取”需要更强的一致性，因此把立即结算逻辑局部收口在邮件服务。
+   *
+   * 关键边界条件与坑点：
+   * 1) 这里只处理经验、银两、灵石，不负责运行时气血/灵气缓存。
+   * 2) 调用前必须先把所有资源增量规整为整数，避免出现数据库层隐式转换差异。
+   */
+  private async applyMailClaimRewardDeltaImmediately(
+    characterId: number,
+    delta: {
+      exp: number;
+      silver: number;
+      spiritStones: number;
+    },
+  ): Promise<void> {
+    const exp = Math.floor(Number(delta.exp) || 0);
+    const silver = Math.floor(Number(delta.silver) || 0);
+    const spiritStones = Math.floor(Number(delta.spiritStones) || 0);
+    if (exp === 0 && silver === 0 && spiritStones === 0) {
+      return;
+    }
+
+    await query(
+      `
+        UPDATE characters
+        SET exp = exp + $1,
+            silver = silver + $2,
+            spirit_stones = spirit_stones + $3,
+            updated_at = NOW()
+        WHERE id = $4
+      `,
+      [exp, silver, spiritStones, characterId],
+    );
+  }
+
+  private normalizeMailClaimDistributionErrorMessage(message: string): string {
+    if (this.isBagCapacityMessage(message)) {
+      return '背包空间不足';
+    }
+    const normalizedMessage = String(message || '').trim();
+    return normalizedMessage || '邮件附件领取失败';
+  }
+
+  private isMailClaimRecoverableDistributionError(message: string): boolean {
+    const normalizedMessage = String(message || '').trim();
+    return this.isBagCapacityMessage(normalizedMessage)
+      || normalizedMessage.startsWith('物品创建失败:')
+      || normalizedMessage.startsWith('实例附件入包失败:')
+      || normalizedMessage === '邮件领取同步入包上下文缺失'
+      || normalizedMessage === '自动分解奖励发放失败'
+      || normalizedMessage === '邮件领取资源目标不一致';
+  }
+
   private async getMailClaimAutoDisassembleSetting(
     characterId: number,
     autoDisassemble: boolean,
@@ -1935,15 +2102,22 @@ class MailService {
     });
     const effectiveAttachItems = treatAttachItemsAsPreviewOnly ? [] : attachItems;
     const hasItems = effectiveAttachItems.length > 0 || attachInstanceIds.length > 0;
+    const shouldLockInventoryForClaim = hasAttachRewards || hasItems;
 
     if (!hasAttachRewards && !hasCurrency && !hasItems) {
       return { success: false, message: '该邮件没有附件' };
     }
 
+    const rewardDistributionSavepoint = 'mail_claim_reward_distribution';
+    await query(`SAVEPOINT ${rewardDistributionSavepoint}`);
+
     let lockedInstanceRows: ClaimInstanceRow[] = [];
-    if (attachInstanceIds.length > 0) {
-      // 只有“保留原实例属性”的附件仍需要同步入包，因此只为这一类领取持有背包互斥锁并做容量校验。
+    let mailClaimSynchronousGrantContext: MailClaimSynchronousGrantContext | null = null;
+    if (shouldLockInventoryForClaim) {
       await lockCharacterInventoryMutex(characterId);
+    }
+    if (attachInstanceIds.length > 0) {
+      // 只有“保留原实例属性”的附件仍需要同步入包，因此这一类领取在持有背包互斥锁后继续做容量校验。
       const projectedInstances = await Promise.all(
         attachInstanceIds.map((attachInstanceId) =>
           loadProjectedCharacterItemInstanceById(characterId, attachInstanceId),
@@ -2006,6 +2180,10 @@ class MailService {
       }
     }
 
+    if (hasAttachRewards || effectiveAttachItems.length > 0) {
+      mailClaimSynchronousGrantContext = await this.createMailClaimSynchronousGrantContext(characterId);
+    }
+
     const rewardItemDisplayMetaById = resolveRewardItemDisplayMetaMap([
       ...lockedInstanceRows.map((row) => String(row.item_def_id || '').trim()),
       ...effectiveAttachItems.map((attachItem) => String(attachItem.item_def_id || '').trim()),
@@ -2020,182 +2198,239 @@ class MailService {
     const rewardDelta = createCharacterRewardDelta();
 
     // 7. 发放奖励
-    if (hasAttachRewards) {
-      rewards = await grantSectionRewards(
-        userId,
-        characterId,
-        buildGrantRewardsInput(attachRewards),
-        {
-          obtainedFrom: 'mail',
-          obtainedRefId: String(mailId),
-          autoDisassembleSetting: autoDisassembleSetting ?? undefined,
-        },
-      );
-    } else if (hasItems || hasCurrency) {
-      if (hasCurrency) {
-        rewardDelta.silver += Math.max(0, Math.floor(Number(mail.attach_silver) || 0));
-        rewardDelta.spiritStones += Math.max(0, Math.floor(Number(mail.attach_spirit_stones) || 0));
-
-        if (mail.attach_silver > 0) rewards.push({ type: 'silver', amount: mail.attach_silver });
-        if (mail.attach_spirit_stones > 0) rewards.push({ type: 'spirit_stones', amount: mail.attach_spirit_stones });
-      }
-
-      if (attachInstanceIds.length > 0) {
-        // 实例附件领取：复用库存模块“实例入包自动堆叠”逻辑，避免同规则在邮件/坊市重复实现。
-        const moveResult = await moveItemInstancesToBagWithStacking(
+    try {
+      if (hasAttachRewards) {
+        if (!mailClaimSynchronousGrantContext) {
+          throw new Error('邮件领取同步入包上下文缺失');
+        }
+        rewards = await grantSectionRewards(
+          userId,
           characterId,
-          attachInstanceIds,
+          buildGrantRewardsInput(attachRewards),
           {
-            expectedSourceLocation: 'mail',
-            expectedOwnerUserId: userId,
-          },
-        );
-        if (!moveResult.success) {
-          throw new Error(`实例附件入包失败: ${moveResult.message}`);
-        }
-        claimedInstanceIds = moveResult.itemIds;
-
-        for (const row of lockedInstanceRows) {
-          const key = String(row.item_def_id || '').trim();
-          const qty = Math.max(1, Math.floor(Number(row.qty) || 1));
-          if (key) collectCounts.set(key, (collectCounts.get(key) || 0) + qty);
-          rewards.push({
-            type: 'item',
-            itemDefId: key,
-            quantity: qty,
-            itemName: resolveMailClaimRewardItemName(key, undefined, rewardItemDisplayMetaById),
-          });
-        }
-      } else {
-        const attachItemDefIds = Array.from(
-          new Set(
-            effectiveAttachItems
-              .map((attachItem) => String(attachItem.item_def_id || '').trim())
-              .filter((itemDefId) => itemDefId.length > 0),
-          ),
-        );
-        const attachItemDefs = getItemDefinitionsByIds(attachItemDefIds);
-
-        for (const attachItem of effectiveAttachItems) {
-          if (autoDisassembleSetting) {
-            const itemDefId = String(attachItem.item_def_id || '').trim();
-            const itemDef = attachItemDefs.get(itemDefId);
-            const autoDisassembleResult = await grantRewardItemWithAutoDisassemble({
-              characterId,
-              itemDefId,
-              qty: Math.max(1, Math.floor(Number(attachItem.qty) || 1)),
-              bindType: attachItem.options?.bindType,
-              itemMeta: {
-                itemName:
-                  resolveMailClaimRewardItemName(
-                    itemDefId,
-                    attachItem.item_name,
-                    rewardItemDisplayMetaById,
-                  ) || itemDefId,
-                category: String(itemDef?.category || ''),
-                subCategory: typeof itemDef?.sub_category === 'string' ? itemDef.sub_category : null,
-                effectDefs: itemDef?.effect_defs,
-                qualityRank: resolveQualityRankFromName(itemDef?.quality, 1),
-                disassemblable: typeof itemDef?.disassemblable === 'boolean' ? itemDef.disassemblable : null,
-              },
-              autoDisassembleSetting,
-              sourceObtainedFrom: 'mail',
-              createItem: async (params) => {
-                return enqueueCharacterItemGrant({
-                  characterId,
-                  userId,
+            obtainedFrom: 'mail',
+            obtainedRefId: String(mailId),
+            autoDisassembleSetting: autoDisassembleSetting ?? undefined,
+            itemCreateFn: async (params) => {
+              return this.createMailClaimItemSynchronously(
+                userId,
+                characterId,
+                mailClaimSynchronousGrantContext!,
+                {
                   itemDefId: params.itemDefId,
                   qty: params.qty,
+                  bindType: params.bindType,
                   obtainedFrom: params.obtainedFrom,
-                  ...(params.bindType ? { bindType: params.bindType } : {}),
-                  ...(attachItem.options?.metadata ? { metadata: attachItem.options.metadata } : {}),
-                  ...(attachItem.options?.quality ? { quality: attachItem.options.quality } : {}),
-                  ...(attachItem.options?.qualityRank !== undefined
-                    ? { qualityRank: attachItem.options.qualityRank }
-                    : {}),
                   ...(params.equipOptions !== undefined
                     ? { equipOptions: params.equipOptions as GenerateOptions }
                     : {}),
-                });
-              },
-              addSilver: async (targetCharacterId, silverAmount) => {
-                if (targetCharacterId !== characterId) {
-                  return { success: false, message: '邮件领取资源目标不一致' };
-                }
-                rewardDelta.silver += silverAmount;
-                return { success: true, message: 'ok' };
-              },
-              sourceEquipOptions: attachItem.options?.equipOptions,
-            });
-
-            for (const grantedItem of autoDisassembleResult.grantedItems) {
-              if (grantedItem.itemIds.length > 0) {
-                claimedInstanceIds.push(...grantedItem.itemIds);
-              }
-              collectCounts.set(
-                grantedItem.itemDefId,
-                (collectCounts.get(grantedItem.itemDefId) || 0) + grantedItem.qty,
+                },
               );
-              rewards.push({
-                type: 'item',
-                itemDefId: grantedItem.itemDefId,
-                quantity: grantedItem.qty,
-                itemName: resolveMailClaimRewardItemName(
-                  grantedItem.itemDefId,
-                  undefined,
-                  rewardItemDisplayMetaById,
-                ),
-              });
-            }
-            if (autoDisassembleResult.gainedSilver > 0) {
-              rewards.push({ type: 'silver', amount: autoDisassembleResult.gainedSilver });
-            }
-            continue;
-          }
+            },
+            failOnPendingMail: true,
+            rewardDeltaApplyFn: async (delta) => {
+              await this.applyMailClaimRewardDeltaImmediately(characterId, delta);
+            },
+          },
+        );
+      } else if (hasItems || hasCurrency) {
+        if (hasCurrency) {
+          rewardDelta.silver += Math.max(0, Math.floor(Number(mail.attach_silver) || 0));
+          rewardDelta.spiritStones += Math.max(0, Math.floor(Number(mail.attach_spirit_stones) || 0));
 
-          const createResult = await enqueueCharacterItemGrant({
+          if (mail.attach_silver > 0) rewards.push({ type: 'silver', amount: mail.attach_silver });
+          if (mail.attach_spirit_stones > 0) rewards.push({ type: 'spirit_stones', amount: mail.attach_spirit_stones });
+        }
+
+        if (attachInstanceIds.length > 0) {
+          // 实例附件领取：复用库存模块“实例入包自动堆叠”逻辑，避免同规则在邮件/坊市重复实现。
+          const moveResult = await moveItemInstancesToBagWithStacking(
             characterId,
-            userId,
-            itemDefId: attachItem.item_def_id,
-            qty: attachItem.qty,
-            obtainedFrom: 'mail',
-            ...(attachItem.options?.bindType ? { bindType: attachItem.options.bindType } : {}),
-            ...(attachItem.options?.metadata ? { metadata: attachItem.options.metadata } : {}),
-            ...(attachItem.options?.quality ? { quality: attachItem.options.quality } : {}),
-            ...(attachItem.options?.qualityRank !== undefined
-              ? { qualityRank: attachItem.options.qualityRank }
-              : {}),
-            ...(attachItem.options?.equipOptions
-              ? { equipOptions: attachItem.options.equipOptions as GenerateOptions }
-              : {}),
-          });
-
-          if (!createResult.success) {
-            return { success: false, message: `物品创建失败: ${createResult.message}` };
+            attachInstanceIds,
+            {
+              expectedSourceLocation: 'mail',
+              expectedOwnerUserId: userId,
+              persistImmediately: true,
+            },
+          );
+          if (!moveResult.success) {
+            throw new Error(`实例附件入包失败: ${moveResult.message}`);
           }
+          claimedInstanceIds = moveResult.itemIds;
 
-          if (createResult.itemIds) {
-            claimedInstanceIds.push(...createResult.itemIds);
+          for (const row of lockedInstanceRows) {
+            const key = String(row.item_def_id || '').trim();
+            const qty = Math.max(1, Math.floor(Number(row.qty) || 1));
+            if (key) collectCounts.set(key, (collectCounts.get(key) || 0) + qty);
+            rewards.push({
+              type: 'item',
+              itemDefId: key,
+              quantity: qty,
+              itemName: resolveMailClaimRewardItemName(key, undefined, rewardItemDisplayMetaById),
+            });
           }
-
-          const key = String(attachItem.item_def_id || '').trim();
-          if (key) collectCounts.set(key, (collectCounts.get(key) || 0) + Math.max(1, Math.floor(Number(attachItem.qty) || 1)));
-          rewards.push({
-            type: 'item',
-            itemDefId: key,
-            quantity: Math.max(1, Math.floor(Number(attachItem.qty) || 1)),
-            itemName: resolveMailClaimRewardItemName(
-              key,
-              attachItem.item_name,
-              rewardItemDisplayMetaById,
+        } else {
+          if (!mailClaimSynchronousGrantContext) {
+            throw new Error('邮件领取同步入包上下文缺失');
+          }
+          const attachItemDefIds = Array.from(
+            new Set(
+              effectiveAttachItems
+                .map((attachItem) => String(attachItem.item_def_id || '').trim())
+                .filter((itemDefId) => itemDefId.length > 0),
             ),
-          });
+          );
+          const attachItemDefs = getItemDefinitionsByIds(attachItemDefIds);
+
+          for (const attachItem of effectiveAttachItems) {
+            if (autoDisassembleSetting) {
+              const itemDefId = String(attachItem.item_def_id || '').trim();
+              const itemDef = attachItemDefs.get(itemDefId);
+              const autoDisassembleResult = await grantRewardItemWithAutoDisassemble({
+                characterId,
+                itemDefId,
+                qty: Math.max(1, Math.floor(Number(attachItem.qty) || 1)),
+                bindType: attachItem.options?.bindType,
+                itemMeta: {
+                  itemName:
+                    resolveMailClaimRewardItemName(
+                      itemDefId,
+                      attachItem.item_name,
+                      rewardItemDisplayMetaById,
+                    ) || itemDefId,
+                  category: String(itemDef?.category || ''),
+                  subCategory: typeof itemDef?.sub_category === 'string' ? itemDef.sub_category : null,
+                  effectDefs: itemDef?.effect_defs,
+                  qualityRank: resolveQualityRankFromName(itemDef?.quality, 1),
+                  disassemblable: typeof itemDef?.disassemblable === 'boolean' ? itemDef.disassemblable : null,
+                },
+                autoDisassembleSetting,
+                sourceObtainedFrom: 'mail',
+                createItem: async (params) => {
+                  return this.createMailClaimItemSynchronously(
+                    userId,
+                    characterId,
+                    mailClaimSynchronousGrantContext!,
+                    {
+                      itemDefId: params.itemDefId,
+                      qty: params.qty,
+                      bindType: params.bindType,
+                      obtainedFrom: params.obtainedFrom,
+                      ...(attachItem.options?.metadata ? { metadata: attachItem.options.metadata } : {}),
+                      ...(attachItem.options?.quality ? { quality: attachItem.options.quality } : {}),
+                      ...(attachItem.options?.qualityRank !== undefined
+                        ? { qualityRank: attachItem.options.qualityRank }
+                        : {}),
+                      ...(params.equipOptions !== undefined
+                        ? { equipOptions: params.equipOptions as GenerateOptions }
+                        : {}),
+                    },
+                  );
+                },
+                addSilver: async (targetCharacterId, silverAmount) => {
+                  if (targetCharacterId !== characterId) {
+                    return { success: false, message: '邮件领取资源目标不一致' };
+                  }
+                  rewardDelta.silver += silverAmount;
+                  return { success: true, message: 'ok' };
+                },
+                sourceEquipOptions: attachItem.options?.equipOptions,
+              });
+
+              if (autoDisassembleResult.pendingMailItems.length > 0) {
+                throw new Error('背包已满');
+              }
+              if (autoDisassembleResult.warnings.length > 0) {
+                throw new Error(autoDisassembleResult.warnings[0] ?? '自动分解奖励发放失败');
+              }
+
+              for (const grantedItem of autoDisassembleResult.grantedItems) {
+                if (grantedItem.itemIds.length > 0) {
+                  claimedInstanceIds.push(...grantedItem.itemIds);
+                }
+                collectCounts.set(
+                  grantedItem.itemDefId,
+                  (collectCounts.get(grantedItem.itemDefId) || 0) + grantedItem.qty,
+                );
+                rewards.push({
+                  type: 'item',
+                  itemDefId: grantedItem.itemDefId,
+                  quantity: grantedItem.qty,
+                  itemName: resolveMailClaimRewardItemName(
+                    grantedItem.itemDefId,
+                    undefined,
+                    rewardItemDisplayMetaById,
+                  ),
+                });
+              }
+              if (autoDisassembleResult.gainedSilver > 0) {
+                rewards.push({ type: 'silver', amount: autoDisassembleResult.gainedSilver });
+              }
+              continue;
+            }
+
+            const createResult = await this.createMailClaimItemSynchronously(
+              userId,
+              characterId,
+              mailClaimSynchronousGrantContext,
+              {
+                itemDefId: attachItem.item_def_id,
+                qty: attachItem.qty,
+                obtainedFrom: 'mail',
+                ...(attachItem.options?.bindType ? { bindType: attachItem.options.bindType } : {}),
+                ...(attachItem.options?.metadata ? { metadata: attachItem.options.metadata } : {}),
+                ...(attachItem.options?.quality ? { quality: attachItem.options.quality } : {}),
+                ...(attachItem.options?.qualityRank !== undefined
+                  ? { qualityRank: attachItem.options.qualityRank }
+                  : {}),
+                ...(attachItem.options?.equipOptions
+                  ? { equipOptions: attachItem.options.equipOptions as GenerateOptions }
+                  : {}),
+              },
+            );
+
+            if (!createResult.success) {
+              throw new Error(`物品创建失败: ${createResult.message}`);
+            }
+
+            if (createResult.itemIds) {
+              claimedInstanceIds.push(...createResult.itemIds);
+            }
+
+            const key = String(attachItem.item_def_id || '').trim();
+            if (key) collectCounts.set(key, (collectCounts.get(key) || 0) + Math.max(1, Math.floor(Number(attachItem.qty) || 1)));
+            rewards.push({
+              type: 'item',
+              itemDefId: key,
+              quantity: Math.max(1, Math.floor(Number(attachItem.qty) || 1)),
+              itemName: resolveMailClaimRewardItemName(
+                key,
+                attachItem.item_name,
+                rewardItemDisplayMetaById,
+              ),
+            });
+          }
         }
       }
-    }
 
-    if (rewardDelta.exp !== 0 || rewardDelta.silver !== 0 || rewardDelta.spiritStones !== 0) {
-      await applyCharacterRewardDeltas(new Map([[characterId, rewardDelta]]));
+      if (rewardDelta.exp !== 0 || rewardDelta.silver !== 0 || rewardDelta.spiritStones !== 0) {
+        await this.applyMailClaimRewardDeltaImmediately(characterId, rewardDelta);
+      }
+      await query(`RELEASE SAVEPOINT ${rewardDistributionSavepoint}`);
+    } catch (error) {
+      await query(`ROLLBACK TO SAVEPOINT ${rewardDistributionSavepoint}`);
+      await query(`RELEASE SAVEPOINT ${rewardDistributionSavepoint}`);
+
+      if (error instanceof Error) {
+        if (!this.isMailClaimRecoverableDistributionError(error.message)) {
+          throw error;
+        }
+        return {
+          success: false,
+          message: this.normalizeMailClaimDistributionErrorMessage(error.message),
+        };
+      }
+      throw error;
     }
 
     // 8. 更新邮件状态

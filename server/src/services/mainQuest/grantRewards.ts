@@ -15,6 +15,7 @@ import { query } from '../../config/database.js';
 import {
   grantRewardItemWithAutoDisassemble,
   type AutoDisassembleSetting,
+  type GrantItemCreateFn,
 } from '../autoDisassembleRewardService.js';
 import type { GenerateOptions } from '../equipmentService.js';
 import { grantFeatureUnlocksWithSideEffects } from '../featureUnlockService.js';
@@ -39,13 +40,32 @@ export const grantSectionRewards = async (
     obtainedFrom?: string;
     obtainedRefId?: string;
     autoDisassembleSetting?: AutoDisassembleSetting;
+    itemCreateFn?: GrantItemCreateFn;
+    failOnPendingMail?: boolean;
+    rewardDeltaApplyFn?: (delta: { exp: number; silver: number; spiritStones: number }) => Promise<void>;
   },
 ): Promise<RewardResult[]> => {
   const results: RewardResult[] = [];
   const obtainedFrom = asString(options?.obtainedFrom) || 'main_quest';
   const obtainedRefId = asString(options?.obtainedRefId) || undefined;
   const autoDisassembleSetting = options?.autoDisassembleSetting;
+  const itemCreateFn: GrantItemCreateFn =
+    options?.itemCreateFn
+      ?? (async (params) => {
+        return enqueueCharacterItemGrant({
+          characterId,
+          userId,
+          itemDefId: params.itemDefId,
+          qty: params.qty,
+          obtainedFrom: params.obtainedFrom,
+          ...(params.bindType ? { bindType: params.bindType } : {}),
+          ...(params.equipOptions !== undefined
+            ? { equipOptions: params.equipOptions as GenerateOptions }
+            : {}),
+        });
+      });
   const rewardDelta = createCharacterRewardDelta();
+  const rewardDeltaApplyFn = options?.rewardDeltaApplyFn;
 
   const exp = asNumber((rewards as { exp?: unknown }).exp, 0);
   if (exp > 0) {
@@ -93,19 +113,7 @@ export const grantSectionRewards = async (
         },
         autoDisassembleSetting,
         sourceObtainedFrom: obtainedFrom,
-        createItem: async (params) => {
-          return enqueueCharacterItemGrant({
-            characterId,
-            userId,
-            itemDefId: params.itemDefId,
-            qty: params.qty,
-            obtainedFrom: params.obtainedFrom,
-            ...(params.bindType ? { bindType: params.bindType } : {}),
-            ...(params.equipOptions !== undefined
-              ? { equipOptions: params.equipOptions as GenerateOptions }
-              : {}),
-          });
-        },
+        createItem: itemCreateFn,
         addSilver: async (targetCharacterId, silverAmount) => {
           if (targetCharacterId !== characterId) {
             return { success: false, message: '主线奖励资源目标不一致' };
@@ -114,6 +122,13 @@ export const grantSectionRewards = async (
           return { success: true, message: 'ok' };
         },
       });
+
+      if (options?.failOnPendingMail && autoDisassembleResult.pendingMailItems.length > 0) {
+        throw new Error('背包已满');
+      }
+      if (options?.failOnPendingMail && autoDisassembleResult.warnings.length > 0) {
+        throw new Error(autoDisassembleResult.warnings[0] ?? '奖励发放失败');
+      }
 
       for (const grantedItem of autoDisassembleResult.grantedItems) {
         const grantedItemMeta = resolveRewardItemDisplayMeta(grantedItem.itemDefId);
@@ -131,9 +146,7 @@ export const grantSectionRewards = async (
       continue;
     }
 
-    const result = await enqueueCharacterItemGrant({
-      characterId,
-      userId,
+    const result = await itemCreateFn({
       itemDefId,
       qty: quantity,
       obtainedFrom,
@@ -186,7 +199,11 @@ export const grantSectionRewards = async (
   }
 
   if (rewardDelta.exp > 0 || rewardDelta.silver > 0 || rewardDelta.spiritStones > 0) {
-    await applyCharacterRewardDeltas(new Map([[characterId, rewardDelta]]));
+    if (rewardDeltaApplyFn) {
+      await rewardDeltaApplyFn(rewardDelta);
+    } else {
+      await applyCharacterRewardDeltas(new Map([[characterId, rewardDelta]]));
+    }
   }
 
   const unlockFeatures = asArray<string>((rewards as { unlock_features?: unknown }).unlock_features)
