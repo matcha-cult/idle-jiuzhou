@@ -22,12 +22,14 @@ export type MarketRiskReason =
   | 'query-count-60s'
   | 'query-count-5m'
   | 'same-signature-60s'
-  | 'regular-interval';
+  | 'regular-interval'
+  | 'recent-purchase-success-60s';
 
 export interface MarketPurchaseRiskInput {
   queryCount60s: number;
   queryCount5m: number;
   latestSignatureCount60s: number;
+  recentPurchaseSuccessCount60s: number;
   recentQueryTimestamps: number[];
 }
 
@@ -49,6 +51,8 @@ const QUERY_COUNT_60S_HIGH_THRESHOLD = 30;
 const QUERY_COUNT_5M_THRESHOLD = 90;
 const SAME_SIGNATURE_60S_LOW_THRESHOLD = 10;
 const SAME_SIGNATURE_60S_HIGH_THRESHOLD = 16;
+const RECENT_PURCHASE_SUCCESS_60S_LOW_THRESHOLD = 1;
+const RECENT_PURCHASE_SUCCESS_60S_HIGH_THRESHOLD = 2;
 const REGULAR_INTERVAL_MAX_AVERAGE_MS = 1_800;
 const REGULAR_INTERVAL_MAX_COEFFICIENT = 0.2;
 const REGULAR_INTERVAL_MIN_POINTS = 8;
@@ -113,6 +117,9 @@ export const assessMarketPurchaseRisk = (
   const latestSignatureCount60s = clampToNonNegativeInteger(
     input.latestSignatureCount60s,
   );
+  const recentPurchaseSuccessCount60s = clampToNonNegativeInteger(
+    input.recentPurchaseSuccessCount60s,
+  );
   const intervalStats = calculateIntervalStats(input.recentQueryTimestamps);
   const reasons: MarketRiskReason[] = [];
   let score = 0;
@@ -135,6 +142,14 @@ export const assessMarketPurchaseRisk = (
     reasons.push('same-signature-60s');
   }
   if (latestSignatureCount60s >= SAME_SIGNATURE_60S_HIGH_THRESHOLD) {
+    score += 15;
+  }
+
+  if (recentPurchaseSuccessCount60s >= RECENT_PURCHASE_SUCCESS_60S_LOW_THRESHOLD) {
+    score += 30;
+    reasons.push('recent-purchase-success-60s');
+  }
+  if (recentPurchaseSuccessCount60s >= RECENT_PURCHASE_SUCCESS_60S_HIGH_THRESHOLD) {
     score += 15;
   }
 

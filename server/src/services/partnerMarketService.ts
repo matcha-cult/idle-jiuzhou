@@ -68,6 +68,7 @@ export interface MarketPartnerListingDto {
   sellerCharacterId: number;
   sellerName: string;
   listedAt: number;
+  buyTicket?: string | null;
 }
 
 export interface MarketPartnerTradeRecordDto {

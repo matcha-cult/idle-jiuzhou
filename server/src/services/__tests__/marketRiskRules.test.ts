@@ -27,6 +27,7 @@ test('assessMarketPurchaseRisk: 正常浏览坊市列表时不应触发验证码
     queryCount60s: 8,
     queryCount5m: 22,
     latestSignatureCount60s: 4,
+    recentPurchaseSuccessCount60s: 0,
     recentQueryTimestamps: [
       1_000,
       8_000,
@@ -48,6 +49,7 @@ test('assessMarketPurchaseRisk: 高频重复刷新同一筛选条件时应要求
     queryCount60s: 34,
     queryCount5m: 108,
     latestSignatureCount60s: 19,
+    recentPurchaseSuccessCount60s: 0,
     recentQueryTimestamps: [
       2_000,
       4_000,
@@ -75,6 +77,7 @@ test('assessMarketPurchaseRisk: 稳定脚本节奏访问时应抬高风险分', 
     queryCount60s: 20,
     queryCount5m: 72,
     latestSignatureCount60s: 11,
+    recentPurchaseSuccessCount60s: 0,
     recentQueryTimestamps: [
       1_800,
       3_600,
@@ -93,4 +96,30 @@ test('assessMarketPurchaseRisk: 稳定脚本节奏访问时应抬高风险分', 
 
   assert.equal(result.requiresCaptcha, true);
   assert.ok(result.reasons.includes('regular-interval'));
+});
+
+test('assessMarketPurchaseRisk: 验证后短时连续买成会抬高再次验证风险', () => {
+  const result = assessMarketPurchaseRisk({
+    queryCount60s: 18,
+    queryCount5m: 40,
+    latestSignatureCount60s: 10,
+    recentPurchaseSuccessCount60s: 1,
+    recentQueryTimestamps: [
+      2_000,
+      4_200,
+      6_500,
+      9_100,
+      11_700,
+      14_400,
+      17_000,
+      19_300,
+      21_700,
+      24_200,
+      26_500,
+      29_000,
+    ],
+  });
+
+  assert.equal(result.requiresCaptcha, true);
+  assert.ok(result.reasons.includes('recent-purchase-success-60s'));
 });

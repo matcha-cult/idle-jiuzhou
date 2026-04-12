@@ -79,6 +79,7 @@ export type MarketListingDto = {
   sellerCharacterId: number;
   sellerName: string;
   listedAt: number;
+  buyTicket?: string | null;
 };
 
 export type MarketTradeRecordDto = {

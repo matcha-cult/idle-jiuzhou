@@ -9,6 +9,12 @@ declare global {
     interface Request {
       userId?: number;
       characterId?: number;
+      marketRiskContext?: {
+        allowedByCaptchaPass: boolean;
+        buyScene?: 'item' | 'partner';
+        buyTicket?: string;
+        partnerBuyTicket?: string;
+      };
     }
   }
 }
