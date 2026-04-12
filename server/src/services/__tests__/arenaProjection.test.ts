@@ -25,6 +25,7 @@ import {
   DEFAULT_ARENA_SCORE,
   buildArenaProjectionRecord,
   collectArenaProjectionCharacterIds,
+  normalizeArenaProjectionRecord,
 } from '../shared/arenaProjection.js';
 
 test('collectArenaProjectionCharacterIds: 活跃角色即使没有竞技场历史也必须进入投影初始化集合', () => {
@@ -51,6 +52,7 @@ test('buildArenaProjectionRecord: 无竞技场历史的角色应返回默认积�
   assert.equal(projection.todayUsed, 0);
   assert.equal(projection.todayLimit, DEFAULT_ARENA_DAILY_LIMIT);
   assert.equal(projection.todayRemaining, DEFAULT_ARENA_DAILY_LIMIT);
+  assert.match(projection.lastDailyReset, /^\d{4}-\d{2}-\d{2}$/);
   assert.deepEqual(projection.records, []);
 });
 
@@ -82,4 +84,41 @@ test('buildArenaProjectionRecord: 已有战绩时应保留现有积分并正确�
   assert.equal(projection.todayLimit, DEFAULT_ARENA_DAILY_LIMIT);
   assert.equal(projection.todayRemaining, 0);
   assert.equal(projection.records.length, 1);
+});
+
+test('normalizeArenaProjectionRecord: 旧跨天缓存应在读取时重置今日次数', () => {
+  const projection = normalizeArenaProjectionRecord({
+    characterId: 99,
+    score: 1350,
+    winCount: 8,
+    loseCount: 3,
+    todayUsed: 7,
+    todayLimit: 20,
+    lastDailyReset: '2026-04-11',
+    records: [],
+  }, '2026-04-12');
+
+  assert.equal(projection.score, 1350);
+  assert.equal(projection.winCount, 8);
+  assert.equal(projection.loseCount, 3);
+  assert.equal(projection.todayUsed, 0);
+  assert.equal(projection.todayRemaining, 20);
+  assert.equal(projection.lastDailyReset, '2026-04-12');
+});
+
+test('normalizeArenaProjectionRecord: 当天缓存不应错误清空已用次数', () => {
+  const projection = normalizeArenaProjectionRecord({
+    characterId: 100,
+    score: 1180,
+    winCount: 4,
+    loseCount: 5,
+    todayUsed: 6,
+    todayLimit: 20,
+    lastDailyReset: '2026-04-12',
+    records: [],
+  }, '2026-04-12');
+
+  assert.equal(projection.todayUsed, 6);
+  assert.equal(projection.todayRemaining, 14);
+  assert.equal(projection.lastDailyReset, '2026-04-12');
 });

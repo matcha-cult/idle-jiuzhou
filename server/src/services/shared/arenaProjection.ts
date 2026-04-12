@@ -24,6 +24,8 @@
  * 2. 今日已用次数可能因历史数据异常大于上限；剩余次数只能钳制到 0，不能返回负数。
  */
 
+import { buildShanghaiDayKey } from './shanghaiNaturalDay.js';
+
 export const DEFAULT_ARENA_SCORE = 1000;
 export const DEFAULT_ARENA_DAILY_LIMIT = 20;
 
@@ -67,6 +69,7 @@ export const buildArenaProjectionRecord = <TRecord>(params: {
   loseCount?: number;
   todayUsed?: number;
   todayLimit?: number;
+  lastDailyReset?: string;
   records: TRecord[];
 }): {
   characterId: number;
@@ -76,6 +79,7 @@ export const buildArenaProjectionRecord = <TRecord>(params: {
   todayUsed: number;
   todayLimit: number;
   todayRemaining: number;
+  lastDailyReset: string;
   records: TRecord[];
 } => {
   const characterId = toPositiveInt(params.characterId);
@@ -85,6 +89,11 @@ export const buildArenaProjectionRecord = <TRecord>(params: {
   const todayUsed = toNonNegativeInt(params.todayUsed, 0);
   const todayLimitRaw = toNonNegativeInt(params.todayLimit, DEFAULT_ARENA_DAILY_LIMIT);
   const todayLimit = todayLimitRaw > 0 ? todayLimitRaw : DEFAULT_ARENA_DAILY_LIMIT;
+  const currentDate = buildShanghaiDayKey(new Date());
+  const lastDailyReset =
+    typeof params.lastDailyReset === 'string' && params.lastDailyReset.length > 0
+      ? params.lastDailyReset
+      : currentDate;
 
   return {
     characterId,
@@ -94,6 +103,44 @@ export const buildArenaProjectionRecord = <TRecord>(params: {
     todayUsed,
     todayLimit,
     todayRemaining: Math.max(0, todayLimit - todayUsed),
+    lastDailyReset,
     records: params.records,
   };
+};
+
+export const normalizeArenaProjectionRecord = <TRecord>(params: {
+  characterId: number;
+  score?: number;
+  winCount?: number;
+  loseCount?: number;
+  todayUsed?: number;
+  todayLimit?: number;
+  lastDailyReset?: string;
+  records: TRecord[];
+}, currentDate: string = buildShanghaiDayKey(new Date())): {
+  characterId: number;
+  score: number;
+  winCount: number;
+  loseCount: number;
+  todayUsed: number;
+  todayLimit: number;
+  todayRemaining: number;
+  lastDailyReset: string;
+  records: TRecord[];
+} => {
+  const lastDailyReset =
+    typeof params.lastDailyReset === 'string' && params.lastDailyReset.length > 0
+      ? params.lastDailyReset
+      : currentDate;
+
+  return buildArenaProjectionRecord({
+    characterId: params.characterId,
+    score: params.score,
+    winCount: params.winCount,
+    loseCount: params.loseCount,
+    todayUsed: lastDailyReset === currentDate ? params.todayUsed : 0,
+    todayLimit: params.todayLimit,
+    lastDailyReset: currentDate,
+    records: params.records,
+  });
 };
