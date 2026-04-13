@@ -32,15 +32,44 @@ export type CharacterProgressDeltaField = {
 const PROGRESS_DELTA_DIRTY_INDEX_KEY = 'character:progress-delta:index';
 const PROGRESS_DELTA_KEY_PREFIX = 'character:progress-delta:';
 const PROGRESS_DELTA_INFLIGHT_KEY_PREFIX = 'character:progress-delta:inflight:';
+const PROGRESS_DELTA_INFLIGHT_META_KEY_PREFIX = 'character:progress-delta:inflight-meta:';
+const PROGRESS_DELTA_INFLIGHT_STALE_AFTER_MS = 120_000;
 
 const claimProgressDeltaLua = `
 local dirtyIndexKey = KEYS[1]
 local mainKey = KEYS[2]
 local inflightKey = KEYS[3]
+local inflightMetaKey = KEYS[4]
 local characterId = ARGV[1]
+local staleAfterMs = tonumber(ARGV[2]) or 0
+
+local timeParts = redis.call('TIME')
+local nowMs = (tonumber(timeParts[1]) * 1000) + math.floor(tonumber(timeParts[2]) / 1000)
 
 if redis.call('EXISTS', inflightKey) == 1 then
-  return 0
+  local inflightClaimedAtRaw = redis.call('GET', inflightMetaKey)
+  local shouldRecoverInflight = false
+  if not inflightClaimedAtRaw then
+    shouldRecoverInflight = true
+  else
+    local inflightClaimedAtMs = tonumber(inflightClaimedAtRaw) or 0
+    if inflightClaimedAtMs <= 0 then
+      shouldRecoverInflight = true
+    elseif staleAfterMs > 0 and (nowMs - inflightClaimedAtMs) >= staleAfterMs then
+      shouldRecoverInflight = true
+    end
+  end
+
+  if not shouldRecoverInflight then
+    return 0
+  end
+
+  local inflightValues = redis.call('HGETALL', inflightKey)
+  for i = 1, #inflightValues, 2 do
+    redis.call('HINCRBY', mainKey, inflightValues[i], tonumber(inflightValues[i + 1]))
+  end
+  redis.call('DEL', inflightKey)
+  redis.call('DEL', inflightMetaKey)
 end
 
 if redis.call('EXISTS', mainKey) == 0 then
@@ -49,6 +78,7 @@ if redis.call('EXISTS', mainKey) == 0 then
 end
 
 redis.call('RENAME', mainKey, inflightKey)
+redis.call('SET', inflightMetaKey, tostring(nowMs))
 return 1
 `;
 
@@ -56,9 +86,11 @@ const finalizeClaimedProgressDeltaLua = `
 local dirtyIndexKey = KEYS[1]
 local mainKey = KEYS[2]
 local inflightKey = KEYS[3]
+local inflightMetaKey = KEYS[4]
 local characterId = ARGV[1]
 
 redis.call('DEL', inflightKey)
+redis.call('DEL', inflightMetaKey)
 if redis.call('EXISTS', mainKey) == 1 then
   redis.call('SADD', dirtyIndexKey, characterId)
 else
@@ -71,10 +103,12 @@ const restoreClaimedProgressDeltaLua = `
 local dirtyIndexKey = KEYS[1]
 local mainKey = KEYS[2]
 local inflightKey = KEYS[3]
+local inflightMetaKey = KEYS[4]
 local characterId = ARGV[1]
 
 local inflightValues = redis.call('HGETALL', inflightKey)
 if next(inflightValues) == nil then
+  redis.call('DEL', inflightMetaKey)
   if redis.call('EXISTS', mainKey) == 1 then
     redis.call('SADD', dirtyIndexKey, characterId)
   else
@@ -87,6 +121,7 @@ for i = 1, #inflightValues, 2 do
   redis.call('HINCRBY', mainKey, inflightValues[i], tonumber(inflightValues[i + 1]))
 end
 redis.call('DEL', inflightKey)
+redis.call('DEL', inflightMetaKey)
 redis.call('SADD', dirtyIndexKey, characterId)
 return 1
 `;
@@ -96,6 +131,9 @@ const buildProgressDeltaKey = (characterId: number): string =>
 
 const buildInflightProgressDeltaKey = (characterId: number): string =>
   `${PROGRESS_DELTA_INFLIGHT_KEY_PREFIX}${characterId}`;
+
+const buildInflightProgressDeltaMetaKey = (characterId: number): string =>
+  `${PROGRESS_DELTA_INFLIGHT_META_KEY_PREFIX}${characterId}`;
 
 const normalizeIncrement = (value: number): number => {
   const normalized = Math.floor(Number(value));
@@ -145,11 +183,13 @@ export const claimCharacterProgressDelta = async (
 ): Promise<boolean> => {
   const result = await redis.eval(
     claimProgressDeltaLua,
-    3,
+    4,
     PROGRESS_DELTA_DIRTY_INDEX_KEY,
     buildProgressDeltaKey(characterId),
     buildInflightProgressDeltaKey(characterId),
+    buildInflightProgressDeltaMetaKey(characterId),
     String(characterId),
+    String(PROGRESS_DELTA_INFLIGHT_STALE_AFTER_MS),
   );
   return Number(result) === 1;
 };
@@ -166,10 +206,11 @@ export const finalizeClaimedCharacterProgressDelta = async (
 ): Promise<void> => {
   await redis.eval(
     finalizeClaimedProgressDeltaLua,
-    3,
+    4,
     PROGRESS_DELTA_DIRTY_INDEX_KEY,
     buildProgressDeltaKey(characterId),
     buildInflightProgressDeltaKey(characterId),
+    buildInflightProgressDeltaMetaKey(characterId),
     String(characterId),
   );
 };
@@ -179,10 +220,11 @@ export const restoreClaimedCharacterProgressDelta = async (
 ): Promise<void> => {
   await redis.eval(
     restoreClaimedProgressDeltaLua,
-    3,
+    4,
     PROGRESS_DELTA_DIRTY_INDEX_KEY,
     buildProgressDeltaKey(characterId),
     buildInflightProgressDeltaKey(characterId),
+    buildInflightProgressDeltaMetaKey(characterId),
     String(characterId),
   );
 };
