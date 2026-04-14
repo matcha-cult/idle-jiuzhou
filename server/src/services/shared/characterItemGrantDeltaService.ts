@@ -95,9 +95,11 @@ export type PendingCharacterItemGrant = {
 const ITEM_GRANT_DIRTY_INDEX_KEY = 'character:item-grant-delta:index';
 const ITEM_GRANT_KEY_PREFIX = 'character:item-grant-delta:';
 const ITEM_GRANT_INFLIGHT_KEY_PREFIX = 'character:item-grant-delta:inflight:';
+const ITEM_GRANT_INFLIGHT_META_KEY_PREFIX = 'character:item-grant-delta:inflight-meta:';
 const ITEM_GRANT_FLUSH_INTERVAL_MS = 1_000;
 const ITEM_GRANT_FLUSH_BATCH_LIMIT = 100;
 const ITEM_GRANT_MAIL_CHUNK_SIZE = 10;
+const ITEM_GRANT_INFLIGHT_STALE_AFTER_MS = 5 * 60 * 1000;
 const itemGrantDeltaLogger = createScopedLogger('characterItemGrant.delta');
 
 let itemGrantFlushTimer: ReturnType<typeof setInterval> | null = null;
@@ -108,10 +110,35 @@ const claimItemGrantDeltaLua = `
 local dirtyIndexKey = KEYS[1]
 local mainKey = KEYS[2]
 local inflightKey = KEYS[3]
+local inflightMetaKey = KEYS[4]
 local characterId = ARGV[1]
+local nowMs = tonumber(ARGV[2])
+local staleAfterMs = tonumber(ARGV[3])
+local reclaimedStaleInflight = 0
 
 if redis.call('EXISTS', inflightKey) == 1 then
-  return 0
+  local inflightClaimedAtRaw = redis.call('GET', inflightMetaKey)
+  local inflightClaimedAt = tonumber(inflightClaimedAtRaw)
+  local isInflightStale = (
+    inflightClaimedAt == nil
+    or nowMs == nil
+    or staleAfterMs == nil
+    or (nowMs - inflightClaimedAt) >= staleAfterMs
+  )
+  if not isInflightStale then
+    return 0
+  end
+
+  local inflightValues = redis.call('HGETALL', inflightKey)
+  if next(inflightValues) ~= nil then
+    for i = 1, #inflightValues, 2 do
+      redis.call('HINCRBY', mainKey, inflightValues[i], tonumber(inflightValues[i + 1]))
+    end
+  end
+  redis.call('DEL', inflightKey)
+  redis.call('DEL', inflightMetaKey)
+  redis.call('SADD', dirtyIndexKey, characterId)
+  reclaimedStaleInflight = 1
 end
 
 if redis.call('EXISTS', mainKey) == 0 then
@@ -120,16 +147,19 @@ if redis.call('EXISTS', mainKey) == 0 then
 end
 
 redis.call('RENAME', mainKey, inflightKey)
-return 1
+redis.call('SET', inflightMetaKey, tostring(nowMs))
+return reclaimedStaleInflight + 1
 `;
 
 const finalizeItemGrantDeltaLua = `
 local dirtyIndexKey = KEYS[1]
 local mainKey = KEYS[2]
 local inflightKey = KEYS[3]
+local inflightMetaKey = KEYS[4]
 local characterId = ARGV[1]
 
 redis.call('DEL', inflightKey)
+redis.call('DEL', inflightMetaKey)
 if redis.call('EXISTS', mainKey) == 1 then
   redis.call('SADD', dirtyIndexKey, characterId)
 else
@@ -142,10 +172,12 @@ const restoreItemGrantDeltaLua = `
 local dirtyIndexKey = KEYS[1]
 local mainKey = KEYS[2]
 local inflightKey = KEYS[3]
+local inflightMetaKey = KEYS[4]
 local characterId = ARGV[1]
 
 local inflightValues = redis.call('HGETALL', inflightKey)
 if next(inflightValues) == nil then
+  redis.call('DEL', inflightMetaKey)
   if redis.call('EXISTS', mainKey) == 1 then
     redis.call('SADD', dirtyIndexKey, characterId)
   else
@@ -158,6 +190,7 @@ for i = 1, #inflightValues, 2 do
   redis.call('HINCRBY', mainKey, inflightValues[i], tonumber(inflightValues[i + 1]))
 end
 redis.call('DEL', inflightKey)
+redis.call('DEL', inflightMetaKey)
 redis.call('SADD', dirtyIndexKey, characterId)
 return 1
 `;
@@ -167,6 +200,9 @@ const buildItemGrantDeltaKey = (characterId: number): string =>
 
 const buildInflightItemGrantDeltaKey = (characterId: number): string =>
   `${ITEM_GRANT_INFLIGHT_KEY_PREFIX}${characterId}`;
+
+const buildInflightItemGrantDeltaMetaKey = (characterId: number): string =>
+  `${ITEM_GRANT_INFLIGHT_META_KEY_PREFIX}${characterId}`;
 
 const normalizePositiveInt = (value: number): number => {
   const normalized = Math.floor(Number(value));
@@ -387,15 +423,26 @@ const listDirtyCharacterIdsForItemGrantDelta = async (
 const claimCharacterItemGrantDelta = async (
   characterId: number,
 ): Promise<boolean> => {
+  const nowMs = Date.now();
   const result = await redis.eval(
     claimItemGrantDeltaLua,
-    3,
+    4,
     ITEM_GRANT_DIRTY_INDEX_KEY,
     buildItemGrantDeltaKey(characterId),
     buildInflightItemGrantDeltaKey(characterId),
+    buildInflightItemGrantDeltaMetaKey(characterId),
     String(characterId),
+    String(nowMs),
+    String(ITEM_GRANT_INFLIGHT_STALE_AFTER_MS),
   );
-  return Number(result) === 1;
+  const normalizedResult = Number(result);
+  if (normalizedResult === 2) {
+    itemGrantDeltaLogger.warn({
+      characterId,
+      staleAfterMs: ITEM_GRANT_INFLIGHT_STALE_AFTER_MS,
+    }, '角色物品授予 Delta 检测到陈旧 inflight，已自动回收并重新 claim');
+  }
+  return normalizedResult >= 1;
 };
 
 const finalizeCharacterItemGrantDelta = async (
@@ -403,10 +450,11 @@ const finalizeCharacterItemGrantDelta = async (
 ): Promise<void> => {
   await redis.eval(
     finalizeItemGrantDeltaLua,
-    3,
+    4,
     ITEM_GRANT_DIRTY_INDEX_KEY,
     buildItemGrantDeltaKey(characterId),
     buildInflightItemGrantDeltaKey(characterId),
+    buildInflightItemGrantDeltaMetaKey(characterId),
     String(characterId),
   );
 };
@@ -416,10 +464,11 @@ const restoreCharacterItemGrantDelta = async (
 ): Promise<void> => {
   await redis.eval(
     restoreItemGrantDeltaLua,
-    3,
+    4,
     ITEM_GRANT_DIRTY_INDEX_KEY,
     buildItemGrantDeltaKey(characterId),
     buildInflightItemGrantDeltaKey(characterId),
+    buildInflightItemGrantDeltaMetaKey(characterId),
     String(characterId),
   );
 };
@@ -706,6 +755,8 @@ const runItemGrantFlushLoopOnce = async (): Promise<void> => {
 
 export const initializeCharacterItemGrantDeltaService = async (): Promise<void> => {
   if (itemGrantFlushTimer) return;
+
+  await runItemGrantFlushLoopOnce();
 
   itemGrantFlushTimer = setInterval(() => {
     void runItemGrantFlushLoopOnce();
