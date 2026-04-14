@@ -11,13 +11,14 @@
  *
  * 数据流/状态流：
  * - 测试通过队列式 query mock 喂给查询结果；
- * - 服务读取目标装备实例 -> 校验装备与绑定状态 -> 成功时执行解绑 UPDATE。
+ * - 服务读取目标装备实例 -> 校验装备与绑定状态 -> 自定义 runner 分支要求必须处于真实事务上下文。
  *
  * 关键边界条件与坑点：
  * 1) 目标装备已是未绑定时必须直接拒绝，避免错误消耗解绑道具。
  * 2) 目标装备被锁定时必须拒绝解绑，避免绕过背包锁的保护语义。
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   unbindEquipmentBindingByInstanceId,
@@ -40,6 +41,10 @@ const createQueryRunner = (
     return next;
   };
   return { calls, runner };
+};
+
+const readSource = (relativePath: string): string => {
+  return readFileSync(new URL(relativePath, import.meta.url), 'utf8');
 };
 
 test('目标装备未绑定时应直接拒绝解绑', async () => {
@@ -96,7 +101,7 @@ test('目标装备已锁定时不应允许解绑', async () => {
   assert.equal(calls.length, 1);
 });
 
-test('目标装备已绑定时应更新为未绑定并清空绑定归属', async () => {
+test('自定义 queryRunner 成功解绑分支必须要求事务上下文', async () => {
   const { calls, runner } = createQueryRunner([
     {
       rows: [
@@ -109,10 +114,6 @@ test('目标装备已绑定时应更新为未绑定并清空绑定归属', async
         },
       ],
     },
-    {
-      rows: [],
-      rowCount: 1,
-    },
   ]);
 
   const result = await unbindEquipmentBindingByInstanceId({
@@ -122,10 +123,18 @@ test('目标装备已绑定时应更新为未绑定并清空绑定归属', async
     resolveItemDef: () => ({ category: 'equipment' }),
   });
 
-  assert.equal(result.success, true);
-  assert.equal(result.message, '解绑成功');
-  assert.equal(result.itemInstanceId, 503);
-  assert.equal(calls.length, 2);
-  assert.match(calls[1]?.sql ?? '', /SET bind_type = 'none'/);
-  assert.deepEqual(calls[1]?.params, [503, 88]);
+  assert.equal(result.success, false);
+  assert.equal(result.message, '自定义事务解绑必须在事务上下文中执行');
+  assert.equal(calls.length, 1);
+});
+
+test('装备解绑源码不应再保留自定义 runner 分支的手写 UPDATE', () => {
+  const source = readSource('../inventory/equipmentUnbind.ts');
+
+  assert.match(source, /applyCharacterItemInstanceMutationsImmediately/u);
+  assert.match(source, /hasUsableTransactionContext\(\)/u);
+  assert.doesNotMatch(
+    source,
+    /UPDATE item_instance[\s\S]*SET bind_type = 'none'/u,
+  );
 });

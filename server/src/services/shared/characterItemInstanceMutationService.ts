@@ -1,6 +1,7 @@
 import { afterTransactionCommit, hasUsableTransactionContext, query, withTransaction } from '../../config/database.js';
 import { redis } from '../../config/redis.js';
-import type { InventoryItem, InventoryLocation } from '../inventory/shared/types.js';
+import type { InventoryItem } from '../inventory/shared/types.js';
+import { lockCharacterInventoryMutex, lockCharacterInventoryMutexes } from '../inventoryMutex.js';
 import { createScopedLogger } from '../../utils/logger.js';
 import { tryInsertItemInstanceWithSlot } from './itemInstanceSlotInsert.js';
 
@@ -658,38 +659,49 @@ const tryInsertCharacterItemInstanceSnapshotWithSlot = async (
         $23::jsonb, $24, $25, $26, $27, $28, NOW()
       )
     `,
-    [
-      snapshot.id,
-      snapshot.owner_user_id,
-      snapshot.owner_character_id,
-      snapshot.item_def_id,
-      snapshot.qty,
-      snapshot.quality,
-      snapshot.quality_rank,
-      toDbJson(snapshot.metadata),
-      snapshot.location,
-      snapshot.location_slot,
-      snapshot.equipped_slot,
-      snapshot.strengthen_level,
-      snapshot.refine_level,
-      toDbJson(snapshot.socketed_gems),
-      toDbJson(snapshot.affixes),
-      snapshot.identified,
-      snapshot.locked,
-      snapshot.bind_type,
-      snapshot.bind_owner_user_id,
-      snapshot.bind_owner_character_id,
-      snapshot.random_seed,
-      snapshot.affix_gen_version,
-      toDbJson(snapshot.affix_roll_meta),
-      snapshot.custom_name,
-      snapshot.expire_at,
-      snapshot.obtained_from,
-      snapshot.obtained_ref_id,
-      snapshot.created_at,
-    ],
+    buildSnapshotPersistenceParams(snapshot),
   );
   return insertedId !== null;
+};
+
+const updateCharacterItemInstanceSnapshot = async (
+  snapshot: CharacterItemInstanceSnapshot,
+): Promise<void> => {
+  await query(
+    `
+      UPDATE item_instance
+      SET owner_user_id = $2,
+          owner_character_id = $3,
+          item_def_id = $4,
+          qty = $5,
+          quality = $6,
+          quality_rank = $7,
+          metadata = $8::jsonb,
+          location = $9,
+          location_slot = $10,
+          equipped_slot = $11,
+          strengthen_level = $12,
+          refine_level = $13,
+          socketed_gems = $14::jsonb,
+          affixes = $15::jsonb,
+          identified = $16,
+          locked = $17,
+          bind_type = $18,
+          bind_owner_user_id = $19,
+          bind_owner_character_id = $20,
+          random_seed = $21,
+          affix_gen_version = $22,
+          affix_roll_meta = $23::jsonb,
+          custom_name = $24,
+          expire_at = $25,
+          obtained_from = $26,
+          obtained_ref_id = $27,
+          created_at = $28,
+          updated_at = NOW()
+      WHERE id = $1
+    `,
+    buildSnapshotPersistenceParams(snapshot),
+  );
 };
 
 const tryUpdateCharacterItemInstanceSnapshotWithSlot = async (
@@ -1064,12 +1076,69 @@ const toDbJson = (value: JsonValue | CharacterItemInstanceMetadata): string | nu
   return JSON.stringify(value);
 };
 
-/**
- * 在当前事务内立即落库单个实例快照，供需要真实外键约束的链路复用。
- * 这里只负责真实表 upsert，不负责 Redis mutation 同步；调用方若仍依赖投影覆盖，
- * 需要自行继续写入 bufferCharacterItemInstanceMutations。
- */
-export const upsertCharacterItemInstanceSnapshot = async (
+const buildSnapshotPersistenceParams = (
+  snapshot: CharacterItemInstanceSnapshot,
+): [
+  number,
+  number,
+  number,
+  string,
+  number,
+  string | null,
+  number | null,
+  string | null,
+  string,
+  number | null,
+  string | null,
+  number,
+  number,
+  string | null,
+  string | null,
+  boolean,
+  boolean,
+  string,
+  number | null,
+  number | null,
+  string | null,
+  number,
+  string | null,
+  string | null,
+  Date | null,
+  string | null,
+  string | null,
+  Date,
+] => [
+  snapshot.id,
+  snapshot.owner_user_id,
+  snapshot.owner_character_id,
+  snapshot.item_def_id,
+  snapshot.qty,
+  snapshot.quality,
+  snapshot.quality_rank,
+  toDbJson(snapshot.metadata),
+  snapshot.location,
+  snapshot.location_slot,
+  snapshot.equipped_slot,
+  snapshot.strengthen_level,
+  snapshot.refine_level,
+  toDbJson(snapshot.socketed_gems),
+  toDbJson(snapshot.affixes),
+  snapshot.identified,
+  snapshot.locked,
+  snapshot.bind_type,
+  snapshot.bind_owner_user_id,
+  snapshot.bind_owner_character_id,
+  snapshot.random_seed,
+  snapshot.affix_gen_version,
+  toDbJson(snapshot.affix_roll_meta),
+  snapshot.custom_name,
+  snapshot.expire_at,
+  snapshot.obtained_from,
+  snapshot.obtained_ref_id,
+  snapshot.created_at,
+];
+
+const insertCharacterItemInstanceSnapshot = async (
   snapshot: CharacterItemInstanceSnapshot,
 ): Promise<void> => {
   await query(
@@ -1109,67 +1178,41 @@ export const upsertCharacterItemInstanceSnapshot = async (
         $14::jsonb, $15::jsonb, $16, $17, $18, $19, $20, $21, $22,
         $23::jsonb, $24, $25, $26, $27, $28, NOW()
       )
-      ON CONFLICT (id) DO UPDATE
-      SET owner_user_id = EXCLUDED.owner_user_id,
-          owner_character_id = EXCLUDED.owner_character_id,
-          item_def_id = EXCLUDED.item_def_id,
-          qty = EXCLUDED.qty,
-          quality = EXCLUDED.quality,
-          quality_rank = EXCLUDED.quality_rank,
-          metadata = EXCLUDED.metadata,
-          location = EXCLUDED.location,
-          location_slot = EXCLUDED.location_slot,
-          equipped_slot = EXCLUDED.equipped_slot,
-          strengthen_level = EXCLUDED.strengthen_level,
-          refine_level = EXCLUDED.refine_level,
-          socketed_gems = EXCLUDED.socketed_gems,
-          affixes = EXCLUDED.affixes,
-          identified = EXCLUDED.identified,
-          locked = EXCLUDED.locked,
-          bind_type = EXCLUDED.bind_type,
-          bind_owner_user_id = EXCLUDED.bind_owner_user_id,
-          bind_owner_character_id = EXCLUDED.bind_owner_character_id,
-          random_seed = EXCLUDED.random_seed,
-          affix_gen_version = EXCLUDED.affix_gen_version,
-          affix_roll_meta = EXCLUDED.affix_roll_meta,
-          custom_name = EXCLUDED.custom_name,
-          expire_at = EXCLUDED.expire_at,
-          obtained_from = EXCLUDED.obtained_from,
-          obtained_ref_id = EXCLUDED.obtained_ref_id,
-          created_at = EXCLUDED.created_at,
-          updated_at = NOW()
     `,
-    [
-      snapshot.id,
-      snapshot.owner_user_id,
-      snapshot.owner_character_id,
-      snapshot.item_def_id,
-      snapshot.qty,
-      snapshot.quality,
-      snapshot.quality_rank,
-      toDbJson(snapshot.metadata),
-      snapshot.location,
-      snapshot.location_slot,
-      snapshot.equipped_slot,
-      snapshot.strengthen_level,
-      snapshot.refine_level,
-      toDbJson(snapshot.socketed_gems),
-      toDbJson(snapshot.affixes),
-      snapshot.identified,
-      snapshot.locked,
-      snapshot.bind_type,
-      snapshot.bind_owner_user_id,
-      snapshot.bind_owner_character_id,
-      snapshot.random_seed,
-      snapshot.affix_gen_version,
-      toDbJson(snapshot.affix_roll_meta),
-      snapshot.custom_name,
-      snapshot.expire_at,
-      snapshot.obtained_from,
-      snapshot.obtained_ref_id,
-      snapshot.created_at,
-    ],
+    buildSnapshotPersistenceParams(snapshot),
   );
+};
+
+/**
+ * 在当前事务内立即落库单个实例快照，供需要真实外键约束的链路复用。
+ * 这里只负责真实表 insert/update 分流落库，不负责 Redis mutation 同步；调用方若仍依赖投影覆盖，
+ * 需要自行继续写入 bufferCharacterItemInstanceMutations。
+ */
+export const upsertCharacterItemInstanceSnapshot = async (
+  snapshot: CharacterItemInstanceSnapshot,
+): Promise<void> => {
+  const existingRow = await loadExistingItemInstanceRow(snapshot.id);
+  if (!existingRow) {
+    if (isSlotConstrainedLocation(snapshot.location, snapshot.location_slot)) {
+      const inserted = await tryInsertCharacterItemInstanceSnapshotWithSlot(snapshot);
+      if (!inserted) {
+        throw new Error(`slot-conflict:${snapshot.id}`);
+      }
+      return;
+    }
+    await insertCharacterItemInstanceSnapshot(snapshot);
+    return;
+  }
+
+  if (isSlotConstrainedLocation(snapshot.location, snapshot.location_slot)) {
+    const updated = await tryUpdateCharacterItemInstanceSnapshotWithSlot(snapshot);
+    if (!updated) {
+      throw new Error(`slot-conflict:${snapshot.id}`);
+    }
+    return;
+  }
+
+  await updateCharacterItemInstanceSnapshot(snapshot);
 };
 
 /**
@@ -1185,7 +1228,7 @@ export const upsertCharacterItemInstanceSnapshot = async (
  *
  * 数据流 / 状态流：
  * - 调用方先完成容量/堆叠/槽位计算；
- * - 本方法按顺序执行 delete/upsert；
+ * - 本方法按顺序执行 delete/insert/update；
  * - 若外层事务或 savepoint 回滚，所有已写实例会一起回退。
  *
  * 复用设计说明：
@@ -1218,6 +1261,8 @@ const executeImmediateCharacterItemInstanceMutations = async (
     group.push(mutation);
     mutationsByCharacter.set(mutation.characterId, group);
   }
+
+  await lockCharacterInventoryMutexes([...mutationsByCharacter.keys()]);
 
   for (const [characterId, characterMutations] of mutationsByCharacter.entries()) {
     const existingRowsResult = await query<ExistingItemInstanceLocationRow>(
@@ -1337,6 +1382,7 @@ const flushSingleCharacterItemInstanceMutations = async (
 ): Promise<void> => {
   if (mutations.length <= 0) return;
   await withTransaction(async () => {
+    await lockCharacterInventoryMutex(characterId);
     const existingRowsResult = await query<ExistingItemInstanceLocationRow>(
       `
         SELECT id, owner_character_id, location, location_slot

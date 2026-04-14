@@ -87,6 +87,7 @@ import {
 import { updateAchievementProgress } from "../achievementService.js";
 import { findEmptySlots } from "./bag.js";
 import {
+  applyCharacterItemInstanceMutationsImmediately,
   bufferCharacterItemInstanceMutations,
   type JsonValue,
   loadProjectedCharacterItemInstanceById,
@@ -463,10 +464,23 @@ export const enhanceEquipment = async (
         : curLv;
 
   if (success) {
-    await query(
-      "UPDATE item_instance SET strengthen_level = $1, updated_at = NOW() WHERE id = $2 AND owner_character_id = $3",
-      [targetLv, itemInstanceId, characterId],
-    );
+    const latestItem = await loadProjectedCharacterItemInstanceById(characterId, itemInstanceId);
+    if (!latestItem) {
+      return { success: false, message: "装备不存在" };
+    }
+    await applyCharacterItemInstanceMutationsImmediately([
+      {
+        opId: `enhance-equipment-success:${itemInstanceId}:${Date.now()}`,
+        characterId,
+        itemId: itemInstanceId,
+        createdAt: Date.now(),
+        kind: "upsert",
+        snapshot: {
+          ...latestItem,
+          strengthen_level: targetLv,
+        },
+      },
+    ]);
   } else if (downgraded) {
     const latestItem = await loadProjectedCharacterItemInstanceById(characterId, itemInstanceId);
     if (!latestItem) {

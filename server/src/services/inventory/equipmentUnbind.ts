@@ -15,11 +15,13 @@
  * 关键边界条件与坑点：
  * 1) `bind_type` 只要不是 `none` 都视为“已绑定”，避免未来新增绑定类型时漏判。
  * 2) 目标装备被锁定时必须拒绝解绑，保持背包锁与使用道具语义一致。
+ * 3) 自定义 `queryRunner` 分支只允许复用外层事务中的校验锁定；真正写入仍统一走 shared mutation service，且调用方必须已先持有角色背包互斥锁。
  */
-import { query } from '../../config/database.js';
+import { hasUsableTransactionContext, query } from '../../config/database.js';
 import { normalizeItemBindType } from '../shared/itemBindType.js';
 import { getStaticItemDef } from './shared/helpers.js';
 import {
+  applyCharacterItemInstanceMutationsImmediately,
   bufferCharacterItemInstanceMutations,
   loadProjectedCharacterItemInstanceById,
 } from '../shared/characterItemInstanceMutationService.js';
@@ -141,21 +143,30 @@ export const unbindEquipmentBindingByInstanceId = async ({
     return { success: false, message: '目标装备尚未绑定' };
   }
 
-  const updateResult = await queryRunner(
-    `
-      UPDATE item_instance
-      SET bind_type = 'none',
-          bind_owner_user_id = NULL,
-          bind_owner_character_id = NULL,
-          updated_at = NOW()
-      WHERE id = $1 AND owner_character_id = $2
-    `,
-    [itemInstanceId, characterId],
-  );
-
-  if (Number(updateResult.rowCount || 0) <= 0) {
-    return { success: false, message: '解绑失败' };
+  if (!hasUsableTransactionContext()) {
+    return { success: false, message: '自定义事务解绑必须在事务上下文中执行' };
   }
+
+  const latestItem = await loadProjectedCharacterItemInstanceById(characterId, itemInstanceId);
+  if (!latestItem) {
+    return { success: false, message: '目标装备不存在' };
+  }
+
+  await applyCharacterItemInstanceMutationsImmediately([
+    {
+      opId: `equipment-unbind-direct:${itemInstanceId}:${Date.now()}`,
+      characterId,
+      itemId: itemInstanceId,
+      createdAt: Date.now(),
+      kind: 'upsert',
+      snapshot: {
+        ...latestItem,
+        bind_type: 'none',
+        bind_owner_user_id: null,
+        bind_owner_character_id: null,
+      },
+    },
+  ]);
 
   return {
     success: true,

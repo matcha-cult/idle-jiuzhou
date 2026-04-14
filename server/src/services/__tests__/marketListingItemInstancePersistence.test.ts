@@ -4,6 +4,7 @@
  * 作用（做什么 / 不做什么）：
  * 1. 做什么：锁定挂单创建在写入 `market_listing` 前，必须先把被引用的 `item_instance` 快照真实 upsert 到数据库。
  * 2. 做什么：锁定 `item_instance` 的真实落库 SQL 由共享 helper 统一复用，避免坊市链路再次复制一份插入 SQL。
+ * 3. 做什么：锁定坊市链路在直调共享落库 helper 前，必须先获取角色背包互斥锁，避免绕开统一锁协议。
  * 3. 不做什么：不执行真实坊市上架，不校验 Redis mutation flush；这里只约束源码中的关键时序与复用入口。
  *
  * 输入 / 输出：
@@ -43,6 +44,10 @@ test("createMarketListing 应在插入挂单前真实落库被引用的 item_ins
   assert.match(
     marketSource,
     /await upsertCharacterItemInstanceSnapshot\(listingItemSnapshot\);[\s\S]*?INSERT INTO market_listing/iu,
+  );
+  assert.match(
+    marketSource,
+    /await lockCharacterInventoryMutex\(params\.characterId\);[\s\S]*?await upsertCharacterItemInstanceSnapshot\(listingItemSnapshot\);/u,
   );
   assert.match(
     marketSource,
