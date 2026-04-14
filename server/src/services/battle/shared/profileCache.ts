@@ -22,7 +22,7 @@
 import type { BattleSetBonusEffect } from '../../../battle/types.js';
 import type { CharacterData, SkillData } from '../../../battle/battleFactory.js';
 import { afterTransactionCommit } from '../../../config/database.js';
-import { getCharacterComputedByCharacterId } from '../../characterComputedService.js';
+import { getCharacterComputedBatchByCharacterIds } from '../../characterComputedService.js';
 import { createCacheLayer } from '../../shared/cacheLayer.js';
 import { loadActivePartnerBattleMember, type PartnerBattleMember } from '../../shared/partnerBattleMember.js';
 import {
@@ -34,6 +34,7 @@ import {
 
 const BATTLE_PROFILE_REDIS_TTL_SEC = 6 * 60 * 60;
 const BATTLE_PROFILE_MEMORY_TTL_MS = 10 * 60_000;
+const BATTLE_PROFILE_LOADOUT_BATCH_SIZE = 100;
 
 export type CharacterBattleLoadout = {
   setBonusEffects: BattleSetBonusEffect[];
@@ -47,6 +48,18 @@ type ActivePartnerBattleCacheValue = {
 
 type LoadoutBatchInstrumentation = {
   onPhase?: (detail: string, durationMs: number) => void;
+};
+
+const splitIntoChunks = <T>(values: T[], size: number): T[][] => {
+  if (values.length <= 0) {
+    return [];
+  }
+
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
 };
 
 const hasOwnAvatarField = (
@@ -97,7 +110,7 @@ export const loadCharacterBattleLoadoutByCharacterId = async (
  * - 输出：按角色 ID 组织的 `CharacterBattleLoadout` 映射；不存在的角色不会写入结果。
  *
  * 数据流/状态流：
- * warmupCharacterSnapshots -> 本函数批量查技能/装备效果 -> 组装 loadout -> 在线战斗角色快照。
+ * warmupCharacterSnapshots -> 本函数按 100 一批查询技能/装备效果/角色基础数据 -> 组装 loadout -> 在线战斗角色快照。
  *
  * 关键边界条件与坑点：
  * 1. `computedMap` 只用于复用已算好的角色基础数据，缺失角色仍会按单角色路径补齐，不能把半成品写进结果。
@@ -118,33 +131,58 @@ export const loadCharacterBattleLoadoutsByCharacterIds = async (
     return result;
   }
 
-  const skillStartAt = Date.now();
-  const skillDataMap = await getCharacterBattleSkillDataMap(normalizedCharacterIds);
-  instrumentation?.onPhase?.('技能装配', Date.now() - skillStartAt);
+  let skillDurationMs = 0;
+  let battleEffectsDurationMs = 0;
+  let assembleDurationMs = 0;
 
-  const battleEffectsStartAt = Date.now();
-  const battleEffectsMap = await loadCharacterBattleEffectsMap(normalizedCharacterIds);
-  instrumentation?.onPhase?.('装备效果装配', Date.now() - battleEffectsStartAt);
+  for (const characterIdBatch of splitIntoChunks(
+    normalizedCharacterIds,
+    BATTLE_PROFILE_LOADOUT_BATCH_SIZE,
+  )) {
+    const missingCharacterIds = computedMap
+      ? characterIdBatch.filter((characterId) => !computedMap.has(characterId))
+      : characterIdBatch;
 
-  const assembleStartAt = Date.now();
-  await Promise.all(
-    normalizedCharacterIds.map(async (normalizedCharacterId) => {
-      const computedCharacter =
-        computedMap?.get(normalizedCharacterId)
-        ?? await getCharacterComputedByCharacterId(normalizedCharacterId);
-      if (!computedCharacter) {
-        return;
+    const [skillDataMap, battleEffectsMap, existingComputedCharacterIds] = await Promise.all([
+      (async (): Promise<Map<number, SkillData[]>> => {
+        const skillStartAt = Date.now();
+        const map = await getCharacterBattleSkillDataMap(characterIdBatch);
+        skillDurationMs += Date.now() - skillStartAt;
+        return map;
+      })(),
+      (async (): Promise<Map<number, BattleSetBonusEffect[]>> => {
+        const battleEffectsStartAt = Date.now();
+        const map = await loadCharacterBattleEffectsMap(characterIdBatch);
+        battleEffectsDurationMs += Date.now() - battleEffectsStartAt;
+        return map;
+      })(),
+      (async (): Promise<Set<number>> => {
+        const computedLoadStartAt = Date.now();
+        const nextExistingCharacterIds = missingCharacterIds.length > 0
+          ? new Set((await getCharacterComputedBatchByCharacterIds(missingCharacterIds)).keys())
+          : new Set<number>();
+        assembleDurationMs += Date.now() - computedLoadStartAt;
+        return nextExistingCharacterIds;
+      })(),
+    ]);
+
+    const assembleStartAt = Date.now();
+    for (const normalizedCharacterId of characterIdBatch) {
+      if (computedMap?.has(normalizedCharacterId) !== true && !existingComputedCharacterIds.has(normalizedCharacterId)) {
+        continue;
       }
 
-      const setBonusEffects = battleEffectsMap.get(normalizedCharacterId) ?? [];
-
       result.set(normalizedCharacterId, {
-        setBonusEffects,
+        setBonusEffects: battleEffectsMap.get(normalizedCharacterId) ?? [],
         skills: skillDataMap.get(normalizedCharacterId) ?? [],
       });
-    }),
-  );
-  instrumentation?.onPhase?.('loadout 汇总', Date.now() - assembleStartAt);
+    }
+    assembleDurationMs += Date.now() - assembleStartAt;
+  }
+
+  instrumentation?.onPhase?.('技能装配', skillDurationMs);
+  instrumentation?.onPhase?.('装备效果装配', battleEffectsDurationMs);
+  instrumentation?.onPhase?.('loadout 汇总', assembleDurationMs);
 
   return result;
 };

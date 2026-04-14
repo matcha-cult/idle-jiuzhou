@@ -194,51 +194,51 @@ export type DeferredSettlementTaskPayload = {
     kind: string | null;
   }>;
   arenaDelta:
-    | {
-        challengerCharacterId: number;
-        opponentCharacterId: number;
-        challengerScoreAfter: number;
-        challengerScoreDelta: number;
-        challengerOutcome: 'win' | 'lose' | 'draw';
-      }
-    | null;
+  | {
+    challengerCharacterId: number;
+    opponentCharacterId: number;
+    challengerScoreAfter: number;
+    challengerScoreDelta: number;
+    challengerOutcome: 'win' | 'lose' | 'draw';
+  }
+  | null;
   dungeonContext:
-    | {
-        instanceId: string;
-        dungeonId: string;
-        difficultyId: string;
-      }
-    | null;
+  | {
+    instanceId: string;
+    dungeonId: string;
+    difficultyId: string;
+  }
+  | null;
   dungeonStartConsumption:
-    | {
-        instanceId: string;
-        dungeonId: string;
-        difficultyId: string;
-        creatorCharacterId: number;
-        teamId: string | null;
-        currentStage: number;
-        currentWave: number;
-        participants: DungeonInstanceParticipant[];
-        currentBattleId: string;
-        rewardEligibleCharacterIds: number[];
-        startTime: string;
-        entryCountSnapshots: DungeonEntryCountProjectionRecord[];
-        staminaConsumptions: Array<{
-          characterId: number;
-          amount: number;
-        }>;
-      }
-    | null;
+  | {
+    instanceId: string;
+    dungeonId: string;
+    difficultyId: string;
+    creatorCharacterId: number;
+    teamId: string | null;
+    currentStage: number;
+    currentWave: number;
+    participants: DungeonInstanceParticipant[];
+    currentBattleId: string;
+    rewardEligibleCharacterIds: number[];
+    startTime: string;
+    entryCountSnapshots: DungeonEntryCountProjectionRecord[];
+    staminaConsumptions: Array<{
+      characterId: number;
+      amount: number;
+    }>;
+  }
+  | null;
   dungeonSettlement:
-    | {
-        instanceId: string;
-        dungeonId: string;
-        difficultyId: string;
-        timeSpentSec: number;
-        totalDamage: number;
-        deathCount: number;
-      }
-    | null;
+  | {
+    instanceId: string;
+    dungeonId: string;
+    difficultyId: string;
+    timeSpentSec: number;
+    totalDamage: number;
+    deathCount: number;
+  }
+  | null;
   session: OnlineBattleSessionSnapshot | null;
 };
 
@@ -649,8 +649,8 @@ const parseDungeonInstanceData = (instanceDataJson: string): {
         : null,
     rewardEligibleCharacterIds: Array.isArray(parsed.rewardEligibleCharacterIds)
       ? parsed.rewardEligibleCharacterIds
-          .map((value) => toInt(value))
-          .filter((value) => value > 0)
+        .map((value) => toInt(value))
+        .filter((value) => value > 0)
       : [],
   };
 };
@@ -1141,10 +1141,10 @@ const buildCharacterSnapshotsByCharacterIds = async (
     computedMap,
     phaseLabel
       ? {
-          onPhase: (detail, durationMs) => {
-            logWarmupPhaseDetail(phaseLabel, `战斗装配/${detail}`, durationMs);
-          },
-        }
+        onPhase: (detail, durationMs) => {
+          logWarmupPhaseDetail(phaseLabel, `战斗装配/${detail}`, durationMs);
+        },
+      }
       : undefined,
   ).then((loadoutMap) => {
     if (phaseLabel) {
@@ -1813,16 +1813,16 @@ const warmupTowerProjections = async (): Promise<number> => {
   );
 
   const projections: TowerProjectionRecord[] = result.rows.map((row) => ({
-      characterId: toInt(row.character_id),
-      bestFloor: clampNonNegative(toInt(row.best_floor, 0)),
-      nextFloor: Math.max(1, toInt(row.next_floor, 1)),
-      currentRunId: row.current_run_id,
-      currentFloor: row.current_floor == null ? null : Math.max(1, toInt(row.current_floor, 1)),
-      currentBattleId: row.current_battle_id,
-      lastSettledFloor: clampNonNegative(toInt(row.last_settled_floor, 0)),
-      updatedAt: row.updated_at,
-      reachedAt: row.reached_at,
-    }));
+    characterId: toInt(row.character_id),
+    bestFloor: clampNonNegative(toInt(row.best_floor, 0)),
+    nextFloor: Math.max(1, toInt(row.next_floor, 1)),
+    currentRunId: row.current_run_id,
+    currentFloor: row.current_floor == null ? null : Math.max(1, toInt(row.current_floor, 1)),
+    currentBattleId: row.current_battle_id,
+    lastSettledFloor: clampNonNegative(toInt(row.last_settled_floor, 0)),
+    updatedAt: row.updated_at,
+    reachedAt: row.reached_at,
+  }));
 
   await processBatchesConcurrently(projections, persistTowerProjectionsBatch);
   return projections.length;
@@ -1849,12 +1849,10 @@ export const warmupOnlineBattleProjectionService = async (): Promise<WarmupSumma
     runWarmupPhase('队伍投影预热', warmupTeamProjections),
     runWarmupPhase('秘境进入次数投影预热', warmupDungeonEntryProjections),
   ]);
-  const [characterCount, arenaCount, dungeonCount, towerCount] = await Promise.all([
-    runWarmupPhase('角色快照预热', warmupCharacterSnapshots),
-    runWarmupPhase('竞技场投影预热', warmupArenaProjections),
-    runWarmupPhase('秘境投影预热', warmupDungeonProjections),
-    runWarmupPhase('千层塔投影预热', warmupTowerProjections),
-  ]);
+  const characterCount = await warmupCharacterSnapshots();
+  const arenaCount = await warmupArenaProjections();
+  const dungeonCount = await warmupDungeonProjections();
+  const towerCount = await warmupTowerProjections();
   projectionReady = true;
   return {
     characterCount,

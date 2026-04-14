@@ -42,11 +42,11 @@ type DatabasePoolConfig = Pick<
 >;
 
 const DEFAULT_DATABASE_POOL_CONFIG = {
-  max: 600,
-  min: 20,
+  max: 800,
+  min: 100,
   idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
-  keepAliveInitialDelayMillis: 10_000,
+  connectionTimeoutMillis: 60_000,
+  keepAliveInitialDelayMillis: 15_000,
   maxUses: 7_500,
   maxLifetimeSeconds: 900,
   applicationName: 'jiuzhou-server',
