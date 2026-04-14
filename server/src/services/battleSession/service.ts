@@ -82,6 +82,7 @@ import {
   listOnlineBattleSessionProjections,
   type OnlineBattleSessionSnapshot,
 } from '../onlineBattleProjectionService.js';
+import { pruneStaleRunningBattleSession } from './runningSessionGuard.js';
 
 const battleSessionLogger = createScopedLogger('battle.session');
 
@@ -387,6 +388,32 @@ const listRestoredActiveSessionsForUser = async (
   }
 
   return sessions.sort((a, b) => b.updatedAt - a.updatedAt);
+};
+
+const getLatestAccessibleActiveSession = async (
+  userId: number,
+): Promise<BattleSessionRecord | null> => {
+  const runtimeCandidates = listBattleSessionRecords()
+    .filter((candidate) => ensureSessionAccess(userId, candidate))
+    .filter((candidate) => candidate.status === 'running' || candidate.status === 'waiting_transition')
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+
+  for (const candidate of runtimeCandidates) {
+    const normalizedCandidate = await pruneStaleRunningBattleSession(candidate);
+    if (normalizedCandidate) {
+      return normalizedCandidate;
+    }
+  }
+
+  const restoredCandidates = await listRestoredActiveSessionsForUser(userId);
+  for (const candidate of restoredCandidates) {
+    const normalizedCandidate = await pruneStaleRunningBattleSession(candidate);
+    if (normalizedCandidate) {
+      return normalizedCandidate;
+    }
+  }
+
+  return null;
 };
 
 /**
@@ -902,7 +929,9 @@ export const getBattleSessionDetail = async (
   userId: number,
   sessionId: string,
 ): Promise<BattleSessionResponse> => {
-  const session = await ensureBattleSessionRecordBySessionId(sessionId);
+  const session = await pruneStaleRunningBattleSession(
+    await ensureBattleSessionRecordBySessionId(sessionId),
+  );
   if (!ensureSessionAccess(userId, session)) {
     return { success: false, message: '战斗会话不存在或无权访问' };
   }
@@ -939,14 +968,7 @@ export const getBattleSessionDetailByBattleId = async (
 export const getCurrentBattleSessionDetail = async (
   userId: number,
 ): Promise<BattleSessionResponse | { success: true; data: { session: null } }> => {
-  let session = listBattleSessionRecords()
-    .filter((candidate) => ensureSessionAccess(userId, candidate))
-    .filter((candidate) => candidate.status === 'running' || candidate.status === 'waiting_transition')
-    .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
-
-  if (!session) {
-    session = (await listRestoredActiveSessionsForUser(userId))[0] ?? null;
-  }
+  const session = await getLatestAccessibleActiveSession(userId);
 
   if (!session) {
     const resumeIntent = await getPveResumeIntentByUserId(userId);

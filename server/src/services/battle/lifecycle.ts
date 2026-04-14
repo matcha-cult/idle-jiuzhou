@@ -42,6 +42,11 @@ import {
   resolveRecoveredBattleParticipants,
   shouldPersistBattleToRedis,
 } from "./runtime/persistence.js";
+import {
+  deleteBattleSessionRecord,
+  getBattleSessionRecord,
+  getBattleSessionSnapshotByBattleId,
+} from "../battleSession/runtime.js";
 
 const FINISHED_BATTLE_TTL_MS = 2 * 60 * 1000;
 export const BATTLE_EXPIRED_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
@@ -141,6 +146,13 @@ export function cleanupExpiredBattles(): void {
 
     if (!Number.isFinite(battleTime) || battleTime <= 0) continue;
     if (now - battleTime > maxAge) {
+      const attachedSessionSnapshot = getBattleSessionSnapshotByBattleId(battleId);
+      if (attachedSessionSnapshot) {
+        const attachedSession = getBattleSessionRecord(attachedSessionSnapshot.sessionId);
+        if (attachedSession?.status === "running") {
+          deleteBattleSessionRecord(attachedSession.sessionId);
+        }
+      }
       activeBattles.delete(battleId);
       battleParticipants.delete(battleId);
       removeBattleCharacterIndex(battleId);

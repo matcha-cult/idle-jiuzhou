@@ -46,6 +46,7 @@ import type {
   BattleSessionSnapshot,
   TowerBattleSessionContext,
 } from '../battleSession/types.js';
+import { pruneStaleRunningBattleSession } from '../battleSession/runningSessionGuard.js';
 import {
   activateRegisteredBattleRuntime,
   isCharacterInBattle,
@@ -283,6 +284,23 @@ const buildTowerOverviewDto = async (params: {
   };
 };
 
+const listActiveTowerEntrySessions = async (userId: number): Promise<BattleSessionRecord[]> => {
+  const activeSessions = listBattleSessionRecords()
+    .filter((session) => session.ownerUserId === userId)
+    .filter((session) => session.status === 'running' || session.status === 'waiting_transition')
+    .sort((left, right) => right.updatedAt - left.updatedAt);
+
+  const normalizedSessions: BattleSessionRecord[] = [];
+  for (const session of activeSessions) {
+    const normalizedSession = await pruneStaleRunningBattleSession(session);
+    if (normalizedSession) {
+      normalizedSessions.push(normalizedSession);
+    }
+  }
+
+  return normalizedSessions;
+};
+
 const assertTowerEntryAllowed = async (
   userId: number,
   options?: {
@@ -306,10 +324,7 @@ const assertTowerEntryAllowed = async (
     throw new Error('组队状态下无法进入千层塔');
   }
 
-  const activeSession = listBattleSessionRecords()
-    .filter((session) => session.ownerUserId === userId)
-    .filter((session) => session.status === 'running' || session.status === 'waiting_transition')
-    .sort((left, right) => right.updatedAt - left.updatedAt)[0] ?? null;
+  const activeSession = (await listActiveTowerEntrySessions(userId))[0] ?? null;
 
   if (activeSession && activeSession.type !== 'tower') {
     throw new Error('当前已有进行中的战斗');
@@ -382,6 +397,25 @@ const loadLiveBattleState = async (battleId: string | null): Promise<BattleState
   return stateRes.data.state as BattleState;
 };
 
+const clearStaleTowerCurrentBattleId = async (
+  progress: TowerProgressRecord,
+): Promise<TowerProgressRecord> => {
+  if (!progress.currentRunId || !progress.currentBattleId) {
+    return progress;
+  }
+
+  const liveState = await loadLiveBattleState(progress.currentBattleId);
+  if (liveState) {
+    return progress;
+  }
+
+  return upsertTowerProjection({
+    ...progress,
+    currentBattleId: null,
+    updatedAt: new Date().toISOString(),
+  });
+};
+
 export const getTowerOverview = async (userId: number): Promise<{
   success: true;
   data: TowerOverviewDto;
@@ -398,8 +432,13 @@ export const getTowerOverview = async (userId: number): Promise<{
         message: '角色不存在',
       };
     }
-    const progress = await loadTowerProgressByCharacterId(characterId);
-    const activeSession = pickLatestActiveTowerSession(listBattleSessionRecords(), userId);
+    const progress = await clearStaleTowerCurrentBattleId(
+      await loadTowerProgressByCharacterId(characterId),
+    );
+    const activeSession = pickLatestActiveTowerSession(
+      await listActiveTowerEntrySessions(userId),
+      userId,
+    );
     const activeSessionState = activeSession
       ? await loadLiveBattleState(activeSession.currentBattleId)
       : null;
@@ -444,7 +483,9 @@ export const startTowerChallenge = async (userId: number): Promise<TowerStartRes
       deleteBattleSessionRecord(existingTowerSession.sessionId);
     }
 
-    const progress = await loadTowerProgressByCharacterId(access.characterId);
+    const progress = await clearStaleTowerCurrentBattleId(
+      await loadTowerProgressByCharacterId(access.characterId),
+    );
     if (progress.currentRunId && progress.currentBattleId) {
       const restoredState = await loadLiveBattleState(progress.currentBattleId);
       if (restoredState && progress.currentFloor) {
