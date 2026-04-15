@@ -31,6 +31,7 @@ import { getNormalAttack } from "../../../battle/modules/skill.js";
 import { getSkillCooldownRemainingRounds } from "../../../battle/utils/cooldown.js";
 import { resolveSingleAllyTargetId } from "../../../battle/utils/allyTargeting.js";
 import { getGameServer } from "../../../game/gameServer.js";
+import { createSlowOperationLogger } from "../../../utils/slowOperationLogger.js";
 import {
   activeBattles,
   battleParticipants,
@@ -53,6 +54,8 @@ import {
 
 const BATTLE_REDIS_SAVE_INTERVAL_MS = 2000;
 const PLAYER_ACTION_TIMEOUT_MS = 30_000;
+const BATTLE_EMIT_UPDATE_SLOW_THRESHOLD_MS = 40;
+const BATTLE_TICK_SLOW_THRESHOLD_MS = 80;
 const lastWaitingPlayerTurnKeyByBattleId = new Map<string, string>();
 let battleTickerScheduler: ReturnType<typeof setInterval> | null = null;
 
@@ -112,22 +115,45 @@ function patchBattleUpdatePayload(battleId: string, payload: Record<string, unkn
 // ------ 推送更新 ------
 
 export function emitBattleUpdate(battleId: string, payload: Record<string, unknown>): void {
+  const kind = typeof payload?.kind === "string" ? payload.kind : "";
+  const slowLogger = createSlowOperationLogger({
+    label: "battle.emitBattleUpdate",
+    thresholdMs: BATTLE_EMIT_UPDATE_SLOW_THRESHOLD_MS,
+    fields: {
+      battleId,
+      kind,
+    },
+  });
+
   try {
     const participants = battleParticipants.get(battleId) || [];
-    if (participants.length === 0) return;
+    if (participants.length === 0) {
+      slowLogger.flush({
+        participantCount: 0,
+        outcome: "no_participants",
+      });
+      return;
+    }
     const gameServer = getGameServer();
     const patched = patchBattleUpdatePayload(battleId, payload);
+    slowLogger.mark("patchBattleUpdatePayload", {
+      participantCount: participants.length,
+    });
     const session = getAttachedBattleSessionSnapshot(battleId);
     const payloadWithSession = session
       ? { ...patched, session }
       : patched;
+    slowLogger.mark("attachBattleSession", {
+      hasSession: Boolean(session),
+    });
     for (const userId of participants) {
       if (!Number.isFinite(userId)) continue;
       gameServer.emitToUser(userId, "battle:update", payloadWithSession);
     }
+    slowLogger.mark("emitToParticipants");
     const engine = activeBattles.get(battleId);
-    if (engine && shouldPersistBattleToRedis(battleId)) {
-      const kind = typeof payload?.kind === "string" ? payload.kind : "";
+    const shouldPersist = engine !== undefined && shouldPersistBattleToRedis(battleId);
+    if (shouldPersist && engine) {
       const now = Date.now();
       const lastSavedAt = battleLastRedisSavedAt.get(battleId) ?? 0;
       const shouldSave =
@@ -138,9 +164,21 @@ export function emitBattleUpdate(battleId: string, payload: Record<string, unkno
       if (shouldSave) {
         battleLastRedisSavedAt.set(battleId, now);
         saveBattleToRedis(battleId, engine, participants);
+        slowLogger.mark("queueBattleRedisSave", {
+          shouldSave: true,
+        });
       }
     }
+    slowLogger.flush({
+      participantCount: participants.length,
+      persisted: shouldPersist,
+      outcome: "emitted",
+    });
   } catch (error) {
+    slowLogger.flush({
+      failed: true,
+      outcome: "exception",
+    });
     console.warn(`[battle] 推送战斗更新失败: ${battleId}`, error);
   }
 }
@@ -393,9 +431,19 @@ function shouldEmitWaitingPlayerTurnState(
 async function tickBattle(battleId: string): Promise<void> {
   if (battleTickLocks.has(battleId)) return;
   battleTickLocks.add(battleId);
+  const slowLogger = createSlowOperationLogger({
+    label: "battle.tickBattle",
+    thresholdMs: BATTLE_TICK_SLOW_THRESHOLD_MS,
+    fields: {
+      battleId,
+    },
+  });
   try {
     const engine = activeBattles.get(battleId);
     if (!engine) {
+      slowLogger.flush({
+        outcome: "engine_missing",
+      });
       clearPlayerTurnTimeoutState(battleId);
       clearWaitingPlayerTurnState(battleId);
       stopBattleTicker(battleId);
@@ -405,11 +453,18 @@ async function tickBattle(battleId: string): Promise<void> {
     const state = engine.getState();
     if (state.phase === "finished") {
       await emitBattleProgressUpdateSafely(battleId, engine);
+      slowLogger.mark("emitBattleProgressUpdateSafely", {
+        phase: "finished",
+      });
+      slowLogger.flush({
+        outcome: "finished",
+      });
       return;
     }
 
     if (!engine.getCurrentUnit()) {
       engine.ensureActionableUnit();
+      slowLogger.mark("ensureActionableUnit");
     }
 
     const currentUnit = engine.getCurrentUnit();
@@ -418,19 +473,39 @@ async function tickBattle(battleId: string): Promise<void> {
       clearWaitingPlayerTurnState(battleId);
       if (engine.getState().phase === "finished") {
         await emitBattleProgressUpdateSafely(battleId, engine);
+        slowLogger.mark("emitBattleProgressUpdateSafely", {
+          phase: "finished_after_repair",
+        });
       }
+      slowLogger.flush({
+        outcome: "no_current_unit",
+      });
       return;
     }
 
     if (currentUnit.type === "player") {
       if (state.currentTeam !== "attacker") {
         engine.aiAction(true);
+        slowLogger.mark("engine.aiAction", {
+          reason: "defender_player_turn",
+        });
         await emitBattleProgressUpdateSafely(battleId, engine);
+        slowLogger.mark("emitBattleProgressUpdateSafely");
+        slowLogger.flush({
+          outcome: "auto_player_action",
+        });
         return;
       }
       if (isStunned(currentUnit) || isFeared(currentUnit)) {
         engine.aiAction(true);
+        slowLogger.mark("engine.aiAction", {
+          reason: "controlled_player_turn",
+        });
         await emitBattleProgressUpdateSafely(battleId, engine);
+        slowLogger.mark("emitBattleProgressUpdateSafely");
+        slowLogger.flush({
+          outcome: "controlled_player_action",
+        });
         return;
       }
       if (
@@ -441,21 +516,45 @@ async function tickBattle(battleId: string): Promise<void> {
         )
       ) {
         engine.aiAction(true);
+        slowLogger.mark("engine.aiAction", {
+          reason: "offline_takeover",
+        });
         await emitBattleProgressUpdateSafely(battleId, engine);
+        slowLogger.mark("emitBattleProgressUpdateSafely");
+        slowLogger.flush({
+          outcome: "offline_takeover",
+        });
         return;
       }
       if (!canPlayerUseAnySkillThisTurn(state, currentUnit)) {
         engine.aiAction(true);
+        slowLogger.mark("engine.aiAction", {
+          reason: "no_available_skill",
+        });
         await emitBattleProgressUpdateSafely(battleId, engine);
+        slowLogger.mark("emitBattleProgressUpdateSafely");
+        slowLogger.flush({
+          outcome: "no_available_skill",
+        });
         return;
       }
       if (shouldTakeoverPlayerTurnByTimeout(battleId, state, currentUnit)) {
         clearWaitingPlayerTurnState(battleId);
         engine.aiAction(true);
+        slowLogger.mark("engine.aiAction", {
+          reason: "timeout_takeover",
+        });
         await emitBattleProgressUpdateSafely(battleId, engine);
+        slowLogger.mark("emitBattleProgressUpdateSafely");
+        slowLogger.flush({
+          outcome: "timeout_takeover",
+        });
         return;
       }
       if (!shouldEmitWaitingPlayerTurnState(battleId, state, currentUnit)) {
+        slowLogger.flush({
+          outcome: "wait_player_silent",
+        });
         return;
       }
       emitBattleUpdate(battleId, {
@@ -463,14 +562,31 @@ async function tickBattle(battleId: string): Promise<void> {
         battleId,
         state: engine.getState(),
       });
+      slowLogger.mark("emitBattleUpdate", {
+        waitingPlayer: true,
+      });
+      slowLogger.flush({
+        outcome: "wait_player_emit",
+      });
       return;
     }
 
     clearPlayerTurnTimeoutState(battleId);
     clearWaitingPlayerTurnState(battleId);
     engine.aiAction();
+    slowLogger.mark("engine.aiAction", {
+      unitType: currentUnit.type,
+    });
     await emitBattleProgressUpdateSafely(battleId, engine);
+    slowLogger.mark("emitBattleProgressUpdateSafely");
+    slowLogger.flush({
+      outcome: "ai_action",
+    });
   } catch (error) {
+    slowLogger.flush({
+      failed: true,
+      outcome: "exception",
+    });
     console.error(
       `[battle] tickBattle 发生未处理异常，已停止 ticker: ${battleId}`,
       error,

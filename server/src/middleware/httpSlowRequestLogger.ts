@@ -26,6 +26,7 @@
 import { performance } from 'node:perf_hooks';
 import type { NextFunction, Request, Response } from 'express';
 
+import { getLatestEventLoopHealthSnapshot } from '../services/eventLoopMonitorService.js';
 import { createScopedLogger } from '../utils/logger.js';
 
 export type HttpSlowRequestLogEntry = {
@@ -39,6 +40,11 @@ export type HttpSlowRequestLogEntry = {
   characterId?: number;
   ip?: string;
   contentLength?: number;
+  eventLoopSampledAt?: number;
+  eventLoopSampleIntervalMs?: number;
+  eventLoopUtilization?: number;
+  eventLoopDelayP95Ms?: number;
+  eventLoopDelayMaxMs?: number;
 };
 
 export const HTTP_SLOW_REQUEST_THRESHOLD_MS = 250;
@@ -73,6 +79,7 @@ const buildSlowRequestLogEntry = (
   res: Response,
   totalCostMs: number,
 ): HttpSlowRequestLogEntry => {
+  const eventLoopHealthSnapshot = getLatestEventLoopHealthSnapshot();
   return {
     kind: 'slow_http_request',
     thresholdMs: HTTP_SLOW_REQUEST_THRESHOLD_MS,
@@ -84,6 +91,11 @@ const buildSlowRequestLogEntry = (
     characterId: req.characterId,
     ip: req.ip,
     contentLength: normalizeContentLength(res.getHeader('content-length')),
+    eventLoopSampledAt: eventLoopHealthSnapshot?.sampledAt,
+    eventLoopSampleIntervalMs: eventLoopHealthSnapshot?.sampleIntervalMs,
+    eventLoopUtilization: eventLoopHealthSnapshot?.utilization,
+    eventLoopDelayP95Ms: eventLoopHealthSnapshot?.p95DelayMs,
+    eventLoopDelayMaxMs: eventLoopHealthSnapshot?.maxDelayMs,
   };
 };
 

@@ -21,6 +21,7 @@ import { redis } from "../../../config/redis.js";
 import { BattleEngine } from "../../../battle/battleEngine.js";
 import { getBattleLogCursor } from "../../../battle/logStream.js";
 import type { BattleState, BattleUnit } from "../../../battle/types.js";
+import { createSlowOperationLogger } from "../../../utils/slowOperationLogger.js";
 import {
   normalizeBattleParticipantUserIds,
   collectBattleOwnerUserIds,
@@ -34,9 +35,23 @@ export const REDIS_BATTLE_KEY_PREFIX = "battle:state:";
 export const REDIS_BATTLE_STATIC_PREFIX = "battle:state:static:";
 export const REDIS_BATTLE_PARTICIPANTS_PREFIX = "battle:participants:";
 export const REDIS_BATTLE_TTL_SECONDS = 30 * 60; // 30 分钟
+const BATTLE_REDIS_PERSIST_SLOW_THRESHOLD_MS = 40;
+const RECOVERABLE_BATTLE_ID_PREFIXES = [
+  "dungeon-battle-",
+  "tower-battle-",
+] as const;
 
 export const shouldPersistBattleToRedis = (battleId: string): boolean => {
-  return typeof battleId === "string" && battleId.length > 0;
+  if (typeof battleId !== "string" || battleId.length <= 0) {
+    return false;
+  }
+
+  for (const prefix of RECOVERABLE_BATTLE_ID_PREFIXES) {
+    if (battleId.startsWith(prefix)) {
+      return true;
+    }
+  }
+  return false;
 };
 
 type PendingBattleRedisSave = {
@@ -245,26 +260,57 @@ const persistBattleSnapshotToRedis = async (
   snapshot: PendingBattleRedisSave,
 ): Promise<void> => {
   const state = snapshot.engine.getState();
-  const dynamicStateJson = JSON.stringify(buildPersistedBattleDynamicState(state));
-  const staticStateJson = resolvePersistedBattleStaticStateJson(battleId, state);
-  const tasks: Promise<unknown>[] = [
-    redis.setex(
-      `${REDIS_BATTLE_KEY_PREFIX}${battleId}`,
-      REDIS_BATTLE_TTL_SECONDS,
-      dynamicStateJson,
-    ),
-    redis.setex(
-      `${REDIS_BATTLE_PARTICIPANTS_PREFIX}${battleId}`,
-      REDIS_BATTLE_TTL_SECONDS,
-      JSON.stringify(snapshot.participants),
-    ),
-    redis.setex(
-      `${REDIS_BATTLE_STATIC_PREFIX}${battleId}`,
-      REDIS_BATTLE_TTL_SECONDS,
-      staticStateJson,
-    ),
-  ];
-  await Promise.all(tasks);
+  const slowLogger = createSlowOperationLogger({
+    label: "battle.persistBattleSnapshotToRedis",
+    thresholdMs: BATTLE_REDIS_PERSIST_SLOW_THRESHOLD_MS,
+    fields: {
+      battleId,
+      battleType: state.battleType,
+    },
+  });
+
+  try {
+    const dynamicStateJson = JSON.stringify(buildPersistedBattleDynamicState(state));
+    slowLogger.mark("buildDynamicStateJson", {
+      attackerUnitCount: state.teams.attacker.units.length,
+      defenderUnitCount: state.teams.defender.units.length,
+    });
+    const staticStateJson = resolvePersistedBattleStaticStateJson(battleId, state);
+    slowLogger.mark("resolveStaticStateJson");
+    const participantsJson = JSON.stringify(snapshot.participants);
+    slowLogger.mark("serializeParticipants", {
+      participantCount: snapshot.participants.length,
+    });
+    const tasks: Promise<unknown>[] = [
+      redis.setex(
+        `${REDIS_BATTLE_KEY_PREFIX}${battleId}`,
+        REDIS_BATTLE_TTL_SECONDS,
+        dynamicStateJson,
+      ),
+      redis.setex(
+        `${REDIS_BATTLE_PARTICIPANTS_PREFIX}${battleId}`,
+        REDIS_BATTLE_TTL_SECONDS,
+        participantsJson,
+      ),
+      redis.setex(
+        `${REDIS_BATTLE_STATIC_PREFIX}${battleId}`,
+        REDIS_BATTLE_TTL_SECONDS,
+        staticStateJson,
+      ),
+    ];
+    await Promise.all(tasks);
+    slowLogger.mark("persistRedis");
+    slowLogger.flush({
+      dynamicStateBytes: Buffer.byteLength(dynamicStateJson, "utf8"),
+      staticStateBytes: Buffer.byteLength(staticStateJson, "utf8"),
+      participantsBytes: Buffer.byteLength(participantsJson, "utf8"),
+    });
+  } catch (error) {
+    slowLogger.flush({
+      failed: true,
+    });
+    throw error;
+  }
 };
 
 const scheduleQueuedBattleRedisSaveFlush = (battleId: string): void => {
