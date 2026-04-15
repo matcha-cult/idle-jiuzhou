@@ -58,6 +58,7 @@ import {
   disassembleEquipmentBatch,
 } from "./disassemble.js";
 import { flushCharacterPendingItemGrantsNow } from "../shared/characterItemGrantDeltaService.js";
+import { flushCharacterPendingItemInstanceMutationsNow } from "../shared/characterItemInstanceMutationService.js";
 import {
   getBagInventorySnapshot,
   getInventoryItemsWithDefs,
@@ -86,6 +87,7 @@ class InventoryService {
    */
   async prepareInventoryInteraction(characterId: number): Promise<void> {
     await flushCharacterPendingItemGrantsNow(characterId);
+    await flushCharacterPendingItemInstanceMutationsNow(characterId);
   }
 
   async getInventoryInfo(characterId: number): Promise<InventoryInfo> {

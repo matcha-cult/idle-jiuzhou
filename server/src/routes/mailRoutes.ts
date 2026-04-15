@@ -5,6 +5,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireCharacter } from '../middleware/auth.js';
 import { mailService } from '../services/mailService.js';
+import { inventoryService } from '../domains/inventory/index.js';
 import { sendSuccess, sendResult } from '../middleware/response.js';
 import { BusinessError } from '../middleware/BusinessError.js';
 import { getSingleQueryValue, parsePositiveInt } from '../services/shared/httpParam.js';
@@ -86,6 +87,8 @@ router.post('/claim', asyncHandler(async (req, res) => {
       throw new BusinessError('参数错误');
     }
 
+    await inventoryService.prepareInventoryInteraction(characterId);
+
     const autoDisassemble = parseAutoDisassemble((req.body as { autoDisassemble?: unknown })?.autoDisassemble);
     const result = await mailService.claimAttachments(userId, characterId, parsedMailId, true, autoDisassemble);
     return sendResult(res, result);
@@ -97,6 +100,8 @@ router.post('/claim', asyncHandler(async (req, res) => {
 router.post('/claim-all', asyncHandler(async (req, res) => {
     const userId = req.userId!;
     const characterId = req.characterId!;
+
+    await inventoryService.prepareInventoryInteraction(characterId);
 
     const autoDisassemble = parseAutoDisassemble((req.body as { autoDisassemble?: unknown })?.autoDisassemble);
     const result = await mailService.claimAllAttachments(userId, characterId, autoDisassemble);

@@ -244,21 +244,49 @@ const compactItemInstanceMutationHash = async (key: string): Promise<BufferedCha
 const ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY = 'character:item-instance-mutation:index';
 const ITEM_INSTANCE_MUTATION_KEY_PREFIX = 'character:item-instance-mutation:';
 const ITEM_INSTANCE_MUTATION_INFLIGHT_KEY_PREFIX = 'character:item-instance-mutation:inflight:';
+const ITEM_INSTANCE_MUTATION_INFLIGHT_META_KEY_PREFIX = 'character:item-instance-mutation:inflight-meta:';
 const ITEM_INSTANCE_MUTATION_FLUSH_INTERVAL_MS = 1_000;
 const ITEM_INSTANCE_MUTATION_FLUSH_BATCH_LIMIT = 100;
+const ITEM_INSTANCE_MUTATION_INFLIGHT_STALE_AFTER_MS = 5 * 60 * 1000;
 const itemInstanceMutationLogger = createScopedLogger('characterItemInstanceMutation.delta');
 
 let itemInstanceMutationFlushTimer: ReturnType<typeof setInterval> | null = null;
 let itemInstanceMutationFlushInFlight: Promise<void> | null = null;
+const syncFlushPromiseByCharacterId = new Map<number, Promise<void>>();
 
 const claimItemInstanceMutationLua = `
 local dirtyIndexKey = KEYS[1]
 local mainKey = KEYS[2]
 local inflightKey = KEYS[3]
+local inflightMetaKey = KEYS[4]
 local characterId = ARGV[1]
+local nowMs = tonumber(ARGV[2])
+local staleAfterMs = tonumber(ARGV[3])
+local reclaimedStaleInflight = 0
 
 if redis.call('EXISTS', inflightKey) == 1 then
-  return 0
+  local inflightClaimedAtRaw = redis.call('GET', inflightMetaKey)
+  local inflightClaimedAt = tonumber(inflightClaimedAtRaw)
+  local isInflightStale = (
+    inflightClaimedAt == nil
+    or nowMs == nil
+    or staleAfterMs == nil
+    or (nowMs - inflightClaimedAt) >= staleAfterMs
+  )
+  if not isInflightStale then
+    return 0
+  end
+
+  local inflightValues = redis.call('HGETALL', inflightKey)
+  if next(inflightValues) ~= nil then
+    for i = 1, #inflightValues, 2 do
+      redis.call('HSET', mainKey, inflightValues[i], inflightValues[i + 1])
+    end
+  end
+  redis.call('DEL', inflightKey)
+  redis.call('DEL', inflightMetaKey)
+  redis.call('SADD', dirtyIndexKey, characterId)
+  reclaimedStaleInflight = 1
 end
 
 if redis.call('EXISTS', mainKey) == 0 then
@@ -267,16 +295,19 @@ if redis.call('EXISTS', mainKey) == 0 then
 end
 
 redis.call('RENAME', mainKey, inflightKey)
-return 1
+redis.call('SET', inflightMetaKey, tostring(nowMs))
+return reclaimedStaleInflight + 1
 `;
 
 const finalizeItemInstanceMutationLua = `
 local dirtyIndexKey = KEYS[1]
 local mainKey = KEYS[2]
 local inflightKey = KEYS[3]
+local inflightMetaKey = KEYS[4]
 local characterId = ARGV[1]
 
 redis.call('DEL', inflightKey)
+redis.call('DEL', inflightMetaKey)
 if redis.call('EXISTS', mainKey) == 1 then
   redis.call('SADD', dirtyIndexKey, characterId)
 else
@@ -289,10 +320,12 @@ const restoreItemInstanceMutationLua = `
 local dirtyIndexKey = KEYS[1]
 local mainKey = KEYS[2]
 local inflightKey = KEYS[3]
+local inflightMetaKey = KEYS[4]
 local characterId = ARGV[1]
 
 local inflightValues = redis.call('HGETALL', inflightKey)
 if next(inflightValues) == nil then
+  redis.call('DEL', inflightMetaKey)
   if redis.call('EXISTS', mainKey) == 1 then
     redis.call('SADD', dirtyIndexKey, characterId)
   else
@@ -305,6 +338,7 @@ for i = 1, #inflightValues, 2 do
   redis.call('HSET', mainKey, inflightValues[i], inflightValues[i + 1])
 end
 redis.call('DEL', inflightKey)
+redis.call('DEL', inflightMetaKey)
 redis.call('SADD', dirtyIndexKey, characterId)
 return 1
 `;
@@ -314,6 +348,9 @@ const buildItemInstanceMutationKey = (characterId: number): string =>
 
 const buildInflightItemInstanceMutationKey = (characterId: number): string =>
   `${ITEM_INSTANCE_MUTATION_INFLIGHT_KEY_PREFIX}${characterId}`;
+
+const buildInflightItemInstanceMutationMetaKey = (characterId: number): string =>
+  `${ITEM_INSTANCE_MUTATION_INFLIGHT_META_KEY_PREFIX}${characterId}`;
 
 const normalizePositiveInt = (value: number): number => {
   const normalized = Math.floor(Number(value));
@@ -553,24 +590,29 @@ const listDirtyCharacterIds = async (limit: number): Promise<number[]> => {
 };
 
 const claimCharacterItemInstanceMutations = async (characterId: number): Promise<boolean> => {
+  const nowMs = Date.now();
   const result = await redis.eval(
     claimItemInstanceMutationLua,
-    3,
+    4,
     ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY,
     buildItemInstanceMutationKey(characterId),
     buildInflightItemInstanceMutationKey(characterId),
+    buildInflightItemInstanceMutationMetaKey(characterId),
     String(characterId),
+    String(nowMs),
+    String(ITEM_INSTANCE_MUTATION_INFLIGHT_STALE_AFTER_MS),
   );
-  return Number(result) === 1;
+  return Number(result) > 0;
 };
 
 const finalizeCharacterItemInstanceMutations = async (characterId: number): Promise<void> => {
   await redis.eval(
     finalizeItemInstanceMutationLua,
-    3,
+    4,
     ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY,
     buildItemInstanceMutationKey(characterId),
     buildInflightItemInstanceMutationKey(characterId),
+    buildInflightItemInstanceMutationMetaKey(characterId),
     String(characterId),
   );
 };
@@ -578,10 +620,11 @@ const finalizeCharacterItemInstanceMutations = async (characterId: number): Prom
 const restoreCharacterItemInstanceMutations = async (characterId: number): Promise<void> => {
   await redis.eval(
     restoreItemInstanceMutationLua,
-    3,
+    4,
     ITEM_INSTANCE_MUTATION_DIRTY_INDEX_KEY,
     buildItemInstanceMutationKey(characterId),
     buildInflightItemInstanceMutationKey(characterId),
+    buildInflightItemInstanceMutationMetaKey(characterId),
     String(characterId),
   );
 };
@@ -958,6 +1001,60 @@ export const loadCharacterPendingItemInstanceMutations = async (
   ]);
   return [...mainMutations, ...inflightMutations]
     .sort((left, right) => left.createdAt - right.createdAt || left.opId.localeCompare(right.opId));
+};
+
+export const flushCharacterPendingItemInstanceMutationsNow = async (
+  characterId: number,
+): Promise<void> => {
+  const normalizedCharacterId = normalizePositiveInt(characterId);
+  if (normalizedCharacterId <= 0) {
+    return;
+  }
+
+  const existingPromise = syncFlushPromiseByCharacterId.get(normalizedCharacterId);
+  if (existingPromise) {
+    await existingPromise;
+    return;
+  }
+
+  const flushPromise = (async () => {
+    if (itemInstanceMutationFlushInFlight) {
+      await itemInstanceMutationFlushInFlight;
+    }
+
+    const pendingMutations = await loadCharacterPendingItemInstanceMutations(normalizedCharacterId);
+    if (pendingMutations.length <= 0) {
+      return;
+    }
+
+    const claimed = await claimCharacterItemInstanceMutations(normalizedCharacterId);
+    if (!claimed) {
+      if (itemInstanceMutationFlushInFlight) {
+        await itemInstanceMutationFlushInFlight;
+      }
+      return;
+    }
+
+    try {
+      const mutations = await loadClaimedMutations(normalizedCharacterId);
+      if (mutations.length > 0) {
+        await flushSingleCharacterItemInstanceMutations(normalizedCharacterId, mutations);
+      }
+      await finalizeCharacterItemInstanceMutations(normalizedCharacterId);
+    } catch (error) {
+      await restoreCharacterItemInstanceMutations(normalizedCharacterId);
+      throw error;
+    }
+  })();
+
+  syncFlushPromiseByCharacterId.set(normalizedCharacterId, flushPromise);
+  try {
+    await flushPromise;
+  } finally {
+    if (syncFlushPromiseByCharacterId.get(normalizedCharacterId) === flushPromise) {
+      syncFlushPromiseByCharacterId.delete(normalizedCharacterId);
+    }
+  }
 };
 
 export const loadBaseCharacterItemInstanceSnapshots = async (
