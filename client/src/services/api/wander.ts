@@ -99,7 +99,6 @@ export interface WanderOverviewDto {
 
 export interface WanderChooseResultDto {
   story: WanderStoryDto;
-  job: WanderGenerationJobDto;
 }
 
 export interface WanderGenerateQueueResultDto {

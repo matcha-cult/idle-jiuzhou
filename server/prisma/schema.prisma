@@ -460,6 +460,7 @@ model character_wander_story_episode {
   episode_title       String                 @db.VarChar(128)
   opening             String                 @db.Text
   option_texts        Json
+  option_resolutions  Json
   chosen_option_index Int?
   chosen_option_text  String?                @db.VarChar(200)
   episode_summary     String                 @db.Text

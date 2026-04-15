@@ -36,6 +36,11 @@ test('character_wander_story_episode: Prisma schema 应声明 AI 生成称号颜
   const block = getModelBlock('character_wander_story_episode');
   assert.match(
     block,
+    /\boption_resolutions\s+Json\b/,
+    'character_wander_story_episode 缺少 option_resolutions 列定义',
+  );
+  assert.match(
+    block,
     /\breward_title_color\s+String\?\s+@db\.VarChar\(16\)/,
     'character_wander_story_episode 缺少 reward_title_color 列定义',
   );

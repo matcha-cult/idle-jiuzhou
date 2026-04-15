@@ -2,8 +2,8 @@
  * 云游奇遇 AI 编排模块
  *
  * 作用（做什么 / 不做什么）：
- * 1. 做什么：把云游奇遇拆成“生成待选幕次”和“玩家选择后结算”两段 AI 输出，避免终幕尾声与称号在玩家尚未抉择前被提前写死。
- * 2. 做什么：统一维护两段式 prompt、JSON schema 与业务校验，避免 service 层散落约束。
+ * 1. 做什么：在单次 AI 请求里同时生成待选幕次与 3 条选项各自的结果草稿，避免玩家落子后再发第二次请求。
+ * 2. 做什么：统一维护云游 prompt、JSON schema 与业务校验，避免 service 层散落约束。
  * 3. 不做什么：不写数据库，不决定冷却与总幕数，也不直接发放正式称号。
  *
  * 输入 / 输出：
@@ -11,12 +11,12 @@
  * - 输出：校验通过的“幕次草稿”或“选择结算草稿”。
  *
  * 数据流 / 状态流：
- * - 生成阶段：wanderService -> 本模块 -> 返回 storyTheme/storyPremise/opening/options -> service 落库待选幕次
- * - 结算阶段：wanderService -> 本模块 -> 返回 summary/endingType/称号字段 -> service 落库并在终幕发放称号
+ * - 生成阶段：wanderService -> 本模块 -> 返回 storyTheme/storyPremise/opening/options(含 3 条预生成结果) -> service 落库待选幕次
+ * - 选择阶段：service 直接按选项索引读取预生成结果并落库，无需再次请求模型
  *
  * 关键边界条件与坑点：
- * 1. 生成阶段禁止提前写尾声、结局与称号；否则玩家的最终选择会失去因果感。
- * 2. 结算阶段必须严格复用服务端的终幕判定；模型只能补写结果，不能擅自把普通幕改成结局或反之。
+ * 1. opening 只能停在抉择前一刻，三条选项对应的结果必须留在结构化字段里，不能泄漏到 opening 正文。
+ * 2. 三条选项结果必须严格复用服务端的终幕判定；模型只能补写结果，不能擅自把普通幕改成结局或反之。
  */
 import { callConfiguredTextModel } from '../ai/openAITextClient.js';
 import { readTextModelConfig } from '../ai/modelConfig.js';
@@ -40,6 +40,7 @@ import {
 } from '../shared/techniqueTextModelShared.js';
 import { REALM_ORDER } from '../shared/realmRules.js';
 import type {
+  WanderAiEpisodeOptionDraft,
   WanderAiEpisodeResolutionDraft,
   WanderAiEpisodeSetupDraft,
   WanderEndingType,
@@ -126,8 +127,10 @@ type WanderAiSetupPromptRuleSet = {
     storyPremiseStyleRule: string;
     storyPremiseExample: string;
     optionCount: number;
-    optionStyleRule: string;
-    optionExample: [string, string, string];
+    optionTextLengthRange: string;
+    optionTextStyleRule: string;
+    optionTextExample: [string, string, string];
+    optionResolutionRule: string;
     episodeTitleLengthRange: string;
     episodeTitleStyleRule: string;
     openingLengthRange: string;
@@ -196,7 +199,7 @@ const WANDER_STORY_THEME_EXAMPLE = '雨夜借灯';
 const WANDER_STORY_THEME_STYLE_RULE = 'storyTheme 必须是 24 字内主题短词，只概括这一幕或这条故事线的意象母题，像“雨夜借灯”“荒祠问卜”，禁止把剧情摘要直接写进 storyTheme，也不要写完整事件经过或长句解释。';
 const WANDER_STORY_PREMISE_EXAMPLE = '你循着残留血迹误入谷口深处，才觉今夜盘踞此地的异物并非寻常山兽。';
 const WANDER_STORY_PREMISE_STYLE_RULE = 'storyPremise 必须是 8 到 120 字的故事引子，只概括整条奇遇当前的起势、缘由或悬念，像一句前情提要；禁止把整幕 opening 原样压缩，也不要写成标题、角色独白或过长剧情摘要。';
-const WANDER_OPTION_STYLE_RULE = 'optionTexts 必须是长度恰好为 3 的字符串数组，每个元素都必须是非空短句，禁止返回空字符串、null、对象、嵌套数组或把三个选项拼成一个字符串。';
+const WANDER_OPTION_TEXT_STYLE_RULE = 'options 必须是长度恰好为 3 的数组，每个元素都必须是对象；对象内的 text 必须是 4 到 32 字中文短句，方向明确、可执行且互不重复，禁止返回空字符串、null、对象缺字段、嵌套数组或把三个选项拼成一个字符串。';
 const WANDER_EPISODE_TITLE_STYLE_RULE = 'episodeTitle 必须是 24字内中文短标题，像“雨夜借灯”“断桥问剑”，禁止句子式长标题、标点堆砌和副标题。';
 const WANDER_OPENING_STYLE_RULE = 'opening 必须是一段 80 到 420 字的完整正文，要交代当下场景、人物动作与异样征兆，并把局势推到玩家抉择前一刻；若 previousEpisodes 非空，opening 必须从最近一幕 summary 已经发生之后继续推进，只允许用极短承接句带过上一幕已成事实的结果，禁止复述最近一幕 summary 已明确写出的动作、景象、措辞或因果；禁止提前替玩家做选择，禁止提前给出尾声、结局或称号。';
 const WANDER_OPENING_EXAMPLE = '夜雨压桥，河雾顺着石栏缓缓爬起，你才在破庙檐下收住衣角，便见对岸灯影摇成一线。那人披着旧蓑衣，手里提灯不前不后，只隔着雨幕望来，像是在等谁认出他的来意；桥下水声却忽然沉了一拍，仿佛另有什么东西正贴着桥墩缓缓游过。';
@@ -233,13 +236,6 @@ const buildWanderAiResolutionRuleText = (mode: WanderAiResolutionMode): string =
 };
 
 const readString = (value: WanderAiJsonValue): string => (typeof value === 'string' ? value.trim() : '');
-
-const readStringTuple3 = (value: WanderAiJsonValue): [string, string, string] | null => {
-  if (!Array.isArray(value) || value.length !== WANDER_OPTION_COUNT) return null;
-  const normalized = value.map((entry) => readString(entry));
-  if (normalized.some((entry) => entry.length <= 0)) return null;
-  return [normalized[0], normalized[1], normalized[2]];
-};
 
 const isJsonObjectRecord = (value: WanderAiJsonValue): value is TechniqueModelJsonObject => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -320,6 +316,9 @@ const readRewardTitleEffects = (
 };
 
 export const buildWanderAiEpisodeSetupPromptRuleSet = (isEndingEpisode: boolean): WanderAiSetupPromptRuleSet => {
+  const optionResolutionRule = isEndingEpisode
+    ? `options[*] 内部的结果字段必须对应终幕结局：${buildWanderAiResolutionRuleText('must_end')}`
+    : `options[*] 内部的结果字段必须对应非终幕推进：${buildWanderAiResolutionRuleText('must_continue')}`;
   const endingSceneRule = isEndingEpisode
     ? `本幕是终幕抉择幕。${WANDER_ENDING_SCENE_RULE}`
     : '本幕不是终幕，只能继续制造悬念与分叉，不能提前把整条故事写完。';
@@ -329,7 +328,7 @@ export const buildWanderAiEpisodeSetupPromptRuleSet = (isEndingEpisode: boolean)
       '你是《九州修仙录》的云游奇遇导演。',
       '你必须输出严格 JSON，不得输出 markdown、解释、额外注释。',
       '剧情必须是东方修仙语境，禁止现代梗、科幻设定、英文名、阿拉伯数字名。',
-      '本阶段只负责生成待玩家选择的幕次，不负责结算结果。',
+      '本阶段必须一次性生成待玩家选择的幕次，以及 3 条选项各自对应的结果草稿；玩家真正选择前，这些结果只允许出现在结构化 JSON 字段里。',
       WANDER_REALM_ORDER_PROMPT,
       WANDER_REALM_RULE,
       'player.storyPartner 为 null 表示这条故事不带入伙伴；不为 null 时，说明该伙伴会卷入这条故事。你应自然写出其同行、反应、插话或协助，但不要喧宾夺主，也不要替玩家做选择。',
@@ -339,14 +338,23 @@ export const buildWanderAiEpisodeSetupPromptRuleSet = (isEndingEpisode: boolean)
       `storyTheme 示例：${WANDER_STORY_THEME_EXAMPLE}`,
       WANDER_STORY_PREMISE_STYLE_RULE,
       `storyPremise 示例：${WANDER_STORY_PREMISE_EXAMPLE}`,
-      WANDER_OPTION_STYLE_RULE,
-      `optionTexts 示例：${JSON.stringify(WANDER_OPTION_EXAMPLE)}`,
+      WANDER_OPTION_TEXT_STYLE_RULE,
+      `options[*].text 示例：${JSON.stringify(WANDER_OPTION_EXAMPLE)}`,
+      WANDER_SUMMARY_STYLE_RULE,
+      `options[*].summary 示例：${WANDER_SUMMARY_EXAMPLE}`,
+      WANDER_TITLE_COLOR_STYLE_RULE,
+      `options[*].rewardTitleColor 示例：${WANDER_TITLE_COLOR_EXAMPLE}`,
+      WANDER_TITLE_EFFECT_STYLE_RULE,
+      `options[*].rewardTitleEffects 示例：${JSON.stringify(WANDER_TITLE_EFFECT_EXAMPLE)}`,
+      WANDER_NON_ENDING_TITLE_FIELD_RULE,
+      `非终幕字段示例：${JSON.stringify(WANDER_NON_ENDING_TITLE_FIELD_EXAMPLE)}`,
+      optionResolutionRule,
       WANDER_EPISODE_TITLE_STYLE_RULE,
       WANDER_OPENING_STYLE_RULE,
       `opening 示例：${WANDER_OPENING_EXAMPLE}`,
       WANDER_ENDING_SCENE_RULE,
       endingSceneRule,
-      '三条选项都必须可执行、方向明确、互相有差异，不能只换措辞。',
+      '三条选项都必须可执行、方向明确、互相有差异，且各自对应的结果必须体现清晰分叉，不能三条选项落成近似同一结局。',
     ],
     outputRules: {
       storyThemeLengthRange: '2-24',
@@ -356,8 +364,10 @@ export const buildWanderAiEpisodeSetupPromptRuleSet = (isEndingEpisode: boolean)
       storyPremiseStyleRule: WANDER_STORY_PREMISE_STYLE_RULE,
       storyPremiseExample: WANDER_STORY_PREMISE_EXAMPLE,
       optionCount: WANDER_OPTION_COUNT,
-      optionStyleRule: WANDER_OPTION_STYLE_RULE,
-      optionExample: WANDER_OPTION_EXAMPLE,
+      optionTextLengthRange: '4-32',
+      optionTextStyleRule: WANDER_OPTION_TEXT_STYLE_RULE,
+      optionTextExample: WANDER_OPTION_EXAMPLE,
+      optionResolutionRule,
       episodeTitleLengthRange: '2-24',
       episodeTitleStyleRule: WANDER_EPISODE_TITLE_STYLE_RULE,
       openingLengthRange: '80-420',
@@ -379,12 +389,42 @@ const buildWanderAiEpisodeSetupRepairSystemMessage = (isEndingEpisode: boolean):
   ].join('\n');
 };
 
-const parseWanderAiEpisodeSetupDraft = (data: TechniqueModelJsonObject): WanderAiSetupValidationResult => {
+const parseWanderAiEpisodeOptionDraft = (
+  value: WanderAiJsonValue,
+  mode: WanderAiResolutionMode,
+): { success: true; data: WanderAiEpisodeOptionDraft } | { success: false; reason: string } => {
+  if (!isJsonObjectRecord(value)) {
+    return { success: false, reason: 'options[*] 必须是对象' };
+  }
+
+  const text = readString(value.text ?? '');
+  if (!assertLengthRange(text, 4, 32)) {
+    return { success: false, reason: 'options[*].text 长度必须在 4 到 32 之间' };
+  }
+
+  const resolution = parseWanderAiEpisodeResolutionDraft(value, mode);
+  if (!resolution.success) {
+    return { success: false, reason: `options[*] 结果字段不合法：${resolution.reason}` };
+  }
+
+  return {
+    success: true,
+    data: {
+      text,
+      resolution: resolution.data,
+    },
+  };
+};
+
+const parseWanderAiEpisodeSetupDraft = (
+  data: TechniqueModelJsonObject,
+  mode: WanderAiResolutionMode,
+): WanderAiSetupValidationResult => {
   const storyTheme = readString(data.storyTheme ?? '');
   const storyPremise = readString(data.storyPremise ?? '');
   const episodeTitle = readString(data.episodeTitle ?? '');
   const opening = readString(data.opening ?? '');
-  const optionTexts = readStringTuple3(data.optionTexts ?? []);
+  const optionValues = Array.isArray(data.options) ? data.options : null;
 
   if (!assertLengthRange(storyTheme, 2, 24)) {
     return { success: false, reason: 'storyTheme 长度必须在 2 到 24 之间' };
@@ -398,8 +438,22 @@ const parseWanderAiEpisodeSetupDraft = (data: TechniqueModelJsonObject): WanderA
   if (!assertLengthRange(opening, 80, 420)) {
     return { success: false, reason: 'opening 长度必须在 80 到 420 之间' };
   }
-  if (optionTexts === null) {
-    return { success: false, reason: `optionTexts 必须是 ${WANDER_OPTION_COUNT} 个非空字符串` };
+  if (!optionValues || optionValues.length !== WANDER_OPTION_COUNT) {
+    return { success: false, reason: `options 必须是 ${WANDER_OPTION_COUNT} 个对象` };
+  }
+
+  const parsedOptions: WanderAiEpisodeOptionDraft[] = [];
+  const optionTextSet = new Set<string>();
+  for (const optionValue of optionValues) {
+    const parsedOption = parseWanderAiEpisodeOptionDraft(optionValue as WanderAiJsonValue, mode);
+    if (!parsedOption.success) {
+      return parsedOption;
+    }
+    if (optionTextSet.has(parsedOption.data.text)) {
+      return { success: false, reason: 'options[*].text 不能重复' };
+    }
+    optionTextSet.add(parsedOption.data.text);
+    parsedOptions.push(parsedOption.data);
   }
 
   return {
@@ -409,18 +463,25 @@ const parseWanderAiEpisodeSetupDraft = (data: TechniqueModelJsonObject): WanderA
       storyPremise,
       episodeTitle,
       opening,
-      optionTexts,
+      options: [
+        parsedOptions[0],
+        parsedOptions[1],
+        parsedOptions[2],
+      ],
     },
   };
 };
 
-export const validateWanderAiEpisodeSetupContent = (content: string): WanderAiSetupValidationResult => {
+export const validateWanderAiEpisodeSetupContent = (
+  content: string,
+  isEndingEpisode: boolean,
+): WanderAiSetupValidationResult => {
   const parsed = parseTechniqueTextModelJsonObject(content);
   if (!parsed.success || !isJsonObjectRecord(parsed.data)) {
     return { success: false, reason: '模型未返回合法 JSON 对象' };
   }
 
-  return parseWanderAiEpisodeSetupDraft(parsed.data);
+  return parseWanderAiEpisodeSetupDraft(parsed.data, isEndingEpisode ? 'must_end' : 'must_continue');
 };
 
 const WANDER_SETUP_RESPONSE_SCHEMA_REQUIRED_FIELDS = [
@@ -428,10 +489,45 @@ const WANDER_SETUP_RESPONSE_SCHEMA_REQUIRED_FIELDS = [
   'storyPremise',
   'episodeTitle',
   'opening',
-  'optionTexts',
+  'options',
 ] as const;
 
-const buildWanderAiEpisodeSetupResponseSchema = (): TechniqueTextModelJsonSchemaObject => {
+const buildWanderAiEpisodeSetupOptionSchema = (
+  mode: WanderAiResolutionMode,
+): TechniqueTextModelJsonSchemaObject => {
+  const resolutionProperties = buildWanderAiEpisodeResolutionBaseProperties();
+  return mode === 'must_end'
+    ? {
+      type: 'object',
+      additionalProperties: false,
+      required: ['text', 'summary', 'endingType', 'rewardTitleName', 'rewardTitleDesc', 'rewardTitleColor', 'rewardTitleEffects'],
+      properties: {
+        text: { type: 'string', minLength: 4, maxLength: 32 },
+        ...resolutionProperties,
+        endingType: { type: 'string', enum: WANDER_COMPLETED_ENDING_TYPE_VALUES },
+        rewardTitleName: { type: 'string', minLength: 2, maxLength: 8 },
+        rewardTitleDesc: { type: 'string', minLength: 8, maxLength: 40 },
+        rewardTitleColor: { type: 'string', minLength: 7, maxLength: 7, pattern: WANDER_TITLE_COLOR_PATTERN },
+        rewardTitleEffects: buildWanderTitleEffectsSchema(WANDER_TITLE_MIN_EFFECT_COUNT, WANDER_TITLE_MAX_EFFECT_COUNT),
+      },
+    }
+    : {
+      type: 'object',
+      additionalProperties: false,
+      required: ['text', 'summary', 'endingType', 'rewardTitleName', 'rewardTitleDesc', 'rewardTitleColor', 'rewardTitleEffects'],
+      properties: {
+        text: { type: 'string', minLength: 4, maxLength: 32 },
+        ...resolutionProperties,
+        endingType: { type: 'string', enum: WANDER_NON_ENDING_TYPE_VALUES, const: 'none' },
+        rewardTitleName: { type: 'string', minLength: 0, maxLength: 0 },
+        rewardTitleDesc: { type: 'string', minLength: 0, maxLength: 0 },
+        rewardTitleColor: { type: 'string', minLength: 0, maxLength: 0 },
+        rewardTitleEffects: buildWanderTitleEffectsSchema(0, 0),
+      },
+    };
+};
+
+const buildWanderAiEpisodeSetupResponseSchema = (isEndingEpisode: boolean): TechniqueTextModelJsonSchemaObject => {
   return {
     type: 'object',
     additionalProperties: false,
@@ -441,11 +537,11 @@ const buildWanderAiEpisodeSetupResponseSchema = (): TechniqueTextModelJsonSchema
       storyPremise: { type: 'string', minLength: 8, maxLength: 120 },
       episodeTitle: { type: 'string', minLength: 2, maxLength: 24 },
       opening: { type: 'string', minLength: 80, maxLength: 420 },
-      optionTexts: {
+      options: {
         type: 'array',
         minItems: WANDER_OPTION_COUNT,
         maxItems: WANDER_OPTION_COUNT,
-        items: { type: 'string', minLength: 4, maxLength: 32 },
+        items: buildWanderAiEpisodeSetupOptionSchema(isEndingEpisode ? 'must_end' : 'must_continue'),
       },
     },
   };
@@ -876,7 +972,10 @@ export const generateWanderAiEpisodeSetupDraft = async (
 
     try {
       latestContent = await requestWanderAiContent({
-        responseFormat: buildWanderAiResponseFormat(buildWanderAiEpisodeSetupResponseSchema(), useStructuredSchema),
+        responseFormat: buildWanderAiResponseFormat(
+          buildWanderAiEpisodeSetupResponseSchema(input.isEndingEpisode),
+          useStructuredSchema,
+        ),
         systemMessage,
         userMessage,
         seed,
@@ -892,53 +991,7 @@ export const generateWanderAiEpisodeSetupDraft = async (
       throw error;
     }
 
-    const validation = validateWanderAiEpisodeSetupContent(latestContent);
-    if (validation.success) {
-      return validation.data;
-    }
-
-    latestFailureReason = validation.reason;
-  }
-
-  throw new Error(`云游奇遇模型返回字段不符合业务约束：${latestFailureReason}`);
-};
-
-export const generateWanderAiEpisodeResolutionDraft = async (
-  input: WanderAiEpisodeResolutionInput,
-): Promise<WanderAiEpisodeResolutionDraft> => {
-  const seed = generateTechniqueTextModelSeed();
-  const mode = resolveWanderAiResolutionMode(input);
-  let useStructuredSchema = true;
-  let latestContent = '';
-  let latestFailureReason = '模型未返回合法 JSON 对象';
-
-  for (let attempt = 1; attempt <= WANDER_AI_MAX_ATTEMPTS; attempt += 1) {
-    const systemMessage = attempt === 1
-      ? buildWanderAiEpisodeResolutionSystemMessage(mode)
-      : buildWanderAiEpisodeResolutionRepairSystemMessage(mode);
-    const userMessage = attempt === 1
-      ? buildWanderAiEpisodeResolutionUserMessage(input, seed)
-      : buildWanderAiEpisodeResolutionRepairUserMessage(input, seed, latestContent, latestFailureReason);
-
-    try {
-      latestContent = await requestWanderAiContent({
-        responseFormat: buildWanderAiResponseFormat(buildWanderAiEpisodeResolutionResponseSchema(mode), useStructuredSchema),
-        systemMessage,
-        userMessage,
-        seed,
-      });
-    } catch (error) {
-      if (useStructuredSchema && isUnsupportedStructuredSchemaError(error)) {
-        useStructuredSchema = false;
-        latestFailureReason = '当前模型端不支持本次结构化 schema，已改为普通 JSON 输出，请严格按规则完整重写 JSON。';
-        latestContent = '';
-        attempt -= 1;
-        continue;
-      }
-      throw error;
-    }
-
-    const validation = validateWanderAiEpisodeResolutionContent(latestContent, mode);
+    const validation = validateWanderAiEpisodeSetupContent(latestContent, input.isEndingEpisode);
     if (validation.success) {
       return validation.data;
     }

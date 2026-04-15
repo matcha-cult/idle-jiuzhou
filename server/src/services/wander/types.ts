@@ -115,7 +115,6 @@ export interface WanderOverviewDto {
 
 export interface WanderChooseResultDto {
   story: WanderStoryDto;
-  job: WanderGenerationJobDto;
 }
 
 export interface WanderGenerateQueueResultDto {
@@ -127,7 +126,11 @@ export interface WanderAiEpisodeSetupDraft {
   storyPremise: string;
   episodeTitle: string;
   opening: string;
-  optionTexts: [string, string, string];
+  options: [
+    WanderAiEpisodeOptionDraft,
+    WanderAiEpisodeOptionDraft,
+    WanderAiEpisodeOptionDraft
+  ];
 }
 
 export interface WanderAiEpisodeResolutionDraft {
@@ -138,4 +141,9 @@ export interface WanderAiEpisodeResolutionDraft {
   rewardTitleDesc: string;
   rewardTitleColor: string;
   rewardTitleEffects: Record<string, number>;
+}
+
+export interface WanderAiEpisodeOptionDraft {
+  text: string;
+  resolution: WanderAiEpisodeResolutionDraft;
 }
