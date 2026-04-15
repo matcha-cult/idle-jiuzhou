@@ -659,6 +659,66 @@ test('减益光环宿主不应计入自身减益，但仍应正常压制敌方',
   assert.equal(enemy.currentAttrs.fagong, 176, '敌方应正常吃到 12% 法攻压制');
 });
 
+test('光环每回合附加的子 buff 应保持不可驱散，避免被命运交换错误转移', () => {
+  const caster = createUnit({
+    id: 'player-aura-sub-nondispellable-owner',
+    name: '玄幕使',
+  });
+  const enemy = createUnit({
+    id: 'monster-aura-sub-nondispellable-target',
+    name: '试剑傀',
+    type: 'monster',
+    attrs: {
+      fagong: 220,
+    },
+  });
+
+  const debuffAuraSkill: BattleSkill = {
+    id: 'skill-aura-sub-nondispellable',
+    name: '玄幕蚀域',
+    source: 'technique',
+    cost: {},
+    cooldown: 0,
+    targetType: 'self',
+    targetCount: 1,
+    damageType: 'magic',
+    element: 'shui',
+    effects: [
+      {
+        type: 'debuff',
+        buffKind: 'aura',
+        buffKey: 'debuff-aura',
+        auraTarget: 'all_enemy',
+        auraEffects: [
+          {
+            type: 'debuff',
+            buffKind: 'attr',
+            buffKey: 'debuff-fagong-down',
+            attrKey: 'fagong',
+            applyType: 'percent',
+            value: 0.1,
+          },
+        ],
+      },
+    ],
+    triggerType: 'passive',
+    aiPriority: 70,
+  };
+  caster.skills = [debuffAuraSkill];
+
+  const state = createState({
+    attacker: [caster],
+    defender: [enemy],
+  });
+  const engine = new BattleEngine(state);
+
+  engine.startBattle();
+
+  const auraSubBuffs = enemy.buffs.filter((buff) => buff.tags.includes('aura_sub'));
+  assert.equal(auraSubBuffs.length, 1, '敌方应收到 1 个光环子 debuff');
+  assert.equal(auraSubBuffs[0]?.dispellable, false, '光环子 debuff 必须标记为不可驱散');
+});
+
 test('旧减益光环子效果缺失 target 且误写成 buff 时，仍应按敌方减益结算', () => {
   const caster = createUnit({
     id: 'player-legacy-debuff-aura-owner',

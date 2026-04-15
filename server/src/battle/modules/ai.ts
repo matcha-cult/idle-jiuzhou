@@ -19,6 +19,11 @@ type AIDecision = {
   targetIds: string[];
 };
 
+const EXPLICIT_SKILL_PRIORITY_UNIT_TYPE_SET = new Set<BattleUnit['type']>([
+  'player',
+  'npc',
+]);
+
 /**
  * AI决策主入口
  */
@@ -37,8 +42,8 @@ export function makeAIDecision(
     return makeFearDecision(state, unit);
   }
 
-  // 玩家AI逻辑保持原有“明确技能优先”行为
-  if (unit.type === 'player') {
+  // 玩家/竞技场快照 NPC 保持“明确技能优先”行为，避免把快照对手错误当成怪物随机普攻。
+  if (EXPLICIT_SKILL_PRIORITY_UNIT_TYPE_SET.has(unit.type)) {
     const availableSkills = getFilteredAvailableSkills(unit, allowedSkillIds);
     const selectedSkill = availableSkills.find((s) => s.id !== 'skill-normal-attack') ?? getNormalAttack(unit);
     const targetIds = selectTargets(state, unit, selectedSkill);

@@ -677,7 +677,9 @@ function applyAuraSubEffect(
         hot: sub.hot,
         healForbidden: sub.healForbidden,
         tags: ['aura_sub'],
-        dispellable: true,
+        // 光环宿主本身不可驱散时，按回合续上的子 Buff 也必须保持不可驱散，
+        // 否则命运交换/驱散会错误搬运光环效果。
+        dispellable: false,
       }, 1, 1);
       if (!subResult.buffsApplied) subResult.buffsApplied = [];
       subResult.buffsApplied.push(buildAuraSubEffectSummary(sub) || sub.buffDefId);
