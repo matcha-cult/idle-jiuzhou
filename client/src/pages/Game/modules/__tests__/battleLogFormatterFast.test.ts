@@ -104,4 +104,28 @@ describe('battleLogFormatterFast', () => {
       '第2回合 赤鳞妖 的【减益光环】生效：甲（伤害-120）；乙（伤害-180）',
     );
   });
+
+  it('命运交换日志中的状态前缀应保留中文动作并翻译后续 buff key', () => {
+    const log: BattleLogEntryDto = {
+      type: 'action',
+      round: 4,
+      actorId: 'player-1',
+      actorName: '天书',
+      skillId: 'skill-fate-swap',
+      skillName: '施展',
+      targets: [
+        {
+          targetId: 'monster-1',
+          targetName: '欧喵',
+          hits: [{ hit: false }],
+          buffsApplied: ['承接buff-max-qixue-up', '承接buff-reflect-damage'],
+          buffsRemoved: ['转移buff-max-qixue-up', '转移buff-reflect-damage'],
+        },
+      ],
+    };
+
+    expect(formatBattleLogLineFast(log)).toBe(
+      '第4回合 天书 施展【施展】，目标：欧喵（未命中，获得状态:承接气血上限提升、承接受击反震，移除状态:转移气血上限提升、转移受击反震）',
+    );
+  });
 });

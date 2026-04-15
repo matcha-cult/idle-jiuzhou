@@ -46,6 +46,11 @@ const ATTR_KEY_ALIAS: Record<string, string> = {
   'tu-kangxing': 'tu_kangxing',
 };
 
+const BUFF_NAME_ACTION_PREFIX_SET = new Set([
+  '承接',
+  '转移',
+]);
+
 function normalizeAttrKey(raw: string): string {
   const lowered = raw.trim().toLowerCase();
   if (!lowered) return '';
@@ -62,6 +67,14 @@ function translateAttrLabel(raw: string): string | null {
 export function translateBuffName(buffName: string | null | undefined): string {
   const raw = String(buffName ?? '').trim();
   if (!raw) return '';
+
+  for (const prefix of BUFF_NAME_ACTION_PREFIX_SET) {
+    if (!raw.startsWith(prefix)) continue;
+    const translatedBody = translateBuffName(raw.slice(prefix.length));
+    if (!translatedBody) return prefix;
+    if (translatedBody === raw.slice(prefix.length)) return raw;
+    return `${prefix}${translatedBody}`;
+  }
 
   const special = translateKnownBuffKeyName(raw);
   if (special) return special;
