@@ -108,8 +108,11 @@ class InventoryService {
     location: InventoryLocation,
     page: number,
     pageSize: number,
+    options: {
+      knownConcreteState?: boolean;
+    } = {},
   ): Promise<{ items: InventoryItemWithDef[]; total: number }> {
-    return getInventoryItemsWithDefs(characterId, location, page, pageSize);
+    return getInventoryItemsWithDefs(characterId, location, page, pageSize, options);
   }
 
   async getBagInventorySnapshot(characterId: number): Promise<{

@@ -1411,20 +1411,30 @@ class PartnerService {
         return { success: false, message: unlockState.message };
       }
 
-      const character = await loadCharacterPartnerContext(characterId, false);
+      const [
+        character,
+        rows,
+        books,
+        partnerConsumables,
+        pendingTechniqueLearnPreviewResult,
+      ] = await Promise.all([
+        loadCharacterPartnerContext(characterId, false),
+        loadPartnerRows(characterId, false),
+        loadPartnerBooks(characterId),
+        loadPartnerConsumables(characterId),
+        loadPendingPartnerTechniqueLearnPreview(characterId),
+      ]);
       if (!character) return { success: false, message: '角色不存在' };
+      if (!pendingTechniqueLearnPreviewResult.success) {
+        return { success: false, message: pendingTechniqueLearnPreviewResult.message };
+      }
 
-      const rows = await loadPartnerRows(characterId, false);
-      const techniqueMap = await loadPartnerTechniqueRows(
-        rows.map((row) => row.id),
-        false,
-      );
-      const tradeStateMap = await loadPartnerMarketTradeStateMap(
-        rows.map((row) => row.id),
-      );
-      const fusionStateMap = await loadPartnerFusionLockStateMap(
-        rows.map((row) => row.id),
-      );
+      const partnerIds = rows.map((row) => row.id);
+      const [techniqueMap, tradeStateMap, fusionStateMap] = await Promise.all([
+        loadPartnerTechniqueRows(partnerIds, false),
+        loadPartnerMarketTradeStateMap(partnerIds),
+        loadPartnerFusionLockStateMap(partnerIds),
+      ]);
       const partners = await buildPartnerDetails({
         rows,
         techniqueMap,
@@ -1437,12 +1447,6 @@ class PartnerService {
         tradeStateMap,
         fusionStateMap,
       });
-      const books = await loadPartnerBooks(characterId);
-      const partnerConsumables = await loadPartnerConsumables(characterId);
-      const pendingTechniqueLearnPreviewResult = await loadPendingPartnerTechniqueLearnPreview(characterId);
-      if (!pendingTechniqueLearnPreviewResult.success) {
-        return { success: false, message: pendingTechniqueLearnPreviewResult.message };
-      }
       const pendingTechniqueLearnPreview = pendingTechniqueLearnPreviewResult.data ?? null;
 
       return {

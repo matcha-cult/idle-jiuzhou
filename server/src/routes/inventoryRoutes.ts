@@ -137,7 +137,9 @@ router.get('/items', prepareInventoryConcreteState, asyncHandler(async (req, res
     const page = parsePositiveInt(getSingleQueryValue(req.query.page)) ?? 1;
     const pageSize = Math.min(parsePositiveInt(getSingleQueryValue(req.query.pageSize)) ?? 100, 200);
 
-    const result = await inventoryService.getInventoryItemsWithDefs(characterId, location, page, pageSize);
+    const result = await inventoryService.getInventoryItemsWithDefs(characterId, location, page, pageSize, {
+      knownConcreteState: true,
+    });
 
     sendSuccess(res, {
       items: result.items,

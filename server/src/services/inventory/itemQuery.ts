@@ -71,6 +71,24 @@ type BuildInventoryItemDefContextOptions = {
   pendingMutations?: readonly BufferedCharacterItemInstanceMutation[];
 };
 
+type GetInventoryItemsWithDefsOptions = {
+  /**
+   * 作用：
+   * 1. 调用方已确认当前角色库存实体态与 `item_instance` 权威表一致时，允许跳过 pending mutation 读取，
+   *    并把底层列表查询切到实体态分页快路径。
+   * 2. 主要用于已经执行过 `prepareInventoryInteraction` 的 HTTP 热路径，减少 Redis 读取与 projected 全量构建。
+   *
+   * 不做什么：
+   * - 不会替调用方执行 pending grants / pending mutations flush。
+   * - 不适用于仍依赖 projected 视图读取未落库实例的场景。
+   *
+   * 关键边界条件与坑点：
+   * 1. 若调用方误判为实体态，列表与套装件数都会丢失未 flush 的变更。
+   * 2. 开启后 `pendingMutations` 必须固定为空数组，避免 `getEquippedSetPieceCountMap` 又回退去读取 Redis。
+   */
+  knownConcreteState?: boolean;
+};
+
 /**
  * 单次 projected 全量读取结果按库存位置拆分。
  *
@@ -391,10 +409,14 @@ export const getInventoryItemsWithDefs = async (
   location: InventoryLocation,
   page: number,
   pageSize: number,
+  options: GetInventoryItemsWithDefsOptions = {},
 ): Promise<{ items: InventoryItemWithDef[]; total: number }> => {
-  const pendingMutations = await loadCharacterPendingItemInstanceMutations(characterId);
+  const pendingMutations = options.knownConcreteState
+    ? []
+    : await loadCharacterPendingItemInstanceMutations(characterId);
   const result = await getInventoryItems(characterId, location, page, pageSize, {
     pendingMutations,
+    knownConcreteState: options.knownConcreteState,
   });
 
   if (result.items.length === 0) {

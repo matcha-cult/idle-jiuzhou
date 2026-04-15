@@ -222,6 +222,21 @@ type GetInventoryInfoOptions = {
 type GetInventoryItemsOptions = {
   projectedItems?: readonly CharacterItemInstanceSnapshot[];
   pendingMutations?: readonly BufferedCharacterItemInstanceMutation[];
+  /**
+   * 作用：
+   * 1. 调用方已确认当前角色的待 flush 奖励/实例变更都已落成真实 `item_instance` 时，
+   *    允许直接走底表分页查询，避免先全量加载 projected 视图再内存切页。
+   * 2. 仅用于依赖“真实实例视图”的热路径，例如已经执行过库存 preflight 的 HTTP 请求。
+   *
+   * 不做什么：
+   * - 不会自动帮调用方刷新 pending grants / pending mutations。
+   * - 不能用于仍需把未落库 mutation 叠加进可见列表的读路径。
+   *
+   * 关键边界条件与坑点：
+   * 1. 只有在调用方已经把库存实体态收敛完成时才可开启，否则列表会漏掉尚未 flush 的实例变更。
+   * 2. 开启后分页直接交给 SQL；若调用方还传入 `projectedItems`，这里会忽略该内存快照。
+   */
+  knownConcreteState?: boolean;
 };
 
 const loadProjectedInventoryItemsByLocation = async (
@@ -236,6 +251,70 @@ const loadProjectedInventoryItemsByLocation = async (
       pendingMutations,
     });
   return mapProjectedSnapshotsToInventoryItems(resolvedProjectedItems);
+};
+
+/**
+ * 实体态库存分页查询。
+ *
+ * 作用：
+ * 1. 在调用方已确认 inventory/item_instance 不再依赖 projected overlay 时，直接用 SQL 做分页与计数。
+ * 2. 复用 `idx_item_instance_slot` 热点索引，把“全量读出再 slice”的工作收回数据库，降低大背包场景的 CPU 和内存开销。
+ *
+ * 不做什么：
+ * - 不叠加 pending grant / pending mutation。
+ * - 不修改任何实例状态，也不保证调用前已经完成库存 preflight。
+ *
+ * 输入 / 输出：
+ * - 输入：角色 ID、库存位置、页码、分页大小。
+ * - 输出：当前页库存实例与总数。
+ *
+ * 数据流 / 状态流：
+ * characterId + location + page/pageSize -> item_instance SQL 分页 -> InventoryItem[]。
+ *
+ * 复用设计说明：
+ * - `getInventoryItems` 在“实体态已确认”的热路径和老的非 projected location 查询都复用这一条 SQL 入口，避免分页 SQL 分叉两份。
+ * - 后续如果库存列表字段扩展，只需同步这一个查询字段集合，不会遗漏快路径。
+ *
+ * 关键边界条件与坑点：
+ * 1. 这里只返回真实实例；若调用方仍需要 projected 语义，必须继续走 `loadProjectedInventoryItemsByLocation`。
+ * 2. 排序必须与 projected 读路径保持一致，否则同一背包在不同链路下会出现列表抖动。
+ */
+const loadConcreteInventoryItemsPage = async (
+  characterId: number,
+  location: InventoryLocation,
+  page: number,
+  pageSize: number,
+): Promise<{ items: InventoryItem[]; total: number }> => {
+  const offset = (page - 1) * pageSize;
+  const sql = `
+    WITH items AS (
+      SELECT
+        ii.id, ii.item_def_id, ii.qty, ii.location, ii.location_slot,
+        ii.quality, ii.quality_rank,
+        ii.metadata,
+        ii.equipped_slot, ii.strengthen_level, ii.refine_level,
+        ii.socketed_gems,
+        ii.affixes, ii.identified, ii.locked, ii.bind_type, ii.created_at
+      FROM item_instance ii
+      WHERE ii.owner_character_id = $1 AND ii.location = $2
+      ORDER BY ii.location_slot NULLS LAST, ii.created_at DESC
+      LIMIT $3 OFFSET $4
+    ),
+    total AS (
+      SELECT COUNT(*) as cnt FROM item_instance
+      WHERE owner_character_id = $1 AND location = $2
+    )
+    SELECT items.*, total.cnt as total_count
+    FROM items, total
+  `;
+  const result = await query(sql, [characterId, location, pageSize, offset]);
+  const total =
+    result.rows.length > 0 ? parseInt(String(result.rows[0].total_count), 10) : 0;
+  const items = result.rows.map((row) => {
+    const { total_count, ...item } = row;
+    return item as InventoryItem;
+  });
+  return { items, total };
 };
 
 const buildItemInstanceMutationOpId = (
@@ -704,6 +783,10 @@ export const getInventoryItems = async (
   pageSize: number = 100,
   options: GetInventoryItemsOptions = {},
 ): Promise<{ items: InventoryItem[]; total: number }> => {
+  if (options.knownConcreteState) {
+    return loadConcreteInventoryItemsPage(characterId, location, page, pageSize);
+  }
+
   if (location === "bag") {
     const rawItems = sortInventoryItemsForDisplay(
       await loadProjectedInventoryItemsByLocation(
@@ -734,40 +817,7 @@ export const getInventoryItems = async (
       total: rawItems.length,
     };
   }
-  const offset = (page - 1) * pageSize;
-
-  const sql = `
-    WITH items AS (
-      SELECT
-        ii.id, ii.item_def_id, ii.qty, ii.location, ii.location_slot,
-        ii.quality, ii.quality_rank,
-        ii.metadata,
-        ii.equipped_slot, ii.strengthen_level, ii.refine_level,
-        ii.socketed_gems,
-        ii.affixes, ii.identified, ii.locked, ii.bind_type, ii.created_at
-      FROM item_instance ii
-      WHERE ii.owner_character_id = $1 AND ii.location = $2
-      ORDER BY ii.location_slot NULLS LAST, ii.created_at DESC
-      LIMIT $3 OFFSET $4
-    ),
-    total AS (
-      SELECT COUNT(*) as cnt FROM item_instance
-      WHERE owner_character_id = $1 AND location = $2
-    )
-    SELECT items.*, total.cnt as total_count
-    FROM items, total
-  `;
-
-  const result = await query(sql, [characterId, location, pageSize, offset]);
-
-  const total =
-    result.rows.length > 0 ? parseInt(result.rows[0].total_count) : 0;
-  const items = result.rows.map((row) => {
-    const { total_count, ...item } = row;
-    return item as InventoryItem;
-  });
-
-  return { items, total };
+  return loadConcreteInventoryItemsPage(characterId, location, page, pageSize);
 };
 
 // ============================================

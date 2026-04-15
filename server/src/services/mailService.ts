@@ -65,8 +65,10 @@ import {
   loadProjectedCharacterItemInstances,
   loadProjectedCharacterItemInstanceById,
   loadProjectedCharacterItemInstancesByLocation,
+  flushCharacterPendingItemInstanceMutationsNow,
   type JsonValue,
 } from './shared/characterItemInstanceMutationService.js';
+import { flushCharacterPendingItemGrantsNow } from './shared/characterItemGrantDeltaService.js';
 import {
   buildMailAttachmentPreviewRewards,
   type MailInstanceAttachmentPreviewItem,
@@ -531,6 +533,33 @@ const mailUnreadCounterCache = createCacheLayer<string, MailUnreadCounterCacheEn
 // ============================================
 
 class MailService {
+  /**
+   * 邮件领取库存实体态前置准备。
+   *
+   * 作用：
+   * 1) 只在邮件领取确实需要“入包/实例移动”时，把当前角色待 flush 的奖励与实例变更落成真实库存状态。
+   * 2) 让单封领取与批量领取复用同一入口，避免路由层和 service 层各自维护一套 preflight 条件。
+   *
+   * 输入 / 输出：
+   * - 输入：角色 ID。
+   * - 输出：`Promise<void>`，完成后表示邮件领取可直接依赖 `item_instance` 权威表继续执行。
+   *
+   * 数据流 / 状态流：
+   * mail claim -> 本方法 flush pending grants / mutations -> 后续入包与容量判断走真实库存。
+   *
+   * 复用设计说明：
+   * - 单封领取先判定附件类型再调用，失败快路径不再做无意义 flush。
+   * - 批量领取可在外层只调用一次，再让每封邮件跳过重复准备，避免 N 封邮件放大成 N 次 preflight。
+   *
+   * 关键边界条件与坑点：
+   * 1) 这里只负责库存实体态准备，不负责邮件锁与事务 savepoint；调用方必须在正确阶段编排。
+   * 2) 该准备是非事务性的，不能挪到“失败需要整体回滚”的 savepoint 内部。
+   */
+  private async prepareInventoryInteractionForMailClaim(characterId: number): Promise<void> {
+    await flushCharacterPendingItemGrantsNow(characterId);
+    await flushCharacterPendingItemInstanceMutationsNow(characterId);
+  }
+
   @Transactional
   private async cleanupExpiredMailForRecipient(
     userId: number,
@@ -2048,6 +2077,9 @@ class MailService {
     mailId: number,
     shouldInvalidateUnreadCounter: boolean = true,
     autoDisassemble: boolean = false,
+    options: {
+      inventoryPrepared?: boolean;
+    } = {},
   ): Promise<{ success: boolean; message: string; rewards?: RewardResult[] }> {
     const collectCounts = new Map<string, number>();
 
@@ -2115,6 +2147,10 @@ class MailService {
 
     if (!hasAttachRewards && !hasCurrency && !hasItems) {
       return { success: false, message: '该邮件没有附件' };
+    }
+
+    if (shouldLockInventoryForClaim && options.inventoryPrepared !== true) {
+      await this.prepareInventoryInteractionForMailClaim(characterId);
     }
 
     const rewardDistributionSavepoint = 'mail_claim_reward_distribution';
@@ -2513,6 +2549,24 @@ class MailService {
       return { success: true, message: '没有可领取的附件', claimedCount: 0, skippedCount: 0 };
     }
 
+    const shouldPrepareInventoryOnce = mailsResult.rows.some((row) => {
+      const attachRewards = normalizeGrantedRewardPayload(row.attach_rewards);
+      if (hasGrantedRewardPayload(attachRewards)) {
+        return true;
+      }
+      const attachItems = this.normalizeAttachItems(row.attach_items);
+      const attachInstanceIds = this.normalizeAttachInstanceIds(row.attach_instance_ids);
+      const treatAttachItemsAsPreviewOnly = shouldTreatAttachItemsAsInstancePreviewOnly({
+        source: typeof row.source === 'string' ? row.source : null,
+        attachItems,
+        attachInstanceIds,
+      });
+      return (treatAttachItemsAsPreviewOnly ? 0 : attachItems.length) > 0 || attachInstanceIds.length > 0;
+    });
+    if (shouldPrepareInventoryOnce) {
+      await this.prepareInventoryInteractionForMailClaim(characterId);
+    }
+
     let claimedCount = 0;
     let skippedCount = 0;
     let totalSilver = 0;
@@ -2540,6 +2594,9 @@ class MailService {
         mailId,
         false,
         autoDisassemble,
+        {
+          inventoryPrepared: shouldPrepareInventoryOnce,
+        },
       );
 
       if (!claimResult.success) {

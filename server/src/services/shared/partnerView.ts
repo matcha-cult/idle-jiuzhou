@@ -28,6 +28,7 @@ import {
   getSkillDefinitions,
   getTechniqueDefinitions,
   type PartnerDefConfig,
+  type SkillDefConfig,
   type TechniqueDefConfig,
 } from '../staticConfigLoader.js';
 import {
@@ -403,10 +404,7 @@ export const getPartnerTechniqueStaticMeta = (
   const normalizedTechniqueId = normalizeText(techniqueId);
   if (!normalizedTechniqueId) return null;
 
-  const definition =
-    getTechniqueDefinitions().find(
-      (entry) => entry.id === normalizedTechniqueId && entry.enabled !== false,
-    ) ?? null;
+  const definition = getEnabledTechniqueDefinitionMap().get(normalizedTechniqueId) ?? null;
   if (!definition) return null;
 
   return buildPartnerTechniqueStaticMeta(definition, normalizedTechniqueId, currentLayerRaw);
@@ -459,12 +457,39 @@ const toPartnerPassiveAttrsDto = (
   return merged;
 };
 
+let cachedTechniqueDefinitionsSource: readonly TechniqueDefConfig[] | null = null;
+let cachedEnabledTechniqueDefinitionMap: ReadonlyMap<string, TechniqueDefConfig> | null = null;
+let cachedSkillDefinitionsSource: readonly SkillDefConfig[] | null = null;
+let cachedEnabledSkillDefinitionMap: ReadonlyMap<string, SkillDefConfig> | null = null;
+
+const getEnabledTechniqueDefinitionMap = (): ReadonlyMap<string, TechniqueDefConfig> => {
+  const definitions = getTechniqueDefinitions();
+  if (cachedEnabledTechniqueDefinitionMap && cachedTechniqueDefinitionsSource === definitions) {
+    return cachedEnabledTechniqueDefinitionMap;
+  }
+
+  cachedTechniqueDefinitionsSource = definitions;
+  cachedEnabledTechniqueDefinitionMap = new Map(
+    definitions
+      .filter((definition) => definition.enabled !== false)
+      .map((definition) => [definition.id, definition] as const),
+  );
+  return cachedEnabledTechniqueDefinitionMap;
+};
+
 const getEnabledSkillDefinitionMap = () => {
-  return new Map(
-    getSkillDefinitions()
+  const definitions = getSkillDefinitions();
+  if (cachedEnabledSkillDefinitionMap && cachedSkillDefinitionsSource === definitions) {
+    return cachedEnabledSkillDefinitionMap;
+  }
+
+  cachedSkillDefinitionsSource = definitions;
+  cachedEnabledSkillDefinitionMap = new Map(
+    definitions
       .filter((skillDef) => skillDef.enabled !== false)
       .map((skillDef) => [skillDef.id, skillDef] as const),
   );
+  return cachedEnabledSkillDefinitionMap;
 };
 
 const buildPartnerTechniqueSkills = (
