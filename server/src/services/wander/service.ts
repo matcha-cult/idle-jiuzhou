@@ -101,7 +101,7 @@ type WanderEpisodeRow = {
   day_index: number;
   episode_title: string;
   opening: string;
-  option_texts: string[];
+  option_texts: WanderEpisodeOptionTextsValue;
   option_resolutions: WanderAiEpisodeResolutionDraft[] | null;
   chosen_option_index: number | null;
   chosen_option_text: string | null;
@@ -115,6 +115,22 @@ type WanderEpisodeRow = {
   created_at: Date | string;
   chosen_at: Date | string | null;
 };
+
+type WanderEpisodeOptionTextObject = {
+  text?: string | null;
+  label?: string | null;
+  option?: string | null;
+  value?: string | null;
+  options?: (string | WanderEpisodeOptionTextObject)[] | null;
+  optionTexts?: (string | WanderEpisodeOptionTextObject)[] | null;
+};
+
+type WanderEpisodeOptionTextsValue =
+  | string
+  | string[]
+  | WanderEpisodeOptionTextObject
+  | WanderEpisodeOptionTextObject[]
+  | null;
 
 type WanderGeneratedTitleRow = {
   id: string;
@@ -184,6 +200,67 @@ const normalizeGeneratedTitleEffects = (
   effects: Record<string, number> | null,
 ): Record<string, number> => {
   return normalizeTitleEffects(effects);
+};
+
+const normalizeSingleEpisodeOptionText = (
+  value: string | WanderEpisodeOptionTextObject,
+): string => {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  return (value.text ?? value.label ?? value.option ?? value.value ?? '').trim();
+};
+
+export const normalizeEpisodeOptionTexts = (
+  value: WanderEpisodeOptionTextsValue,
+): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map(normalizeSingleEpisodeOptionText)
+      .filter((text: string) => text.length > 0);
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized ? [normalized] : [];
+  }
+
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value.options)) {
+    return value.options
+      .map(normalizeSingleEpisodeOptionText)
+      .filter((text: string) => text.length > 0);
+  }
+
+  if (Array.isArray(value.optionTexts)) {
+    return value.optionTexts
+      .map(normalizeSingleEpisodeOptionText)
+      .filter((text: string) => text.length > 0);
+  }
+
+  const normalized = normalizeSingleEpisodeOptionText(value);
+  return normalized ? [normalized] : [];
+};
+
+export const shouldInvalidateLegacyPendingStory = (params: {
+  activeStory: Pick<WanderStoryRow, 'status'> | null;
+  latestEpisode: Pick<WanderEpisodeRow, 'chosen_option_index' | 'option_resolutions' | 'is_ending'> | null;
+}): boolean => {
+  if (!params.activeStory || params.activeStory.status !== 'active' || !params.latestEpisode) {
+    return false;
+  }
+
+  return isLegacyPendingEpisode(params.latestEpisode);
+};
+
+export const shouldBlockGenerationForLatestEpisode = (
+  latestEpisode: Pick<WanderEpisodeRow, 'chosen_option_index' | 'option_resolutions' | 'is_ending'> | null,
+): boolean => {
+  return latestEpisode !== null && isPendingEpisodeSelection(latestEpisode) && !isLegacyPendingEpisode(latestEpisode);
 };
 
 const normalizeStoredOptionResolution = (
@@ -294,13 +371,15 @@ const isLegacyPendingEpisode = (episode: Pick<WanderEpisodeRow, 'chosen_option_i
 };
 
 const buildEpisodeDto = (row: WanderEpisodeRow): WanderEpisodeDto => {
+  const normalizedOptionTexts = normalizeEpisodeOptionTexts(row.option_texts);
+
   return {
     id: row.id,
     dayKey: buildDateKey(new Date(row.day_key)),
     dayIndex: row.day_index,
     title: row.episode_title,
     opening: row.opening,
-    options: row.option_texts.map((text, index) => ({
+    options: normalizedOptionTexts.map((text, index) => ({
       index,
       text,
     })),
@@ -696,6 +775,30 @@ class WanderService {
     return activeStory;
   }
 
+  private async finishLegacyPendingActiveStory(characterId: number): Promise<void> {
+    const activeStory = await this.loadActiveStoryRow(characterId);
+    if (!activeStory) {
+      return;
+    }
+
+    const latestEpisode = await this.loadLatestEpisodeRowByStoryId(activeStory.id);
+    if (!shouldInvalidateLegacyPendingStory({ activeStory, latestEpisode })) {
+      return;
+    }
+
+    await query(
+      `
+        UPDATE character_wander_story
+        SET status = 'finished',
+            finished_at = COALESCE(finished_at, NOW()),
+            updated_at = NOW()
+        WHERE id = $1
+          AND status = 'active'
+      `,
+      [activeStory.id],
+    );
+  }
+
   private async buildEpisodeResultFromExistingEpisode(
     existingEpisode: WanderEpisodeRow,
     missingStoryMessage: string,
@@ -722,6 +825,8 @@ class WanderService {
   }
 
   async getOverview(characterId: number): Promise<ServiceResult<WanderOverviewDto>> {
+    await this.finishLegacyPendingActiveStory(characterId);
+
     const today = buildDateKey(new Date());
     const aiAvailable = isWanderAiAvailable();
     const [latestEpisodeRow, activeStoryRow, latestFinishedStoryRow, generatedTitles, latestGenerationJobRow] = await Promise.all([
@@ -866,6 +971,8 @@ class WanderService {
       );
     }
 
+    await this.finishLegacyPendingActiveStory(characterId);
+
     const activeStory = await this.loadActiveStoryRow(characterId);
     const nextEpisodeIndex = activeStory ? activeStory.episode_count + 1 : 1;
     const storyId = activeStory?.id ?? buildStoryId();
@@ -967,6 +1074,8 @@ class WanderService {
       return { success: false, message: '未配置 AI 文本模型，无法生成云游奇遇' };
     }
 
+    await this.finishLegacyPendingActiveStory(characterId);
+
     const [latestGenerationJob, character, latestEpisode] = await Promise.all([
       this.loadLatestGenerationJobRowByCharacterId(characterId),
       this.loadCharacterContext(characterId),
@@ -976,7 +1085,7 @@ class WanderService {
     if (!character) {
       return { success: false, message: '角色不存在' };
     }
-    if (latestEpisode && isPendingEpisodeSelection(latestEpisode) && !isLegacyPendingEpisode(latestEpisode)) {
+    if (shouldBlockGenerationForLatestEpisode(latestEpisode)) {
       return {
         success: false,
         message: '当前奇遇已生成，等待抉择',
@@ -1152,7 +1261,8 @@ class WanderService {
       return { success: false, message: '本幕已作出选择' };
     }
 
-    const chosenOptionText = episode.option_texts[normalizedOptionIndex];
+    const normalizedOptionTexts = normalizeEpisodeOptionTexts(episode.option_texts);
+    const chosenOptionText = normalizedOptionTexts[normalizedOptionIndex];
     if (!chosenOptionText) {
       return { success: false, message: '所选选项不存在' };
     }
