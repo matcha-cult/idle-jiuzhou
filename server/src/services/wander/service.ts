@@ -102,7 +102,7 @@ type WanderEpisodeRow = {
   episode_title: string;
   opening: string;
   option_texts: string[];
-  option_resolutions: WanderAiEpisodeResolutionDraft[];
+  option_resolutions: WanderAiEpisodeResolutionDraft[] | null;
   chosen_option_index: number | null;
   chosen_option_text: string | null;
   episode_summary: string;
@@ -158,6 +158,7 @@ const buildEpisodeId = (): string => `wander-episode-${Date.now().toString(36)}-
 const buildGeneratedTitleId = (): string => `title-wander-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 const buildGenerationId = (): string => `wander-job-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
+const LEGACY_EPISODE_OPTION_RESOLUTIONS_MISSING_MESSAGE = '当前奇遇为旧版数据，缺少分支结果，无法继续本幕选择，请重新触发新的云游奇遇';
 
 const normalizeEndingType = (value: string): WanderEndingType => {
   if (value === 'good' || value === 'neutral' || value === 'tragic' || value === 'bizarre') {
@@ -248,6 +249,48 @@ const normalizeEpisodeOptionResolutions = (
     normalizeStoredOptionResolution(resolutions[1], isEndingEpisode),
     normalizeStoredOptionResolution(resolutions[2], isEndingEpisode),
   ];
+};
+
+const resolveEpisodeOptionResolutions = (params: {
+  resolutions: WanderAiEpisodeResolutionDraft[] | null;
+  isEndingEpisode: boolean;
+}): {
+  success: true;
+  data: [
+    WanderAiEpisodeResolutionDraft,
+    WanderAiEpisodeResolutionDraft,
+    WanderAiEpisodeResolutionDraft,
+  ];
+} | {
+  success: false;
+} => {
+  if (!params.resolutions || !Array.isArray(params.resolutions) || params.resolutions.length !== 3) {
+    return { success: false };
+  }
+
+  try {
+    return {
+      success: true,
+      data: normalizeEpisodeOptionResolutions(params.resolutions, params.isEndingEpisode),
+    };
+  } catch {
+    return { success: false };
+  }
+};
+
+const isPendingEpisodeSelection = (episode: Pick<WanderEpisodeRow, 'chosen_option_index'>): boolean => {
+  return episode.chosen_option_index === null;
+};
+
+const isLegacyPendingEpisode = (episode: Pick<WanderEpisodeRow, 'chosen_option_index' | 'option_resolutions' | 'is_ending'>): boolean => {
+  if (!isPendingEpisodeSelection(episode)) {
+    return false;
+  }
+
+  return !resolveEpisodeOptionResolutions({
+    resolutions: episode.option_resolutions,
+    isEndingEpisode: episode.is_ending,
+  }).success;
 };
 
 const buildEpisodeDto = (row: WanderEpisodeRow): WanderEpisodeDto => {
@@ -396,6 +439,22 @@ class WanderService {
         LIMIT 1
       `,
       [characterId],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  private async loadLatestEpisodeRowByStoryId(storyId: string): Promise<WanderEpisodeRow | null> {
+    const result = await query<WanderEpisodeRow>(
+      `
+        SELECT id, story_id, character_id, day_key, day_index, episode_title, opening, option_texts, option_resolutions,
+               chosen_option_index, chosen_option_text, episode_summary, is_ending, ending_type,
+               reward_title_name, reward_title_desc, reward_title_color, reward_title_effects, created_at, chosen_at
+        FROM character_wander_story_episode
+        WHERE story_id = $1
+        ORDER BY day_index DESC, created_at DESC
+        LIMIT 1
+      `,
+      [storyId],
     );
     return result.rows[0] ?? null;
   }
@@ -575,6 +634,20 @@ class WanderService {
     return buildStoryDto(story, episodeRows);
   }
 
+  private async loadContinuableActiveStoryRow(characterId: number): Promise<WanderStoryRow | null> {
+    const activeStory = await this.loadContinuableActiveStoryRow(characterId);
+    if (!activeStory) {
+      return null;
+    }
+
+    const latestEpisode = await this.loadLatestEpisodeRowByStoryId(activeStory.id);
+    if (latestEpisode && isLegacyPendingEpisode(latestEpisode)) {
+      return null;
+    }
+
+    return activeStory;
+  }
+
   private async buildEpisodeResultFromExistingEpisode(
     existingEpisode: WanderEpisodeRow,
     missingStoryMessage: string,
@@ -605,15 +678,16 @@ class WanderService {
     const aiAvailable = isWanderAiAvailable();
     const [latestEpisodeRow, activeStoryRow, latestFinishedStoryRow, generatedTitles, latestGenerationJobRow] = await Promise.all([
       this.loadLatestEpisodeRow(characterId),
-      this.loadActiveStoryRow(characterId),
+      this.loadContinuableActiveStoryRow(characterId),
       this.loadLatestFinishedStoryRow(characterId),
       this.loadGeneratedTitleRows(characterId),
       this.loadLatestGenerationJobRowByCharacterId(characterId),
     ]);
     const cooldownState = buildWanderCooldownState(latestEpisodeRow ? toRequiredIsoString(latestEpisodeRow.created_at) : null);
     const currentEpisodeRow = latestEpisodeRow
+      && !isLegacyPendingEpisode(latestEpisodeRow)
       && (
-        latestEpisodeRow.chosen_option_index === null
+        isPendingEpisodeSelection(latestEpisodeRow)
         || latestEpisodeRow.chosen_at === null
         || cooldownState.isCoolingDown
       )
@@ -683,7 +757,7 @@ class WanderService {
       return { success: false, message: '角色不存在' };
     }
 
-    const activeStory = await this.loadActiveStoryRow(characterId);
+    const activeStory = await this.loadContinuableActiveStoryRow(characterId);
     const previousEpisodes = activeStory
       ? await this.loadResolvedEpisodeContext(activeStory.id, activeStory.story_seed)
       : [];
@@ -860,7 +934,7 @@ class WanderService {
     if (!character) {
       return { success: false, message: '角色不存在' };
     }
-    if (latestEpisode && latestEpisode.chosen_option_index === null) {
+    if (latestEpisode && isPendingEpisodeSelection(latestEpisode) && !isLegacyPendingEpisode(latestEpisode)) {
       return {
         success: false,
         message: '当前奇遇已生成，等待抉择',
@@ -1041,11 +1115,15 @@ class WanderService {
       return { success: false, message: '所选选项不存在' };
     }
 
-    const optionResolutions = normalizeEpisodeOptionResolutions(
-      episode.option_resolutions,
-      episode.is_ending,
-    );
-    const resolutionDraft = optionResolutions[normalizedOptionIndex];
+    const resolutionResult = resolveEpisodeOptionResolutions({
+      resolutions: episode.option_resolutions,
+      isEndingEpisode: episode.is_ending,
+    });
+    if (!resolutionResult.success) {
+      return { success: false, message: LEGACY_EPISODE_OPTION_RESOLUTIONS_MISSING_MESSAGE };
+    }
+
+    const resolutionDraft = resolutionResult.data[normalizedOptionIndex];
 
     await query(
       `
